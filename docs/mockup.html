@@ -1,0 +1,792 @@
+<title>Shrike</title>
+<style>
+  :root {
+    color-scheme: dark;
+    /* Warm, amber-biased dark — the shrike (butcher bird) lives in dry thornscrub. */
+    --bg:        #14110D;
+    --bg-2:      #100E0A;
+    --panel:     #1E1913;
+    --panel-2:   #26201799;
+    --raised:    #2A2318;
+    --fg:        #EDE6DA;
+    --title:     #FBF6EC;
+    --muted:     #A89A85;
+    --faint:     #6E6353;
+    --accent:    #F5A524;
+    --accent-2:  #FBBF24;
+    --accent-soft: rgba(245,165,36,0.14);
+    --accent-line: rgba(245,165,36,0.40);
+    --border:    #322A1E;
+    --hair:      rgba(255,255,255,0.06);
+    --rec:       #EF4444;
+    --ok:        #4ADE80;
+    --info:      #60A5FA;
+
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "Cascadia Code", ui-monospace, "SF Mono", Consolas, monospace;
+    --maxw: 1140px;
+    --r: 12px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 560px at 82% -10%, rgba(245,165,36,0.10), transparent 62%),
+      radial-gradient(900px 500px at -8% 4%, rgba(96,165,250,0.05), transparent 60%),
+      var(--bg);
+    color: var(--fg);
+    font-family: var(--ui);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--accent); margin: 0;
+  }
+
+  /* ---------------- masthead ---------------- */
+  header.top { padding: 62px 0 30px; }
+  .brandrow { display: flex; align-items: center; gap: 16px; margin-bottom: 34px; }
+  .mark { width: 42px; height: 42px; flex: none; }
+  .brandname { font-family: var(--mono); font-weight: 600; letter-spacing: 0.16em;
+    text-transform: uppercase; font-size: 15px; color: var(--title); }
+  .brandtag { font-family: var(--mono); font-size: 12px; color: var(--faint); letter-spacing: 0.08em; }
+  .brandrow .spacer { flex: 1; }
+  .pill-note { font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; }
+
+  h1 {
+    font-size: clamp(36px, 6vw, 62px); line-height: 1.02; letter-spacing: -0.025em;
+    font-weight: 800; color: var(--title); margin: 8px 0 20px; max-width: 16ch;
+    text-wrap: balance;
+  }
+  h1 .amber { color: var(--accent); }
+  .lede { font-size: clamp(18px, 2.2vw, 21px); color: var(--fg); max-width: 60ch; margin: 0; }
+  .lede b { color: var(--title); font-weight: 600; }
+
+  .metaline {
+    display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 32px;
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  }
+  .metaline span { display: inline-flex; align-items: center; gap: 9px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  /* ---------------- section scaffolding ---------------- */
+  section { padding: 46px 0; border-top: 1px solid var(--hair); }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin: 0 0 8px; }
+  .sec-num { font-family: var(--mono); font-size: 12.5px; color: var(--faint); letter-spacing: 0.1em; flex: none; }
+  h2 { font-size: clamp(23px, 3vw, 30px); letter-spacing: -0.02em; font-weight: 700; color: var(--title); margin: 0; }
+  .sec-sub { color: var(--muted); max-width: 66ch; margin: 6px 0 26px; }
+
+  /* ---------------- generic app-window chrome ---------------- */
+  .app {
+    background: linear-gradient(180deg, var(--panel), var(--bg-2));
+    border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: 0 24px 60px -30px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.03);
+    overflow: hidden;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: rgba(0,0,0,0.22); border-bottom: 1px solid var(--hair);
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .tl-dots { display: flex; gap: 7px; }
+  .tl-dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .tl-dots i:nth-child(1){ background:#4B4034; } .tl-dots i:nth-child(2){ background:#4B4034; } .tl-dots i:nth-child(3){ background:#4B4034; }
+  .titlebar .title { color: var(--fg); font-weight: 500; }
+  .titlebar .spacer { flex: 1; }
+
+  /* ---------------- flow tabs ---------------- */
+  .tabs { display: inline-flex; gap: 4px; padding: 4px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 999px; margin-bottom: 24px; }
+  .tab { font: inherit; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.04em;
+    color: var(--muted); background: none; border: 0; padding: 8px 18px; border-radius: 999px;
+    cursor: pointer; transition: color .15s, background .15s; }
+  .tab[aria-selected="true"] { background: var(--accent); color: #1a1305; font-weight: 600; }
+  .tab:not([aria-selected="true"]):hover { color: var(--title); }
+
+  .flow { display: none; }
+  .flow.active { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .flow.active { animation: none; } }
+
+  /* ---------------- screenshot editor mock ---------------- */
+  .editor { display: grid; grid-template-columns: 54px 1fr; }
+  .toolbar { display: flex; flex-direction: column; gap: 4px; padding: 12px 8px;
+    background: rgba(0,0,0,0.20); border-right: 1px solid var(--hair); }
+  .tool { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 9px;
+    border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer;
+    transition: all .13s; }
+  .tool:hover { background: var(--raised); color: var(--title); }
+  .tool[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-2); }
+  .tool svg { width: 19px; height: 19px; }
+  .tool .sep { height: 1px; }
+  .toolsep { height: 1px; background: var(--hair); margin: 6px 4px; }
+
+  .canvas-wrap { display: flex; flex-direction: column; min-width: 0; }
+  .contextbar { display: flex; align-items: center; gap: 14px; padding: 9px 16px;
+    border-bottom: 1px solid var(--hair); font-family: var(--mono); font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .toolname { color: var(--accent-2); }
+  .swatches { display: flex; gap: 6px; }
+  .swatch { width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+  .swatch[aria-pressed="true"] { border-color: var(--fg); }
+  .stroke-pills { display: flex; gap: 5px; }
+  .spill { border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+    border-radius: 6px; padding: 2px 9px; font: inherit; font-family: var(--mono); font-size: 11px; cursor: pointer; }
+  .spill[aria-pressed="true"] { color: var(--accent-2); border-color: var(--accent-line); background: var(--accent-soft); }
+
+  .canvas { position: relative; aspect-ratio: 16/9; background:
+      repeating-linear-gradient(45deg, #17130d 0 12px, #14110d 12px 24px);
+    display: grid; place-items: center; overflow: hidden; }
+  .shot-frame { position: absolute; inset: 26px; border-radius: 8px; overflow: hidden;
+    background: linear-gradient(135deg, #223247, #16202e); border: 1px solid rgba(255,255,255,0.05);
+    box-shadow: 0 20px 50px -20px rgba(0,0,0,0.7); }
+  .fake-window-bar { height: 34px; background: rgba(0,0,0,0.28); display: flex; align-items: center;
+    gap: 8px; padding: 0 12px; font-family: var(--mono); font-size: 11px; color: #8ea6c4; }
+  .fake-window-bar i { width: 9px; height: 9px; border-radius: 50%; background: #37506b; }
+  .fake-body { padding: 20px; color: #b7cbe0; }
+  .fake-line { height: 9px; border-radius: 5px; background: rgba(255,255,255,0.08); margin: 0 0 12px; }
+  /* annotation overlay demo elements */
+  .anno-arrow { position: absolute; left: 46%; top: 40%; color: var(--accent); filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
+  .anno-rect { position: absolute; left: 30%; top: 52%; width: 26%; height: 22%;
+    border: 3px solid var(--accent); border-radius: 6px; box-shadow: 0 0 0 100vmax rgba(0,0,0,0) ; }
+  .anno-badge { position: absolute; left: 63%; top: 30%; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #1a1305; font-weight: 700; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 13px; box-shadow: 0 4px 10px rgba(0,0,0,.5); }
+  .anno-text { position: absolute; left: 30%; top: 76%; font-family: var(--mono); font-size: 12px; color: var(--accent-2);
+    background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 4px; }
+
+  .exportbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    border-top: 1px solid var(--hair); flex-wrap: wrap; }
+  .btn { font: inherit; font-family: var(--ui); font-size: 13px; cursor: pointer; border-radius: 8px;
+    padding: 8px 15px; border: 1px solid var(--border); background: var(--raised); color: var(--fg);
+    display: inline-flex; align-items: center; gap: 8px; transition: all .13s; }
+  .btn:hover { border-color: var(--accent-line); color: var(--title); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #1a1305; font-weight: 600; }
+  .btn.primary:hover { background: var(--accent-2); }
+  .btn svg { width: 15px; height: 15px; }
+  .exportbar .spacer { flex: 1; }
+  .hint { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+
+  /* recent strip */
+  .recent { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--hair);
+    background: rgba(0,0,0,0.14); overflow-x: auto; }
+  .recent .rlabel { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: 0.1em;
+    text-transform: uppercase; flex: none; }
+  .thumb { flex: none; width: 92px; height: 56px; border-radius: 7px; border: 1px solid var(--border);
+    cursor: pointer; position: relative; overflow: hidden; transition: transform .13s, border-color .13s; }
+  .thumb:hover { transform: translateY(-2px); border-color: var(--accent-line); }
+  .thumb .tstamp { position: absolute; bottom: 3px; right: 4px; font-family: var(--mono); font-size: 9px;
+    color: #fff; background: rgba(0,0,0,.55); padding: 1px 4px; border-radius: 3px; }
+  .thumb .tcopy { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0;
+    background: rgba(245,165,36,0.22); color: #1a1305; font-family: var(--mono); font-size: 10px; font-weight: 700;
+    transition: opacity .13s; }
+  .thumb:hover .tcopy { opacity: 1; }
+
+  /* ---------------- recording HUD ---------------- */
+  .hud-demo { display: grid; grid-template-columns: 1fr; gap: 0; }
+  .hud-stage { position: relative; aspect-ratio: 21/7; background:
+      repeating-linear-gradient(45deg, #17130d 0 12px, #14110d 12px 24px); overflow: hidden; }
+  .rec-region { position: absolute; left: 12%; top: 16%; width: 52%; height: 66%;
+    border: 2px dashed var(--accent); border-radius: 6px; background: rgba(245,165,36,0.05); }
+  .rec-region .corner { position: absolute; width: 12px; height: 12px; border: 2px solid var(--accent); }
+  .rec-region .corner.tl{ left:-2px; top:-2px; border-right:0; border-bottom:0;}
+  .rec-region .corner.tr{ right:-2px; top:-2px; border-left:0; border-bottom:0;}
+  .rec-region .corner.bl{ left:-2px; bottom:-2px; border-right:0; border-top:0;}
+  .rec-region .corner.br{ right:-2px; bottom:-2px; border-left:0; border-top:0;}
+  .hud-bar { position: absolute; left: 12%; bottom: 6%; display: inline-flex; align-items: center; gap: 12px;
+    background: rgba(12,10,7,0.92); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px;
+    box-shadow: 0 12px 30px -12px rgba(0,0,0,0.8); }
+  .hud-bar .recdot { width: 10px; height: 10px; border-radius: 50%; background: var(--rec); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%,100%{ opacity:1; box-shadow: 0 0 0 0 rgba(239,68,68,.5);} 50%{ opacity:.55; box-shadow: 0 0 0 6px rgba(239,68,68,0);} }
+  @media (prefers-reduced-motion: reduce){ .hud-bar .recdot{ animation:none; } }
+  .hud-bar .rtime { font-family: var(--mono); font-size: 13px; color: var(--title); letter-spacing: 0.04em; }
+  .hud-bar .hbtn { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--raised); color: var(--fg); border: 1px solid var(--border); cursor: pointer; }
+  .hud-bar .hbtn:hover { border-color: var(--accent-line); color: var(--accent-2); }
+  .hud-bar .hbtn.stop { background: var(--rec); border-color: var(--rec); color: #fff; }
+  .hud-bar .hbtn svg { width: 13px; height: 13px; }
+
+  /* ---------------- timeline editor ---------------- */
+  .timeline-app { margin-top: 22px; }
+  .tl-grid { display: grid; grid-template-columns: 1fr 300px; }
+  @media (max-width: 860px){ .tl-grid { grid-template-columns: 1fr; } }
+  .tl-main { padding: 18px; border-right: 1px solid var(--hair); min-width: 0; }
+  @media (max-width: 860px){ .tl-main { border-right: 0; border-bottom: 1px solid var(--hair); } }
+  .preview { aspect-ratio: 16/9; border-radius: 8px; background: linear-gradient(135deg, #2a2018, #15110b);
+    border: 1px solid var(--border); display: grid; place-items: center; position: relative; overflow: hidden; }
+  .preview .pv-play { width: 54px; height: 54px; border-radius: 50%; background: rgba(245,165,36,0.9);
+    display: grid; place-items: center; color: #1a1305; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .preview .pv-time { position: absolute; bottom: 10px; left: 12px; font-family: var(--mono); font-size: 12px;
+    color: var(--fg); background: rgba(0,0,0,.4); padding: 2px 8px; border-radius: 4px; }
+
+  .scrub { margin-top: 16px; }
+  .scrub-label { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px;
+    color: var(--faint); letter-spacing: 0.08em; margin-bottom: 8px; }
+  .track { display: flex; gap: 3px; height: 52px; }
+  .seg { flex: 1; border-radius: 5px; position: relative; cursor: pointer; overflow: hidden;
+    background: linear-gradient(180deg, #3a4c63, #24313f); border: 1px solid rgba(255,255,255,0.06);
+    transition: all .16s; }
+  .seg .flabel { position: absolute; bottom: 3px; left: 5px; font-family: var(--mono); font-size: 9px; color: rgba(255,255,255,.55); }
+  .seg[data-cut="true"] { background: repeating-linear-gradient(45deg, #2a231a 0 7px, #201a12 7px 14px);
+    border-color: var(--border); opacity: 0.5; }
+  .seg[data-cut="true"]::after { content: "CUT"; position: absolute; inset: 0; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; color: var(--faint); }
+  .seg:hover { border-color: var(--accent-line); }
+  .track-hint { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 10px; }
+
+  /* export panel */
+  .tl-side { padding: 18px; display: flex; flex-direction: column; gap: 18px; }
+  .side-block h4 { margin: 0 0 10px; font-size: 13px; color: var(--title); font-weight: 600; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .preset { text-align: left; font: inherit; cursor: pointer; border-radius: 9px; padding: 10px 12px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--fg); transition: all .13s; }
+  .preset:hover { border-color: var(--accent-line); }
+  .preset[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .preset .pname { font-size: 13px; font-weight: 600; color: var(--title); }
+  .preset .pmeta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+  .preset[aria-pressed="true"] .pname { color: var(--accent-2); }
+
+  .estimate { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: rgba(0,0,0,0.18); }
+  .est-size { font-family: var(--mono); font-size: 30px; font-weight: 700; color: var(--accent); letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums; }
+  .est-cap { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .est-rows { margin-top: 12px; display: grid; gap: 6px; font-family: var(--mono); font-size: 11.5px; }
+  .est-row { display: flex; justify-content: space-between; color: var(--muted); }
+  .est-row b { color: var(--fg); font-weight: 500; }
+  .meter { height: 6px; border-radius: 4px; background: var(--raised); overflow: hidden; margin-top: 12px; }
+  .meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+
+  /* ---------------- feature cards / tray / desktop fix ---------------- */
+  .grid { display: grid; gap: 18px; }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g2 { grid-template-columns: 1.15fr 1fr; }
+  @media (max-width: 820px){ .g3, .g2 { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 20px 22px; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; color: var(--title); display: flex; align-items: center; gap: 9px; }
+  .card h3 svg { width: 17px; height: 17px; color: var(--accent); }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  /* tray flyout mock */
+  .tray-mock { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 24px 60px -30px rgba(0,0,0,0.85); max-width: 300px; }
+  .tray-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hair); }
+  .tray-head .mk { width: 22px; height: 22px; }
+  .tray-head .tt { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--title); }
+  .tray-head .rt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ok); }
+  .tray-item { display: flex; align-items: center; gap: 12px; padding: 9px 14px; cursor: pointer; font-size: 13.5px; color: var(--fg); }
+  .tray-item:hover { background: var(--accent-soft); color: var(--title); }
+  .tray-item svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+  .tray-item .kbd { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+  .tray-recent { padding: 10px 14px 14px; border-top: 1px solid var(--hair); }
+  .tray-recent .rl { font-family: var(--mono); font-size: 10px; color: var(--faint); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+  .tray-recent .row { display: flex; gap: 6px; }
+  .tray-recent .mini { width: 48px; height: 30px; border-radius: 5px; border: 1px solid var(--border); cursor: pointer; }
+  .tray-recent .mini:hover { border-color: var(--accent-line); }
+
+  /* desktop-switch diagram */
+  .vd { display: flex; align-items: center; gap: 14px; margin-top: 4px; flex-wrap: wrap; }
+  .vd .screen { flex: 1; min-width: 150px; border: 1px solid var(--border); border-radius: 9px; padding: 12px; background: rgba(0,0,0,0.18); }
+  .vd .screen .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+  .vd .win { height: 30px; border-radius: 6px; margin-bottom: 8px; background: var(--raised); border: 1px solid var(--border); }
+  .vd .win.here { border-color: var(--accent); background: var(--accent-soft); }
+  .vd .arrow-x { color: var(--rec); font-family: var(--mono); font-size: 12px; }
+  .vd .arrow-ok { color: var(--ok); }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 6px; }
+  @media (max-width: 640px){ .compare { grid-template-columns: 1fr; } }
+  .compare .col .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; margin-bottom: 10px; display: inline-flex; align-items: center; gap: 7px; }
+  .compare .snip .tag { color: var(--rec); }
+  .compare .shrike .tag { color: var(--ok); }
+
+  /* toast */
+  #toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--accent); color: #1a1305; font-family: var(--mono); font-size: 13px; font-weight: 600;
+    padding: 11px 20px; border-radius: 999px; opacity: 0; pointer-events: none; transition: all .25s;
+    box-shadow: 0 12px 30px -10px rgba(0,0,0,0.6); z-index: 50; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  footer { padding: 40px 0 70px; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+  footer .flist { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+
+  .kbd-inline { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 6px; color: var(--fg); }
+</style>
+
+<div id="toast">Copied to clipboard</div>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <!-- mark: a crosshair reticle pierced by a thorn — capture + the shrike's thorn -->
+      <svg class="mark" viewBox="0 0 42 42" fill="none" aria-hidden="true">
+        <circle cx="21" cy="21" r="14" stroke="#F5A524" stroke-width="2.4"/>
+        <path d="M21 3v9M21 30v9M3 21h9M30 21h9" stroke="#F5A524" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M21 21 34 8c-2 6-4 9-13 13z" fill="#FBBF24"/>
+        <circle cx="21" cy="21" r="2.6" fill="#FBBF24"/>
+      </svg>
+      <div>
+        <div class="brandname">Shrike</div>
+        <div class="brandtag">capture · pin · mark · share</div>
+      </div>
+      <span class="spacer"></span>
+      <span class="pill-note">Interactive mockup — click things</span>
+    </div>
+
+    <p class="eyebrow">Design mockup · v1 concept</p>
+    <h1>The snip tool that <span class="amber">never</span> throws you across desktops.</h1>
+    <p class="lede">Shrike is a tray-resident capture studio for Windows: <b>instant</b> screenshots
+      with real annotation, screen recording with lightweight timeline trimming, and export presets
+      that keep a Slack clip in the <b>kilobytes</b>. Built on Avalonia — sibling to <b>sprig</b> —
+      with snappy loading as the first commandment.</p>
+
+    <div class="metaline">
+      <span><i class="dot"></i> Avalonia 12 · .NET 10</span>
+      <span><i class="dot"></i> Tray-resident, &lt;100ms to overlay</span>
+      <span><i class="dot"></i> Windows-first (WGC)</span>
+      <span><i class="dot"></i> Dark-native</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============ THE LIVE FLOWS ============ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-num">01</span><h2>How it works, in practice</h2></div>
+    <p class="sec-sub">Two capture flows share one resident process and one annotation model. Switch between them below —
+      the mockups respond to clicks.</p>
+
+    <div class="tabs" role="tablist" aria-label="Capture flow">
+      <button class="tab" role="tab" aria-selected="true" data-flow="shot">Screenshot</button>
+      <button class="tab" role="tab" aria-selected="false" data-flow="rec">Screen capture</button>
+    </div>
+
+    <!-- ---------- SCREENSHOT FLOW ---------- -->
+    <div class="flow active" id="flow-shot">
+      <div class="app editor-app">
+        <div class="titlebar">
+          <span class="tl-dots"><i></i><i></i><i></i></span>
+          <span class="title">Shrike — Region capture · screen 2</span>
+          <span class="spacer"></span>
+          <span>edited · not saved</span>
+        </div>
+        <div class="editor">
+          <!-- annotation toolbar -->
+          <div class="toolbar" role="toolbar" aria-label="Annotation tools" id="annoTools">
+            <button class="tool" aria-pressed="true" data-tool="Select / move" title="Select">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg></button>
+            <button class="tool" data-tool="Arrow" title="Arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19L19 5M19 5h-8M19 5v8"/></svg></button>
+            <button class="tool" data-tool="Rectangle" title="Rectangle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg></button>
+            <button class="tool" data-tool="Ellipse" title="Ellipse">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
+            <button class="tool" data-tool="Freehand scribble" title="Scribble">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17c3-6 5 2 8-3s4-7 7-1"/></svg></button>
+            <button class="tool" data-tool="Text" title="Text">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 6h14M12 6v13M9 19h6"/></svg></button>
+            <div class="toolsep"></div>
+            <button class="tool" data-tool="Highlighter" title="Highlighter">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M6 16l8-8 4 4-8 8H6z"/></svg></button>
+            <button class="tool" data-tool="Redact / blur" title="Redact">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="8" rx="1.5" fill="currentColor" opacity=".35"/></svg></button>
+            <button class="tool" data-tool="Step counter" title="Step badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M11 9l1.5-1v8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="tool" data-tool="Crop" title="Crop">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 2v16h16M2 6h16v16"/></svg></button>
+          </div>
+
+          <div class="canvas-wrap">
+            <div class="contextbar">
+              <span>Tool: <span class="toolname" id="toolName">Select / move</span></span>
+              <span class="swatches" id="swatches" role="group" aria-label="Colour">
+                <button class="swatch" aria-pressed="true" style="background:#F5A524" data-c="amber"></button>
+                <button class="swatch" style="background:#EF4444" data-c="red"></button>
+                <button class="swatch" style="background:#4ADE80" data-c="green"></button>
+                <button class="swatch" style="background:#60A5FA" data-c="blue"></button>
+                <button class="swatch" style="background:#EDE6DA" data-c="white"></button>
+              </span>
+              <span class="stroke-pills" role="group" aria-label="Stroke">
+                <button class="spill" data-w="S">S</button>
+                <button class="spill" aria-pressed="true" data-w="M">M</button>
+                <button class="spill" data-w="L">L</button>
+              </span>
+              <span class="spacer" style="flex:1"></span>
+              <span>Undo <span class="kbd-inline">Ctrl+Z</span></span>
+            </div>
+
+            <div class="canvas">
+              <div class="shot-frame">
+                <div class="fake-window-bar"><i></i><i></i><i></i><span>invoices · dashboard</span></div>
+                <div class="fake-body">
+                  <div class="fake-line" style="width:70%"></div>
+                  <div class="fake-line" style="width:52%"></div>
+                  <div class="fake-line" style="width:61%"></div>
+                  <div class="fake-line" style="width:40%"></div>
+                </div>
+              </div>
+              <!-- annotation overlay demo -->
+              <div class="anno-rect"></div>
+              <svg class="anno-arrow" width="70" height="60" viewBox="0 0 70 60" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M62 8L14 50M14 50h22M14 50V28"/></svg>
+              <div class="anno-badge">1</div>
+              <div class="anno-text">check this total →</div>
+            </div>
+
+            <div class="exportbar">
+              <button class="btn primary" data-copy="Screenshot copied — PNG + bitmap on the clipboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+                Copy to clipboard</button>
+              <button class="btn" data-copy="Saved to Pictures\Shrike\shrike-20260812-1439.png">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+                Save as…</button>
+              <span class="spacer"></span>
+              <span class="hint">PNG · 1180×664 · 214 KB</span>
+            </div>
+
+            <div class="recent" id="recentStrip">
+              <span class="rlabel">Recent</span>
+              <!-- thumbnails injected below via markup -->
+              <div class="thumb" style="background:linear-gradient(135deg,#2d4a6b,#1a2a3d)" data-copy="Re-copied capture from 14:31"><span class="tstamp">14:31</span><span class="tcopy">COPY</span></div>
+              <div class="thumb" style="background:linear-gradient(135deg,#4a3a2d,#2d2318)" data-copy="Re-copied capture from 14:22"><span class="tstamp">14:22</span><span class="tcopy">COPY</span></div>
+              <div class="thumb" style="background:linear-gradient(135deg,#2d4a3a,#182d22)" data-copy="Re-copied capture from 14:07"><span class="tstamp">14:07</span><span class="tcopy">COPY</span></div>
+              <div class="thumb" style="background:linear-gradient(135deg,#4a2d3a,#2d1822)" data-copy="Re-copied capture from 13:58"><span class="tstamp">13:58</span><span class="tcopy">COPY</span></div>
+              <div class="thumb" style="background:linear-gradient(135deg,#3a3a4a,#1f1f2d)" data-copy="Re-copied capture from 13:41"><span class="tstamp">13:41</span><span class="tcopy">COPY</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="track-hint" style="margin-top:14px">The last <b>N</b> captures stay warm in memory — hover a thumbnail to re-copy without re-capturing. The whole editor is a reused, pre-JITted window, so it opens on <em>this</em> desktop in &lt;250 ms.</p>
+    </div>
+
+    <!-- ---------- RECORDING FLOW ---------- -->
+    <div class="flow" id="flow-rec">
+      <!-- HUD stage -->
+      <div class="app">
+        <div class="titlebar">
+          <span class="tl-dots"><i></i><i></i><i></i></span>
+          <span class="title">Shrike — Recording region · 24 fps</span>
+          <span class="spacer"></span>
+          <span>capturing</span>
+        </div>
+        <div class="hud-stage">
+          <div class="rec-region">
+            <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+          </div>
+          <div class="hud-bar">
+            <span class="recdot"></span>
+            <span class="rtime">00:18</span>
+            <button class="hbtn" title="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg></button>
+            <button class="hbtn stop" title="Stop &amp; edit" data-flow-go="edit"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+            <button class="hbtn" title="Discard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <p class="track-hint" style="margin:14px 0 0">Pick a region → a floating HUD tracks time with pause / stop / discard. Frames stream through Windows Graphics Capture and encode on a background thread. Hit <b>stop</b> to drop into the timeline editor below.</p>
+
+      <!-- timeline editor -->
+      <div class="app timeline-app">
+        <div class="titlebar">
+          <span class="tl-dots"><i></i><i></i><i></i></span>
+          <span class="title">Shrike — Timeline · recording-1439.mp4</span>
+          <span class="spacer"></span>
+          <span id="tlDuration">0:42 kept</span>
+        </div>
+        <div class="tl-grid">
+          <div class="tl-main">
+            <div class="preview">
+              <div class="pv-play"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+              <span class="pv-time">0:12 / 0:42</span>
+            </div>
+            <div class="scrub">
+              <div class="scrub-label"><span>Timeline — click a segment to cut / restore</span><span id="cutCount">0 cuts</span></div>
+              <div class="track" id="track">
+                <div class="seg" data-cut="false" style="flex:2"><span class="flabel">intro</span></div>
+                <div class="seg" data-cut="true" style="flex:1.4"><span class="flabel">dead air</span></div>
+                <div class="seg" data-cut="false" style="flex:2.6"><span class="flabel">the fix</span></div>
+                <div class="seg" data-cut="true" style="flex:1"><span class="flabel">fumble</span></div>
+                <div class="seg" data-cut="false" style="flex:2"><span class="flabel">result</span></div>
+              </div>
+              <p class="track-hint">Cuts are non-destructive — the source is untouched until you export, so trims are instant and reversible. Playback previews the joined result.</p>
+            </div>
+          </div>
+
+          <div class="tl-side">
+            <div class="side-block">
+              <h4>Export preset</h4>
+              <div class="presets" id="presets" role="group" aria-label="Export preset">
+                <button class="preset" aria-pressed="true" data-preset="slack">
+                  <div class="pname">Slack-small</div><div class="pmeta">H.264 · 720p · 24fps</div></button>
+                <button class="preset" data-preset="balanced">
+                  <div class="pname">Balanced</div><div class="pmeta">H.264 · 1080p · 30fps</div></button>
+                <button class="preset" data-preset="high">
+                  <div class="pname">High</div><div class="pmeta">HEVC · source · 60fps</div></button>
+                <button class="preset" data-preset="gif">
+                  <div class="pname">GIF / WebP</div><div class="pmeta">animated · 640px</div></button>
+              </div>
+            </div>
+
+            <div class="estimate">
+              <div class="est-size" id="estSize">0.4 MB</div>
+              <div class="est-cap">estimated export size · <span id="estKept">32s kept</span></div>
+              <div class="meter"><i id="estMeter" style="width:12%"></i></div>
+              <div class="est-rows">
+                <div class="est-row"><span>codec</span><b id="rCodec">H.264 / MP4</b></div>
+                <div class="est-row"><span>resolution</span><b id="rRes">1280×720</b></div>
+                <div class="est-row"><span>frame rate</span><b id="rFps">24 fps</b></div>
+                <div class="est-row"><span>footprint</span><b id="rFoot" style="color:var(--ok)">Slack-friendly</b></div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:8px;">
+              <button class="btn primary" style="flex:1; justify-content:center" data-copy="Clip copied — paste straight into Slack">Copy clip</button>
+              <button class="btn" style="flex:1; justify-content:center" data-copy="Exported to Videos\Shrike\">Save…</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ THE DESKTOP FIX ============ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The headline: no desktop teleport</h2></div>
+    <p class="sec-sub">The single most-hated Snip behaviour is that invoking it <em>activates its existing window</em> — which
+      may live on another virtual desktop — and Windows drags you there. Shrike refuses to.</p>
+
+    <div class="compare">
+      <div class="app col snip">
+        <div class="titlebar"><span class="tl-dots"><i></i><i></i><i></i></span><span class="title">Windows Snip — today</span></div>
+        <div style="padding:20px">
+          <div class="tag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg> Yanks you to Desktop 3</div>
+          <div class="vd">
+            <div class="screen"><div class="lbl">Desktop 1 · you are here</div><div class="win"></div><div class="win"></div></div>
+            <div class="arrow-x">──▶</div>
+            <div class="screen" style="border-color:var(--rec)"><div class="lbl" style="color:var(--rec)">Desktop 3 · snip lived here</div><div class="win" style="border-color:var(--rec)"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="app col shrike">
+        <div class="titlebar"><span class="tl-dots"><i></i><i></i><i></i></span><span class="title">Shrike</span></div>
+        <div style="padding:20px">
+          <div class="tag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg> Opens right here</div>
+          <div class="vd">
+            <div class="screen" style="border-color:var(--ok)"><div class="lbl" style="color:var(--ok)">Desktop 1 · you are here</div><div class="win here"></div><div class="win"></div></div>
+            <div class="arrow-x arrow-ok">stay</div>
+            <div class="screen"><div class="lbl">Desktop 3 · undisturbed</div><div class="win"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="track-hint" style="margin-top:16px">The overlay is <b>born fresh on the current desktop</b> every time. For the editor, Shrike checks
+      <span class="kbd-inline">IVirtualDesktopManager</span> and either <b>moves the window to you</b> or <b>opens a new instance here</b> — your choice in settings. Never a switch.</p>
+  </div>
+</section>
+
+<!-- ============ TRAY + CAPABILITIES ============ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Always resident, instantly ready</h2></div>
+    <p class="sec-sub">Shrike sits in the tray so the expensive costs — CLR, Avalonia, the capture device — are paid once at login. A hotkey is all it takes.</p>
+
+    <div class="grid g2">
+      <!-- tray flyout -->
+      <div>
+        <div class="tray-mock">
+          <div class="tray-head">
+            <svg class="mk" viewBox="0 0 42 42" fill="none"><circle cx="21" cy="21" r="14" stroke="#F5A524" stroke-width="3"/><path d="M21 21 34 8c-2 6-4 9-13 13z" fill="#FBBF24"/></svg>
+            <span class="tt">Shrike</span><span class="rt">● ready</span>
+          </div>
+          <div class="tray-item" data-copy="Region capture armed — drag to select"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3H4v2M20 3h-2M4 20v-2M20 18v2M9 3h6M9 21h6M3 9v6M21 9v6"/></svg> Capture region <span class="kbd">Ctrl+Shift+2</span></div>
+          <div class="tray-item" data-copy="Window capture armed — click a window"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg> Capture window <span class="kbd">Ctrl+Shift+3</span></div>
+          <div class="tray-item" data-copy="Recording — pick a region"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg> Record screen <span class="kbd">Ctrl+Shift+5</span></div>
+          <div class="tray-recent">
+            <div class="rl">Recent — click to re-copy</div>
+            <div class="row">
+              <div class="mini" style="background:linear-gradient(135deg,#2d4a6b,#1a2a3d)" data-copy="Re-copied 14:31"></div>
+              <div class="mini" style="background:linear-gradient(135deg,#4a3a2d,#2d2318)" data-copy="Re-copied 14:22"></div>
+              <div class="mini" style="background:linear-gradient(135deg,#2d4a3a,#182d22)" data-copy="Re-copied 14:07"></div>
+              <div class="mini" style="background:linear-gradient(135deg,#4a2d3a,#2d1822)" data-copy="Re-copied 13:58"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- capability cards -->
+      <div class="grid" style="grid-template-columns:1fr; align-content:start">
+        <div class="card">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7z" fill="currentColor" stroke="none"/></svg> Snappy above all</h3>
+          <p>Overlay in &lt;100 ms, editor in &lt;250 ms. Single-instance guard signals the resident process over a named pipe instead of spawning a cold start. A startup-budget test guards it in CI.</p>
+        </div>
+        <div class="card">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg> One annotation model</h3>
+          <p>Text, shapes, scribble, arrows, highlighter, redaction and step badges — non-destructive vector layers with undo/redo. The same model will later pin drawings to a recording's timeline.</p>
+        </div>
+        <div class="card">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg> Footprint on a dial</h3>
+          <p>Export presets and a live size estimate turn a screen recording from tens of megabytes into a Slack-sized clip — downsample, cap fps, pick codec, watch the number fall before you share.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCOPE ============ -->
+<section>
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-num">04</span><h2>What's in v1 — and what's parked</h2></div>
+    <div class="grid g3">
+      <div class="card">
+        <h3>In v1 · screenshots</h3>
+        <p style="color:var(--fg)">Region / window / monitor capture · delay timer · annotation toolbox · recent-captures ring · copy (PNG + DIB) · save (PNG/JPG/WebP) · rebindable hotkeys.</p>
+      </div>
+      <div class="card">
+        <h3>In v1 · recording</h3>
+        <p style="color:var(--fg)">Region recording · floating HUD · non-destructive timeline trimming · export presets with live size estimate · copy-as-file or save with downsampling.</p>
+      </div>
+      <div class="card">
+        <h3>Parked (future)</h3>
+        <p>Timeline <b>keyframes</b> for timed text / drawings · audio capture · scrolling capture · OCR · GIF captions · cloud share links · cross-platform.</p>
+      </div>
+    </div>
+    <p class="track-hint" style="margin-top:20px">Open questions for your review: autostart default · persist the recent-ring to disk or memory-only · final hotkey set · ship the CLI in v1? · blur vs true-destructive redaction · audio as fast-follow. <b>Full detail in <span class="kbd-inline">docs/design.md</span>.</b></p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="flist">
+      <span>Shrike — design mockup</span>
+      <span>·</span>
+      <span>companion to docs/design.md</span>
+      <span>·</span>
+      <span>next: milestone-based phased plan</span>
+      <span>·</span>
+      <span>2026-08-12</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var toast = document.getElementById('toast'), tHandle;
+    function ping(msg){
+      toast.textContent = msg; toast.classList.add('show');
+      clearTimeout(tHandle); tHandle = setTimeout(function(){ toast.classList.remove('show'); }, 1600);
+    }
+    // anything with data-copy pings the toast
+    document.addEventListener('click', function(e){
+      var el = e.target.closest('[data-copy]');
+      if (el){ ping(el.getAttribute('data-copy')); }
+    });
+
+    // flow tabs
+    var tabs = document.querySelectorAll('.tab');
+    tabs.forEach(function(t){
+      t.addEventListener('click', function(){
+        tabs.forEach(function(x){ x.setAttribute('aria-selected','false'); });
+        t.setAttribute('aria-selected','true');
+        document.querySelectorAll('.flow').forEach(function(f){ f.classList.remove('active'); });
+        document.getElementById('flow-' + t.dataset.flow).classList.add('active');
+      });
+    });
+    // "stop & edit" jumps to recording flow already visible; smooth scroll to timeline
+    document.querySelectorAll('[data-flow-go="edit"]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var tl = document.querySelector('.timeline-app');
+        if (tl) tl.scrollIntoView({behavior:'smooth', block:'center'});
+      });
+    });
+
+    // annotation tools
+    var toolName = document.getElementById('toolName');
+    document.querySelectorAll('#annoTools .tool').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        document.querySelectorAll('#annoTools .tool').forEach(function(x){ x.setAttribute('aria-pressed','false'); });
+        btn.setAttribute('aria-pressed','true');
+        toolName.textContent = btn.dataset.tool;
+      });
+    });
+    // swatches + stroke pills (single-select groups)
+    function radio(sel){
+      var items = document.querySelectorAll(sel);
+      items.forEach(function(it){ it.addEventListener('click', function(){
+        items.forEach(function(x){ x.setAttribute('aria-pressed','false'); });
+        it.setAttribute('aria-pressed','true');
+      }); });
+    }
+    radio('#swatches .swatch');
+    radio('.stroke-pills .spill');
+
+    // timeline segment cuts
+    var track = document.getElementById('track');
+    var SEG_SECONDS = {}; // computed from flex weights
+    function recompute(){
+      var segs = track.querySelectorAll('.seg');
+      var totalFlex = 0, keptFlex = 0, cuts = 0;
+      segs.forEach(function(s){
+        var f = parseFloat(s.style.flex) || 1; totalFlex += f;
+        if (s.dataset.cut === 'true'){ cuts++; } else { keptFlex += f; }
+      });
+      // total source ~ 58s mapped over totalFlex
+      var keptSec = Math.round(58 * keptFlex / totalFlex);
+      document.getElementById('cutCount').textContent = cuts + (cuts===1?' cut':' cuts');
+      document.getElementById('tlDuration').textContent = fmt(keptSec) + ' kept';
+      document.getElementById('estKept').textContent = keptSec + 's kept';
+      updateEstimate(keptSec);
+    }
+    function fmt(s){ var m = Math.floor(s/60), r = s%60; return m + ':' + (r<10?'0':'') + r; }
+    track.querySelectorAll('.seg').forEach(function(s){
+      s.addEventListener('click', function(){
+        s.dataset.cut = (s.dataset.cut === 'true') ? 'false' : 'true';
+        recompute();
+      });
+    });
+
+    // export presets → bitrate model (kbps) drives size estimate
+    var PRESET = {
+      slack:    { codec:'H.264 / MP4', res:'1280×720',  fps:'24 fps', kbps:900,  foot:'Slack-friendly', footcol:'var(--ok)', meter:14 },
+      balanced: { codec:'H.264 / MP4', res:'1920×1080', fps:'30 fps', kbps:3200, foot:'medium',          footcol:'var(--accent-2)', meter:48 },
+      high:     { codec:'HEVC / MP4',  res:'2560×1440', fps:'60 fps', kbps:9000, foot:'large',           footcol:'var(--rec)', meter:92 },
+      gif:      { codec:'GIF / WebP',  res:'640×360',   fps:'15 fps', kbps:1600, foot:'inline-embed',    footcol:'var(--info)', meter:26 }
+    };
+    var current = 'slack';
+    function updateEstimate(keptSec){
+      var p = PRESET[current];
+      var mb = (p.kbps * keptSec) / 8 / 1024; // kbps * s / 8 = kB ; /1024 = MB
+      var sizeStr = mb < 1 ? (Math.round(mb*1024)) + ' KB' : (mb.toFixed(1) + ' MB');
+      document.getElementById('estSize').textContent = sizeStr;
+      document.getElementById('rCodec').textContent = p.codec;
+      document.getElementById('rRes').textContent = p.res;
+      document.getElementById('rFps').textContent = p.fps;
+      var f = document.getElementById('rFoot'); f.textContent = p.foot; f.style.color = p.footcol;
+      document.getElementById('estMeter').style.width = p.meter + '%';
+    }
+    document.querySelectorAll('#presets .preset').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        document.querySelectorAll('#presets .preset').forEach(function(x){ x.setAttribute('aria-pressed','false'); });
+        btn.setAttribute('aria-pressed','true');
+        current = btn.dataset.preset;
+        recompute();
+      });
+    });
+
+    recompute();
+  })();
+</script>

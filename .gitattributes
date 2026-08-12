@@ -1,0 +1,23 @@
+# Normalize line endings: store text as LF in the repo, check out native on each platform.
+* text=auto
+
+# Explicit text types (stored LF)
+*.cs      text
+*.csproj  text
+*.slnx    text
+*.json    text
+*.md      text
+*.txt     text
+*.yml     text
+*.yaml    text
+*.axaml   text
+
+# Scripts that must keep a specific EOL
+*.sh   text eol=lf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary (never touch)
+*.png binary
+*.ico binary
+*.svg text
