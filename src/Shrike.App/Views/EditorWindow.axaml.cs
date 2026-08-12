@@ -150,8 +150,12 @@ public partial class EditorWindow : Window
         }
     }
 
-    private void OnUndo(object? sender, RoutedEventArgs e) => _document.Undo();
-    private void OnRedo(object? sender, RoutedEventArgs e) => _document.Redo();
+    private void OnUndo(object? sender, RoutedEventArgs e) => Undo();
+    private void OnRedo(object? sender, RoutedEventArgs e) => Redo();
+
+    // Undo/redo can invalidate the selection's index, so drop it first.
+    private void Undo() { _surface?.ClearSelection(); _document.Undo(); }
+    private void Redo() { _surface?.ClearSelection(); _document.Redo(); }
 
     // ---- zoom ----
 
@@ -174,15 +178,16 @@ public partial class EditorWindow : Window
         if (_surface?.IsEditingText == true) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)) _document.Redo();
-            else if (e.Key == Key.Z) _document.Undo();
-            else if (e.Key == Key.Y) _document.Redo();
+            if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Redo();
+            else if (e.Key == Key.Z) Undo();
+            else if (e.Key == Key.Y) Redo();
             // Zoom: Ctrl++ / Ctrl+= (in), Ctrl+- (out), Ctrl+0 (fit), Ctrl+1 (100%).
             else if (e.Key is Key.OemPlus or Key.Add) { _surface?.ZoomIn(); e.Handled = true; }
             else if (e.Key is Key.OemMinus or Key.Subtract) { _surface?.ZoomOut(); e.Handled = true; }
             else if (e.Key is Key.D0 or Key.NumPad0) { _surface?.ZoomToFit(); e.Handled = true; }
             else if (e.Key is Key.D1 or Key.NumPad1) { _surface?.ZoomToActual(); e.Handled = true; }
         }
+        else if (e.Key is Key.Delete or Key.Back) { _surface?.DeleteSelected(); e.Handled = true; }
     }
 
     // ---- export ----

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
@@ -67,6 +68,14 @@ public sealed class AnnotationSurface : UserControl
     /// <summary>Font size for new text labels, in image pixels.</summary>
     private const double TextFontSize = 24;
 
+    // ---- select / move state (Select tool) ----
+    private int _selectedIndex = -1;
+    private bool _movingSelection;
+    private Point _moveStartCanvas;
+    private Annotation? _moveOriginal;
+    private bool _moveCheckpointed;
+    private static readonly Cursor MoveCursor = new(StandardCursorType.SizeAll);
+
     private AnnotationTool _tool = AnnotationTool.None;
 
     /// <summary>Active tool. Switching tools commits any text edit in progress.</summary>
@@ -77,6 +86,8 @@ public sealed class AnnotationSurface : UserControl
         {
             if (_tool == value) return;
             CommitTextEdit();
+            ClearSelection();
+            Cursor = Cursor.Default;
             _tool = value;
         }
     }
@@ -126,6 +137,7 @@ public sealed class AnnotationSurface : UserControl
     public void SetContent(CapturedImage image, AnnotationDocument document)
     {
         CancelTextEdit();
+        _selectedIndex = -1;
         if (_document is not null) _document.Changed -= Rerender;
         _image = image;
         _document = document;
@@ -176,18 +188,43 @@ public sealed class AnnotationSurface : UserControl
                 _canvas.Children.Add(control);
             }
         }
+
+        DrawSelectionOutline();
+    }
+
+    /// <summary>Dashed box around the selected annotation (drawn last, so it sits on top).</summary>
+    private void DrawSelectionOutline()
+    {
+        if (_document is null || _selectedIndex < 0 || _selectedIndex >= _document.Items.Count) return;
+
+        var b = AnnotationGeometry.Bounds(_document.Items[_selectedIndex]);
+        const double pad = 4;
+        var box = new Rectangle
+        {
+            Stroke = Brushes.White,
+            StrokeThickness = 1,
+            StrokeDashArray = new AvaloniaList<double> { 4, 3 },
+            IsHitTestVisible = false,
+        };
+        PlaceBox(box,
+            b.X * Scale - pad, b.Y * Scale - pad,
+            b.Width * Scale + pad * 2, b.Height * Scale + pad * 2);
+        _canvas.Children.Add(box);
     }
 
     // ---- drawing ----
 
     private void OnPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (_document is null || Tool == AnnotationTool.None) return;
+        if (_document is null) return;
 
         // A text edit in progress commits on the next click elsewhere (like most editors).
         if (_textEditor is not null) { CommitTextEdit(); return; }
 
         var canvasPoint = e.GetPosition(_canvas);
+
+        // Select tool: pick the annotation under the cursor and start a move if there is one.
+        if (Tool == AnnotationTool.None) { BeginSelectOrMove(canvasPoint, e); return; }
 
         // Click-to-place tools don't drag.
         if (Tool == AnnotationTool.Text) { BeginTextEdit(canvasPoint); return; }
@@ -201,6 +238,15 @@ public sealed class AnnotationSurface : UserControl
 
     private void OnMoved(object? sender, PointerEventArgs e)
     {
+        if (_movingSelection) { DragSelection(e.GetPosition(_canvas)); return; }
+
+        // Select tool, hovering: show the move cursor over a selectable annotation.
+        if (!_dragging && Tool == AnnotationTool.None)
+        {
+            Cursor = HitTestTopmost(ToImage(e.GetPosition(_canvas))) >= 0 ? MoveCursor : Cursor.Default;
+            return;
+        }
+
         if (!_dragging) return;
         var p = e.GetPosition(_canvas);
 
@@ -218,6 +264,14 @@ public sealed class AnnotationSurface : UserControl
 
     private void OnReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_movingSelection)
+        {
+            _movingSelection = false;
+            _moveOriginal = null;
+            _moveCheckpointed = false;
+            return;
+        }
+
         if (!_dragging || _document is null) return;
         _dragging = false;
 
@@ -230,6 +284,71 @@ public sealed class AnnotationSurface : UserControl
     }
 
     private PointD ToImage(Point canvasPoint) => new(canvasPoint.X / Scale, canvasPoint.Y / Scale);
+
+    // ---- select / move ----
+
+    /// <summary>Select the topmost annotation under the click and arm a drag-move if one was hit.</summary>
+    private void BeginSelectOrMove(Point canvasPoint, PointerPressedEventArgs e)
+    {
+        if (_document is null) return;
+
+        var hit = HitTestTopmost(ToImage(canvasPoint));
+        _selectedIndex = hit;
+        Rerender(); // paint (or clear) the selection outline
+
+        if (hit >= 0)
+        {
+            _movingSelection = true;
+            _moveStartCanvas = canvasPoint;
+            _moveOriginal = _document.Items[hit];
+            _moveCheckpointed = false;
+            e.Pointer.Capture(_canvas);
+        }
+    }
+
+    /// <summary>Live-move the selected annotation, checkpointing undo once at the first real drag.</summary>
+    private void DragSelection(Point canvasPoint)
+    {
+        if (_document is null || _moveOriginal is null) return;
+
+        var dx = (canvasPoint.X - _moveStartCanvas.X) / Scale;
+        var dy = (canvasPoint.Y - _moveStartCanvas.Y) / Scale;
+
+        if (!_moveCheckpointed)
+        {
+            if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5) return; // ignore jitter — a click, not a drag
+            _document.BeginInteractive();
+            _moveCheckpointed = true;
+        }
+
+        _document.ReplaceLive(_selectedIndex, AnnotationGeometry.Translate(_moveOriginal, dx, dy));
+    }
+
+    /// <summary>Index of the topmost (last-drawn) annotation the point selects, or -1.</summary>
+    private int HitTestTopmost(PointD imagePoint)
+    {
+        if (_document is null) return -1;
+        var tol = 6 / Scale; // ~6 screen px, scale-independent
+        for (var i = _document.Items.Count - 1; i >= 0; i--)
+            if (AnnotationGeometry.HitTest(_document.Items[i], imagePoint, tol)) return i;
+        return -1;
+    }
+
+    /// <summary>Clear the current selection (e.g. on tool switch, undo/redo, or new capture).</summary>
+    public void ClearSelection()
+    {
+        if (_selectedIndex == -1) return;
+        _selectedIndex = -1;
+        Rerender();
+    }
+
+    /// <summary>Delete the selected annotation, if any (undoable).</summary>
+    public void DeleteSelected()
+    {
+        if (_document is null || _selectedIndex < 0 || _selectedIndex >= _document.Items.Count) return;
+        _document.RemoveAt(_selectedIndex); // Changed → Rerender
+        _selectedIndex = -1;
+    }
 
     // ---- click-to-place tools (text, step badges) ----
 
@@ -305,17 +424,21 @@ public sealed class AnnotationSurface : UserControl
         { Color = StrokeColorHex, StrokeWidth = StrokeWidth });
     }
 
-    /// <summary>Next badge number, derived from the document so undo/redo renumber for free.</summary>
+    /// <summary>
+    /// Next badge number: the lowest unused positive integer, so removing an earlier badge frees its
+    /// number for the next one to reclaim (gaps fill in before the sequence grows).
+    /// </summary>
     private int NextStepNumber()
     {
         if (_document is null) return 1;
-        var highest = 0;
+        var used = new HashSet<int>();
         foreach (var item in _document.Items)
-            if (item is StepBadgeAnnotation b && b.Number > highest) highest = b.Number;
-        return highest + 1;
-    }
+            if (item is StepBadgeAnnotation b) used.Add(b.Number);
 
-    private double BadgeDiameter(double strokeWidth) => 20 + strokeWidth * 2;
+        var n = 1;
+        while (used.Contains(n)) n++;
+        return n;
+    }
 
     // ---- zoom ----
 
@@ -509,7 +632,7 @@ public sealed class AnnotationSurface : UserControl
     /// <summary>A filled circle with a centred number, centred on the badge's (X,Y) image point.</summary>
     private Control BuildBadge(StepBadgeAnnotation badge, double scale)
     {
-        var diameter = BadgeDiameter(badge.StrokeWidth) * scale;
+        var diameter = AnnotationGeometry.BadgeDiameter(badge.StrokeWidth) * scale;
         var color = Color.Parse(badge.Color);
         var panel = new Panel { Width = diameter, Height = diameter };
         panel.Children.Add(new Ellipse { Fill = new SolidColorBrush(color), Width = diameter, Height = diameter });

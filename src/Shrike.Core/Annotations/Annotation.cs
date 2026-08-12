@@ -3,6 +3,15 @@ namespace Shrike.Core.Annotations;
 /// <summary>A 2-D point in image-pixel coordinates (UI-framework agnostic).</summary>
 public readonly record struct PointD(double X, double Y);
 
+/// <summary>An axis-aligned rectangle in image-pixel coordinates.</summary>
+public readonly record struct RectD(double X, double Y, double Width, double Height)
+{
+    public bool Contains(PointD p) => p.X >= X && p.X <= X + Width && p.Y >= Y && p.Y <= Y + Height;
+
+    /// <summary>Grow the rect by <paramref name="d"/> on every side.</summary>
+    public RectD Inflate(double d) => new(X - d, Y - d, Width + 2 * d, Height + 2 * d);
+}
+
 /// <summary>
 /// Base for a non-destructive annotation. Coordinates are in <b>image pixels</b> (0..Width/Height of
 /// the capture), so annotations are independent of how the editor is zoomed or displayed. Concrete

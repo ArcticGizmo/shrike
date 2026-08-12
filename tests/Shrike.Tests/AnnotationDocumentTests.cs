@@ -60,6 +60,40 @@ public class AnnotationDocumentTests
     }
 
     [Fact]
+    public void RemoveAt_is_undoable()
+    {
+        var doc = new AnnotationDocument();
+        doc.Add(new RectAnnotation(0, 0, 10, 10));
+        doc.Add(new EllipseAnnotation(0, 0, 5, 5));
+
+        doc.RemoveAt(0);
+        Assert.Single(doc.Items);
+        Assert.IsType<EllipseAnnotation>(doc.Items[0]);
+
+        doc.Undo();
+        Assert.Equal(2, doc.Items.Count);
+        Assert.IsType<RectAnnotation>(doc.Items[0]);
+    }
+
+    [Fact]
+    public void Interactive_move_collapses_to_one_undo()
+    {
+        var doc = new AnnotationDocument();
+        doc.Add(new RectAnnotation(0, 0, 10, 10));
+
+        // Simulate a drag: one checkpoint, then several live frames.
+        doc.BeginInteractive();
+        doc.ReplaceLive(0, new RectAnnotation(2, 0, 10, 10));
+        doc.ReplaceLive(0, new RectAnnotation(5, 0, 10, 10));
+        doc.ReplaceLive(0, new RectAnnotation(9, 0, 10, 10));
+
+        Assert.Equal(9, ((RectAnnotation)doc.Items[0]).X);
+
+        doc.Undo(); // a single undo returns to the pre-drag position
+        Assert.Equal(0, ((RectAnnotation)doc.Items[0]).X);
+    }
+
+    [Fact]
     public void RedactionRects_only_returns_redactions()
     {
         var doc = new AnnotationDocument();
