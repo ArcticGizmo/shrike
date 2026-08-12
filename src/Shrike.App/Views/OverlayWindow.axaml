@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.OverlayWindow"
+        Title="Shrike Overlay"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        WindowStartupLocation="Manual">
+
+    <Panel Name="Root" Background="{DynamicResource OverlayScrimBrush}" Cursor="Cross">
+
+        <!-- Crosshair reticle that tracks the pointer (thin amber lines). -->
+        <Canvas Name="CrossLayer" IsHitTestVisible="False">
+            <Rectangle Name="VLine" Width="1" Fill="{DynamicResource AccentBrush}" Opacity="0.7" />
+            <Rectangle Name="HLine" Height="1" Fill="{DynamicResource AccentBrush}" Opacity="0.7" />
+        </Canvas>
+
+        <!-- Centre hint card (M0 stub content). -->
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="#CC14110D" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                CornerRadius="12" Padding="26,20" BoxShadow="0 20 50 -20 #000000">
+            <StackPanel Spacing="10" MinWidth="360">
+                <TextBlock Text="SHRIKE · M0 OVERLAY" FontFamily="Consolas,monospace"
+                           FontSize="12" Foreground="{DynamicResource AccentBrush}"
+                           LetterSpacing="3" HorizontalAlignment="Center" />
+                <TextBlock Text="Region-capture overlay is live on this desktop."
+                           Foreground="{DynamicResource FgBrush}" FontSize="15"
+                           HorizontalAlignment="Center" TextAlignment="Center" />
+                <TextBlock Name="DesktopStatus" Text="Checking virtual desktop…"
+                           Foreground="{DynamicResource MutedBrush}" FontFamily="Consolas,monospace"
+                           FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" />
+                <TextBlock Text="Press Esc or click to dismiss"
+                           Foreground="{DynamicResource MutedBrush}" FontSize="12"
+                           HorizontalAlignment="Center" Margin="0,4,0,0" />
+            </StackPanel>
+        </Border>
+    </Panel>
+</Window>

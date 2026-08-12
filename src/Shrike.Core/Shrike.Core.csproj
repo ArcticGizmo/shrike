@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-first: the app leans heavily on Win32 (WGC, virtual-desktop COM, hotkeys, clipboard).
+         Targeting net*-windows lets us call those APIs without CA1416 platform-analyzer noise. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Shrike.Tests" />
+  </ItemGroup>
+
+</Project>

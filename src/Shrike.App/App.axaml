@@ -1,0 +1,21 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Shrike.App.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+
+    <Application.Resources>
+        <!-- Amber-on-warm-dark palette (see docs/mockup.html). -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#F5A524" />
+        <SolidColorBrush x:Key="Accent2Brush" Color="#FBBF24" />
+        <SolidColorBrush x:Key="FgBrush" Color="#EDE6DA" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#A89A85" />
+        <SolidColorBrush x:Key="PanelBgBrush" Color="#1E1913" />
+        <SolidColorBrush x:Key="OverlayScrimBrush" Color="#26000000" />
+        <SolidColorBrush x:Key="OkBrush" Color="#4ADE80" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#EF4444" />
+    </Application.Resources>
+</Application>
