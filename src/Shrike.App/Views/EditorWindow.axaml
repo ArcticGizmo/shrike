@@ -93,6 +93,11 @@
                     <Rectangle Width="17" Height="12" RadiusX="1.5" RadiusY="1.5"
                                Fill="{Binding $parent[Button].Foreground}" />
                 </Button>
+                <Button Classes="tool" Tag="Crop" Click="OnToolClick" ToolTip.Tip="Crop">
+                    <Path Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.7"
+                          StrokeLineCap="Round" StrokeJoin="Round"
+                          Data="M5,1 L5,13 L17,13 M1,5 L13,5 L13,17" />
+                </Button>
 
                 <Border Width="1" Background="#322A1E" Margin="4,2" />
 

@@ -47,7 +47,11 @@ public partial class EditorWindow : Window
         _copyPathButton = this.FindControl<Button>("CopyPathButton");
         _zoomLabel = this.FindControl<Button>("ZoomLabel");
 
-        if (_surface is not null) _surface.ZoomChanged += RefreshZoomLabel;
+        if (_surface is not null)
+        {
+            _surface.ZoomChanged += RefreshZoomLabel;
+            _surface.CropChanged += RefreshDimensions;
+        }
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -62,7 +66,7 @@ public partial class EditorWindow : Window
         _surface?.SetContent(image, _document);
         if (_surface is not null) _surface.Tool = AnnotationTool.None;
 
-        if (_dimensions is not null) _dimensions.Text = $"{image.Width} × {image.Height}";
+        RefreshDimensions();
         if (_openFolderButton is not null) _openFolderButton.IsEnabled = false;
         if (_copyPathButton is not null) _copyPathButton.IsEnabled = false;
         RefreshActiveStates();
@@ -83,7 +87,12 @@ public partial class EditorWindow : Window
             && Enum.TryParse<AnnotationTool>(tag, out var tool))
         {
             _surface.Tool = tool;
-            SetStatus(tool == AnnotationTool.None ? "Select" : $"Tool: {tool}");
+            SetStatus(tool switch
+            {
+                AnnotationTool.None => "Select",
+                AnnotationTool.Crop => "Drag to set the crop · click (tiny drag) to clear it",
+                _ => $"Tool: {tool}",
+            });
             RefreshActiveStates();
         }
     }
@@ -171,6 +180,14 @@ public partial class EditorWindow : Window
         _zoomLabel.Content = _surface.IsFit ? "Fit" : $"{_surface.ZoomPercent:0}%";
     }
 
+    /// <summary>Show the export size in the readout, flagging when a crop is active.</summary>
+    private void RefreshDimensions()
+    {
+        if (_dimensions is null || _surface is null) return;
+        var (w, h) = _surface.EffectiveSize();
+        _dimensions.Text = _surface.IsCropped ? $"{w} × {h} (cropped)" : $"{w} × {h}";
+    }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -192,12 +209,16 @@ public partial class EditorWindow : Window
 
     // ---- export ----
 
-    /// <summary>Flatten the capture + annotations, then apply the destructive redaction scrub.</summary>
+    /// <summary>
+    /// Flatten the capture + annotations, apply the destructive redaction scrub (in full-image
+    /// coordinates), then crop to the export region last.
+    /// </summary>
     private CapturedImage? BuildExport()
     {
         var flattened = _surface?.RenderFlattened() ?? _capture;
         if (flattened is null) return null;
-        return Redaction.Apply(flattened, _document.RedactionRects());
+        var redacted = Redaction.Apply(flattened, _document.RedactionRects());
+        return _surface?.ApplyExportCrop(redacted) ?? redacted;
     }
 
     private void OnCopy(object? sender, RoutedEventArgs e)

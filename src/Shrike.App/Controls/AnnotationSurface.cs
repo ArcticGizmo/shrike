@@ -28,6 +28,7 @@ public enum AnnotationTool
     Redaction,
     Text,
     StepBadge,
+    Crop,
 }
 
 /// <summary>
@@ -75,6 +76,12 @@ public sealed class AnnotationSurface : UserControl
     private Annotation? _moveOriginal;
     private bool _moveCheckpointed;
     private static readonly Cursor MoveCursor = new(StandardCursorType.SizeAll);
+
+    /// <summary>Export crop in image pixels, or null for the whole image. Non-destructive (applied on export).</summary>
+    private RectD? _cropRect;
+
+    /// <summary>Raised when the crop rectangle is set or cleared, so the editor can update the size readout.</summary>
+    public event Action? CropChanged;
 
     private AnnotationTool _tool = AnnotationTool.None;
 
@@ -138,6 +145,7 @@ public sealed class AnnotationSurface : UserControl
     {
         CancelTextEdit();
         _selectedIndex = -1;
+        _cropRect = null;
         if (_document is not null) _document.Changed -= Rerender;
         _image = image;
         _document = document;
@@ -190,6 +198,7 @@ public sealed class AnnotationSurface : UserControl
         }
 
         DrawSelectionOutline();
+        DrawCropMask();
     }
 
     /// <summary>Dashed box around the selected annotation (drawn last, so it sits on top).</summary>
@@ -278,6 +287,9 @@ public sealed class AnnotationSurface : UserControl
         if (_preview is not null) { _canvas.Children.Remove(_preview); _preview = null; }
 
         var end = e.GetPosition(_canvas);
+
+        if (Tool == AnnotationTool.Crop) { SetCropFromDrag(_dragStart, end); return; }
+
         var annotation = BuildAnnotation(_dragStart, end);
         if (annotation is not null)
             _document.Add(annotation); // Changed → Rerender paints the committed shape
@@ -348,6 +360,96 @@ public sealed class AnnotationSurface : UserControl
         if (_document is null || _selectedIndex < 0 || _selectedIndex >= _document.Items.Count) return;
         _document.RemoveAt(_selectedIndex); // Changed → Rerender
         _selectedIndex = -1;
+    }
+
+    // ---- crop (non-destructive; applied on export) ----
+
+    /// <summary>Set the crop from a finished drag, clamped to the image; a tiny drag clears the crop.</summary>
+    private void SetCropFromDrag(Point start, Point end)
+    {
+        if (_image is null) return;
+        var a = ToImage(start);
+        var b = ToImage(end);
+        var x = Math.Min(a.X, b.X);
+        var y = Math.Min(a.Y, b.Y);
+        var w = Math.Abs(b.X - a.X);
+        var h = Math.Abs(b.Y - a.Y);
+
+        if (w < 5 || h < 5)
+        {
+            ClearCrop(); // treat a click / tiny drag as "remove the crop"
+            return;
+        }
+
+        // Clamp to the image extent.
+        x = Math.Clamp(x, 0, _image.Width);
+        y = Math.Clamp(y, 0, _image.Height);
+        w = Math.Min(w, _image.Width - x);
+        h = Math.Min(h, _image.Height - y);
+
+        _cropRect = new RectD(x, y, w, h);
+        Rerender();
+        CropChanged?.Invoke();
+    }
+
+    /// <summary>Remove the crop (back to the full image).</summary>
+    public void ClearCrop()
+    {
+        if (_cropRect is null) return;
+        _cropRect = null;
+        Rerender();
+        CropChanged?.Invoke();
+    }
+
+    /// <summary>Size (image px) the export will produce — the crop size if cropped, else the full image.</summary>
+    public (int Width, int Height) EffectiveSize()
+    {
+        if (_cropRect is { } c) return ((int)Math.Round(c.Width), (int)Math.Round(c.Height));
+        return _image is null ? (0, 0) : (_image.Width, _image.Height);
+    }
+
+    /// <summary>True when an export crop is active.</summary>
+    public bool IsCropped => _cropRect is not null;
+
+    /// <summary>Crop <paramref name="image"/> to the current crop rect (no-op when uncropped).</summary>
+    public CapturedImage ApplyExportCrop(CapturedImage image)
+    {
+        if (_cropRect is not { } c || _image is null) return image;
+
+        var x = (int)Math.Round(c.X);
+        var y = (int)Math.Round(c.Y);
+        var w = (int)Math.Round(c.Width);
+        var h = (int)Math.Round(c.Height);
+        if (w <= 0 || h <= 0) return image;
+
+        // Crop() works in the image's Source (physical) space, so offset by the source origin.
+        var region = new PixelBounds(image.Source.X + x, image.Source.Y + y, w, h);
+        try { return image.Crop(region); }
+        catch { return image; }
+    }
+
+    /// <summary>Dark mask over everything outside the crop, plus a bright border (drawn last, on top).</summary>
+    private void DrawCropMask()
+    {
+        if (_cropRect is not { } c) return;
+
+        var cx = c.X * Scale;
+        var cy = c.Y * Scale;
+        var cw = c.Width * Scale;
+        var ch = c.Height * Scale;
+
+        var full = new RectangleGeometry(new Rect(0, 0, _canvas.Width, _canvas.Height));
+        var hole = new RectangleGeometry(new Rect(cx, cy, cw, ch));
+        _canvas.Children.Add(new Path
+        {
+            Data = new CombinedGeometry(GeometryCombineMode.Exclude, full, hole),
+            Fill = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)),
+            IsHitTestVisible = false,
+        });
+
+        var border = new Rectangle { Stroke = Brushes.White, StrokeThickness = 1, IsHitTestVisible = false };
+        PlaceBox(border, cx, cy, cw, ch);
+        _canvas.Children.Add(border);
     }
 
     // ---- click-to-place tools (text, step badges) ----
@@ -571,6 +673,12 @@ public sealed class AnnotationSurface : UserControl
             AnnotationTool.Line => new Path { Stroke = brush, StrokeThickness = thickness, Data = LineGeometry(start, current, false) },
             AnnotationTool.Arrow => new Path { Stroke = brush, StrokeThickness = thickness, Data = LineGeometry(start, current, true) },
             AnnotationTool.Freehand => FreehandPreview(brush, thickness),
+            AnnotationTool.Crop => PlaceBox(new Rectangle
+            {
+                Stroke = Brushes.White,
+                StrokeThickness = 1,
+                StrokeDashArray = new AvaloniaList<double> { 4, 3 },
+            }, x, y, w, h),
             _ => null,
         };
     }
