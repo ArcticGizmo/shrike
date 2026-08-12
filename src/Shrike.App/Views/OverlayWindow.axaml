@@ -18,6 +18,10 @@
         <Rectangle Name="VLine" Width="1" Fill="{DynamicResource AccentBrush}" Opacity="0.55" IsHitTestVisible="False" />
         <Rectangle Name="HLine" Height="1" Fill="{DynamicResource AccentBrush}" Opacity="0.55" IsHitTestVisible="False" />
 
+        <!-- Window snap-highlight outline (dashed), shown while hovering a window. -->
+        <Rectangle Name="SnapBorder" Stroke="{DynamicResource Accent2Brush}" StrokeThickness="2"
+                   StrokeDashArray="4,3" IsVisible="False" IsHitTestVisible="False" />
+
         <!-- Selection rectangle outline. -->
         <Rectangle Name="SelBorder" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5"
                    IsVisible="False" IsHitTestVisible="False" />

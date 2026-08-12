@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Shrike.Core\Shrike.Core.csproj" />
+    <ProjectReference Include="..\..\src\Shrike.App\Shrike.App.csproj" />
   </ItemGroup>
 
 </Project>

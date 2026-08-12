@@ -45,6 +45,9 @@ internal sealed class CaptureController
         // from it, so what the loupe shows is exactly what gets captured.
         _frozen = TryCaptureFrozen();
 
+        // Snapshot window rectangles BEFORE showing the overlays, so our overlays aren't in the list.
+        var windows = TopLevelWindows.Enumerate();
+
         var session = new RegionSelectionSession();
         session.Completed += region =>
         {
@@ -56,7 +59,7 @@ internal sealed class CaptureController
 
         foreach (var monitor in monitors)
         {
-            var overlay = new OverlayWindow(session, monitor, _frozen);
+            var overlay = new OverlayWindow(session, monitor, _frozen, windows);
             _overlays.Add(overlay);
             overlay.Show();
         }

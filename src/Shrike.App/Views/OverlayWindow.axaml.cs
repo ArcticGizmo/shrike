@@ -6,6 +6,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Shrike.App.Imaging;
+using Shrike.App.Native;
 using Shrike.App.Services;
 using Shrike.Core.Capture;
 using Path = Avalonia.Controls.Shapes.Path;
@@ -28,12 +29,14 @@ public partial class OverlayWindow : Window
     private readonly RegionSelectionSession _session;
     private readonly MonitorInfo _monitor;
     private readonly CapturedImage? _frozen; // frozen full-screen grab for the magnifier
+    private readonly IReadOnlyList<PixelBounds> _windows; // for snap-highlight, topmost first
     private readonly Action _onSessionChanged;
 
     private Canvas? _root;
     private Path? _scrim;
     private Rectangle? _vLine;
     private Rectangle? _hLine;
+    private Rectangle? _snapBorder;
     private Rectangle? _selBorder;
     private Border? _readoutPill;
     private TextBlock? _readout;
@@ -44,15 +47,18 @@ public partial class OverlayWindow : Window
 
     // Parameterless ctor for the XAML designer only.
     public OverlayWindow()
-        : this(new RegionSelectionSession(), new MonitorInfo(new PixelBounds(0, 0, 1920, 1080), 1.0, true), null)
+        : this(new RegionSelectionSession(), new MonitorInfo(new PixelBounds(0, 0, 1920, 1080), 1.0, true), null, [])
     {
     }
 
-    internal OverlayWindow(RegionSelectionSession session, MonitorInfo monitor, CapturedImage? frozen)
+    internal OverlayWindow(
+        RegionSelectionSession session, MonitorInfo monitor, CapturedImage? frozen,
+        IReadOnlyList<PixelBounds> windows)
     {
         _session = session;
         _monitor = monitor;
         _frozen = frozen;
+        _windows = windows;
         _onSessionChanged = Render;
 
         InitializeComponent();
@@ -61,6 +67,7 @@ public partial class OverlayWindow : Window
         _scrim = this.FindControl<Path>("Scrim");
         _vLine = this.FindControl<Rectangle>("VLine");
         _hLine = this.FindControl<Rectangle>("HLine");
+        _snapBorder = this.FindControl<Rectangle>("SnapBorder");
         _selBorder = this.FindControl<Rectangle>("SelBorder");
         _readoutPill = this.FindControl<Border>("ReadoutPill");
         _readout = this.FindControl<TextBlock>("Readout");
@@ -125,7 +132,14 @@ public partial class OverlayWindow : Window
         UpdateLoupe(p);
 
         if (_session.IsDragging)
+        {
             _session.Update(PhysicalX(p.X), PhysicalY(p.Y));
+        }
+        else
+        {
+            // Hovering: highlight the window under the cursor for click-to-capture.
+            _session.SetSnapCandidate(TopLevelWindows.TopmostAt(_windows, PhysicalX(p.X), PhysicalY(p.Y)));
+        }
     }
 
     private void UpdateLoupe(Point local)
@@ -173,42 +187,58 @@ public partial class OverlayWindow : Window
 
     private void Render()
     {
-        var cur = _session.Current;
-        if (!_session.IsDragging || cur is not { } selection || selection.Normalized().IsEmpty)
+        // Active drag with real area → selection mode.
+        if (_session.IsDragging
+            && _session.Current is { } current
+            && !current.Normalized().IsEmpty)
         {
-            if (_selBorder is not null) _selBorder.IsVisible = false;
-            if (_readoutPill is not null) _readoutPill.IsVisible = false;
-            if (_hintPill is not null) _hintPill.IsVisible = !_session.IsDragging;
-            UpdateScrim(null);
+            DrawSelection(current.Normalized());
+            SetSnapBorder(null);
+            if (_hintPill is not null) _hintPill.IsVisible = false;
             return;
         }
 
-        if (_hintPill is not null) _hintPill.IsVisible = false;
+        // Not selecting: clear selection visuals.
+        if (_selBorder is not null) _selBorder.IsVisible = false;
+        if (_readoutPill is not null) _readoutPill.IsVisible = false;
 
-        var s = selection.Normalized();
-        var lx = (s.X - _monitor.Bounds.X) / _monitor.Scale;
-        var ly = (s.Y - _monitor.Bounds.Y) / _monitor.Scale;
-        var lw = s.Width / _monitor.Scale;
-        var lh = s.Height / _monitor.Scale;
+        // Hovering a window (not dragging) → snap-highlight it.
+        var snap = _session.IsDragging ? null : _session.SnapCandidate;
+        if (snap is { } window && !window.Normalized().IsEmpty)
+        {
+            var w = window.Normalized();
+            SetSnapBorder(w);
+            UpdateScrim(ToLocalRect(w));
+            if (_hintPill is not null) _hintPill.IsVisible = false;
+        }
+        else
+        {
+            SetSnapBorder(null);
+            UpdateScrim(null);
+            if (_hintPill is not null) _hintPill.IsVisible = !_session.IsDragging;
+        }
+    }
 
+    private void DrawSelection(PixelBounds s)
+    {
+        var r = ToLocalRect(s);
         if (_selBorder is not null)
         {
-            Canvas.SetLeft(_selBorder, lx);
-            Canvas.SetTop(_selBorder, ly);
-            _selBorder.Width = lw;
-            _selBorder.Height = lh;
+            Canvas.SetLeft(_selBorder, r.X);
+            Canvas.SetTop(_selBorder, r.Y);
+            _selBorder.Width = r.Width;
+            _selBorder.Height = r.Height;
             _selBorder.IsVisible = true;
         }
 
-        UpdateScrim(new Rect(lx, ly, lw, lh));
+        UpdateScrim(r);
 
-        // Show the size readout only on monitors the selection actually touches.
-        var touchesThisMonitor = !_monitor.Bounds.Intersect(s).IsEmpty;
-        if (touchesThisMonitor && _readout is not null && _readoutPill is not null)
+        // Size readout, only on monitors the selection actually touches.
+        if (!_monitor.Bounds.Intersect(s).IsEmpty && _readout is not null && _readoutPill is not null)
         {
             _readout.Text = $"{s.Width} × {s.Height}";
-            Canvas.SetLeft(_readoutPill, Math.Clamp(lx, 0, Math.Max(0, Width - 90)));
-            Canvas.SetTop(_readoutPill, Math.Max(0, ly - 26));
+            Canvas.SetLeft(_readoutPill, Math.Clamp(r.X, 0, Math.Max(0, Width - 90)));
+            Canvas.SetTop(_readoutPill, Math.Max(0, r.Y - 26));
             _readoutPill.IsVisible = true;
         }
         else if (_readoutPill is not null)
@@ -216,6 +246,31 @@ public partial class OverlayWindow : Window
             _readoutPill.IsVisible = false;
         }
     }
+
+    private void SetSnapBorder(PixelBounds? window)
+    {
+        if (_snapBorder is null) return;
+        if (window is { } w && !w.Normalized().IsEmpty)
+        {
+            var r = ToLocalRect(w.Normalized());
+            Canvas.SetLeft(_snapBorder, r.X);
+            Canvas.SetTop(_snapBorder, r.Y);
+            _snapBorder.Width = r.Width;
+            _snapBorder.Height = r.Height;
+            _snapBorder.IsVisible = true;
+        }
+        else
+        {
+            _snapBorder.IsVisible = false;
+        }
+    }
+
+    /// <summary>Map a physical-pixel rect into this monitor's local DIP coordinates.</summary>
+    private Rect ToLocalRect(PixelBounds b) => new(
+        (b.X - _monitor.Bounds.X) / _monitor.Scale,
+        (b.Y - _monitor.Bounds.Y) / _monitor.Scale,
+        b.Width / _monitor.Scale,
+        b.Height / _monitor.Scale);
 
     private void UpdateScrim(Rect? hole)
     {

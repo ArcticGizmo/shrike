@@ -16,6 +16,9 @@ internal sealed class RegionSelectionSession
     /// <summary>The current selection in physical pixels, or null before a drag begins.</summary>
     public PixelBounds? Current { get; private set; }
 
+    /// <summary>The window under the cursor (physical pixels) for snap-highlight, when not dragging.</summary>
+    public PixelBounds? SnapCandidate { get; private set; }
+
     public bool IsDragging => _start is not null && !_finished;
 
     /// <summary>Raised whenever <see cref="Current"/> changes so overlays can re-render.</summary>
@@ -42,6 +45,15 @@ internal sealed class RegionSelectionSession
         Changed?.Invoke();
     }
 
+    /// <summary>Set the hovered-window candidate for snap-highlight. Ignored during a drag.</summary>
+    public void SetSnapCandidate(PixelBounds? candidate)
+    {
+        if (_finished || IsDragging) return;
+        if (Nullable.Equals(SnapCandidate, candidate)) return;
+        SnapCandidate = candidate;
+        Changed?.Invoke();
+    }
+
     public void Complete(int physicalX, int physicalY)
     {
         if (_finished) return;
@@ -57,7 +69,15 @@ internal sealed class RegionSelectionSession
             }
         }
 
-        Cancel(); // a click or sliver cancels rather than capturing nothing useful
+        // A click (no real drag): grab the highlighted window if one is under the cursor.
+        if (SnapCandidate is { } window && !window.Normalized().IsEmpty)
+        {
+            _finished = true;
+            Completed?.Invoke(window.Normalized());
+            return;
+        }
+
+        Cancel(); // otherwise a click on empty space cancels
     }
 
     public void Cancel()
