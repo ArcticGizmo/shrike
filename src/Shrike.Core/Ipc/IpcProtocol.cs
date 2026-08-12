@@ -34,6 +34,7 @@ public static class IpcProtocol
             {
                 case "region": return CaptureAction.CaptureRegion;
                 case "window": return CaptureAction.CaptureWindow;
+                case "monitor": case "screen": return CaptureAction.CaptureMonitor;
                 case "full": case "fullscreen": return CaptureAction.CaptureFullScreen;
                 case "record": return CaptureAction.StartRecording;
                 case "recent": return CaptureAction.ShowRecent;

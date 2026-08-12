@@ -23,8 +23,20 @@ public sealed record Hotkey(HotkeyModifiers Modifiers, string Key)
 {
     private const uint MOD_NOREPEAT = 0x4000;
 
-    /// <summary>The default region-capture hotkey (review decision: rebindable <c>Alt+Shift+…</c>).</summary>
-    public static Hotkey DefaultRegion { get; } = new(HotkeyModifiers.Alt | HotkeyModifiers.Shift, "Q");
+    // Default hotkeys (review decision: rebindable Alt+Shift+… to avoid the OS Win+Shift+S).
+    private const HotkeyModifiers AltShift = HotkeyModifiers.Alt | HotkeyModifiers.Shift;
+
+    /// <summary>Region capture (drag a rectangle).</summary>
+    public static Hotkey DefaultRegion { get; } = new(AltShift, "Q");
+
+    /// <summary>Active-window capture.</summary>
+    public static Hotkey DefaultWindow { get; } = new(AltShift, "W");
+
+    /// <summary>Capture the monitor under the cursor.</summary>
+    public static Hotkey DefaultMonitor { get; } = new(AltShift, "M");
+
+    /// <summary>Capture the whole (all-monitor) desktop.</summary>
+    public static Hotkey DefaultFullScreen { get; } = new(AltShift, "F");
 
     /// <summary>Parse a human string such as <c>"Alt+Shift+Q"</c>. Order-insensitive; throws on garbage.</summary>
     public static Hotkey Parse(string text)

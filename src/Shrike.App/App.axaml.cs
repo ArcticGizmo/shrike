@@ -57,11 +57,19 @@ public partial class App : Application
     {
         var icon = new WindowIcon(AssetLoader.Open(new Uri("avares://shrike/Assets/shrike-tray.png")));
 
-        var capture = new NativeMenuItem("Capture region")
-        {
-            Gesture = new KeyGesture(Key.Q, KeyModifiers.Alt | KeyModifiers.Shift),
-        };
-        capture.Click += (_, _) => OnAction(CaptureAction.ShowOverlay);
+        var region = ModeItem("Capture region", Key.Q, CaptureAction.CaptureRegion);
+        var window = ModeItem("Capture window", Key.W, CaptureAction.CaptureWindow);
+        var monitor = ModeItem("Capture monitor", Key.M, CaptureAction.CaptureMonitor);
+        var full = ModeItem("Capture full screen", Key.F, CaptureAction.CaptureFullScreen);
+
+        // Delay submenu — region capture after a pause, for menus/hover states.
+        var delay3 = new NativeMenuItem("Region after 3 seconds");
+        delay3.Click += (_, _) => _capture?.RunAfter(TimeSpan.FromSeconds(3), () => _capture!.BeginRegionCapture());
+        var delay5 = new NativeMenuItem("Region after 5 seconds");
+        delay5.Click += (_, _) => _capture?.RunAfter(TimeSpan.FromSeconds(5), () => _capture!.BeginRegionCapture());
+        var delayMenu = new NativeMenuItem("Delayed capture") { Menu = new NativeMenu() };
+        delayMenu.Menu!.Add(delay3);
+        delayMenu.Menu!.Add(delay5);
 
         var recent = new NativeMenuItem("Recent (coming soon)") { IsEnabled = false };
         var settings = new NativeMenuItem("Settings (coming soon)") { IsEnabled = false };
@@ -70,7 +78,11 @@ public partial class App : Application
         quit.Click += (_, _) => desktop.Shutdown();
 
         var menu = new NativeMenu();
-        menu.Add(capture);
+        menu.Add(region);
+        menu.Add(window);
+        menu.Add(monitor);
+        menu.Add(full);
+        menu.Add(delayMenu);
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(recent);
         menu.Add(settings);
@@ -89,16 +101,34 @@ public partial class App : Application
         TrayIcon.SetIcons(this, [_tray]);
     }
 
+    private NativeMenuItem ModeItem(string text, Key key, CaptureAction action)
+    {
+        var item = new NativeMenuItem(text)
+        {
+            Gesture = new KeyGesture(key, KeyModifiers.Alt | KeyModifiers.Shift),
+        };
+        item.Click += (_, _) => OnAction(action);
+        return item;
+    }
+
     private void OnAction(CaptureAction action)
     {
-        // Every capture intent currently routes to region capture; the disabled tray entries (recent,
-        // settings) are placeholders the later milestones light up.
+        // Disabled tray entries (recent, settings) are placeholders the later milestones light up.
         switch (action)
         {
+            case CaptureAction.CaptureFullScreen:
+                _capture?.CaptureFullScreen();
+                break;
+            case CaptureAction.CaptureMonitor:
+                _capture?.CaptureMonitorUnderCursor();
+                break;
+            case CaptureAction.CaptureWindow:
+                _capture?.CaptureActiveWindow();
+                break;
             case CaptureAction.ShowRecent:
             case CaptureAction.ShowSettings:
                 break;
-            default:
+            default: // CaptureRegion / ShowOverlay
                 _capture?.BeginRegionCapture();
                 break;
         }

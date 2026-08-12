@@ -12,6 +12,7 @@ public enum CaptureAction
     ShowOverlay,
     CaptureRegion,
     CaptureWindow,
+    CaptureMonitor,
     CaptureFullScreen,
     StartRecording,
     ShowRecent,

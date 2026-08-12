@@ -62,6 +62,62 @@ internal sealed class CaptureController
     /// <summary>Dismiss the overlays if open (used by the measure-startup path).</summary>
     public void CancelOverlay() => _session?.Cancel();
 
+    /// <summary>Capture the whole (all-monitor) desktop straight to the editor.</summary>
+    public void CaptureFullScreen() => CaptureAndEdit(ScreenCapture.VirtualScreenBounds());
+
+    /// <summary>Capture the monitor the pointer is currently on.</summary>
+    public void CaptureMonitorUnderCursor()
+    {
+        var (cx, cy) = CursorPosition.Get();
+        var monitor = Monitors.All().FirstOrDefault(m =>
+            cx >= m.Bounds.X && cx < m.Bounds.Right && cy >= m.Bounds.Y && cy < m.Bounds.Bottom);
+
+        CaptureAndEdit(monitor.Bounds.IsEmpty ? ScreenCapture.VirtualScreenBounds() : monitor.Bounds);
+    }
+
+    /// <summary>Capture the current foreground window (its visible DWM frame).</summary>
+    public void CaptureActiveWindow()
+    {
+        if (WindowBounds.TryForegroundWindow(out var bounds))
+            CaptureAndEdit(bounds.Intersect(ScreenCapture.VirtualScreenBounds()));
+    }
+
+    /// <summary>Run a capture action after a delay (for menus/hover states). Zero delay runs now.</summary>
+    public void RunAfter(TimeSpan delay, Action action)
+    {
+        if (delay <= TimeSpan.Zero)
+        {
+            action();
+            return;
+        }
+
+        var timer = new DispatcherTimer { Interval = delay };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            action();
+        };
+        timer.Start();
+    }
+
+    private void CaptureAndEdit(PixelBounds bounds)
+    {
+        if (bounds.IsEmpty)
+            return;
+
+        CapturedImage image;
+        try
+        {
+            image = ScreenCapture.Capture(bounds);
+        }
+        catch
+        {
+            return;
+        }
+
+        ShowInEditor(image);
+    }
+
     private void CloseOverlays()
     {
         // Defer so we never close a window from inside its own pointer/key event.
@@ -74,20 +130,7 @@ internal sealed class CaptureController
         });
     }
 
-    private void OnRegionSelected(PixelBounds region)
-    {
-        CapturedImage image;
-        try
-        {
-            image = ScreenCapture.Capture(region);
-        }
-        catch
-        {
-            return; // a failed grab (e.g. protected content) just aborts this capture
-        }
-
-        ShowInEditor(image);
-    }
+    private void OnRegionSelected(PixelBounds region) => CaptureAndEdit(region);
 
     private void ShowInEditor(CapturedImage image)
     {
