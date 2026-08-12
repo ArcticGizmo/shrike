@@ -9,23 +9,28 @@
         Background="#14110D">
 
     <Window.Styles>
-        <Style Selector="Button.tool">
+        <Style Selector="Button.tool, Button.stroke, Button.action">
             <Setter Property="Padding" Value="9,6" />
             <Setter Property="Background" Value="#2A2318" />
             <Setter Property="Foreground" Value="#EDE6DA" />
             <Setter Property="CornerRadius" Value="7" />
             <Setter Property="FontSize" Value="12" />
         </Style>
-        <Style Selector="Button.tool.active">
+        <Style Selector="Button.tool.active, Button.stroke.active">
             <Setter Property="Background" Value="#F5A524" />
             <Setter Property="Foreground" Value="#1A1305" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="Button.swatch">
-            <Setter Property="Width" Value="20" />
-            <Setter Property="Height" Value="20" />
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="CornerRadius" Value="11" />
             <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="Button.swatch.active">
+            <Setter Property="BorderBrush" Value="#EDE6DA" />
         </Style>
     </Window.Styles>
 
@@ -54,14 +59,14 @@
 
                 <Border Width="1" Background="#322A1E" Margin="4,2" />
 
-                <Button Classes="tool" Tag="2" Content="S" Click="OnStrokeClick" />
-                <Button Classes="tool" Tag="4" Content="M" Click="OnStrokeClick" />
-                <Button Classes="tool" Tag="8" Content="L" Click="OnStrokeClick" />
+                <Button Classes="stroke" Tag="2" Content="S" Click="OnStrokeClick" />
+                <Button Classes="stroke" Tag="4" Content="M" Click="OnStrokeClick" />
+                <Button Classes="stroke" Tag="8" Content="L" Click="OnStrokeClick" />
 
                 <Border Width="1" Background="#322A1E" Margin="4,2" />
 
-                <Button Classes="tool" Content="Undo" Click="OnUndo" />
-                <Button Classes="tool" Content="Redo" Click="OnRedo" />
+                <Button Classes="action" Content="Undo" Click="OnUndo" />
+                <Button Classes="action" Content="Redo" Click="OnRedo" />
             </StackPanel>
         </Border>
 

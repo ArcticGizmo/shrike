@@ -93,6 +93,10 @@
 - A redacted-then-exported PNG contains **no trace** of the covered pixels (verified by test: sample the region, assert it's the fill colour).
 - Snappy-load budget still green.
 
+**Remaining M2 chunks (after the draw/undo/redo/redact first cut):**
+- Text tool, step-number badges, select/move existing annotations, crop.
+- **Editor zoom / unzoom** (zoom the canvas for pixel-precise annotation) — requested during M2 review, scheduled for the next M2 chunk.
+
 ### M3 · Recent-captures ring
 *"Show me the last few and let me re-copy" — memory-only.*
 

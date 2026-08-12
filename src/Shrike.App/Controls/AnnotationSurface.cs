@@ -48,7 +48,7 @@ public sealed class AnnotationSurface : UserControl
 
     public AnnotationTool Tool { get; set; } = AnnotationTool.None;
     public string StrokeColorHex { get; set; } = "#F5A524";
-    public double StrokeWidth { get; set; } = 3;
+    public double StrokeWidth { get; set; } = 4;
 
     public AnnotationSurface()
     {

@@ -30,7 +30,11 @@ public partial class EditorWindow : Window
     private TextBlock? _status;
     private Button? _openFolderButton;
     private Button? _copyPathButton;
+
     private readonly List<Button> _toolButtons = [];
+    private readonly List<Button> _strokeButtons = [];
+    private readonly List<Button> _swatchButtons = [];
+    private bool _buttonsCollected;
 
     public EditorWindow()
     {
@@ -57,42 +61,26 @@ public partial class EditorWindow : Window
         if (_dimensions is not null) _dimensions.Text = $"{image.Width} × {image.Height}";
         if (_openFolderButton is not null) _openFolderButton.IsEnabled = false;
         if (_copyPathButton is not null) _copyPathButton.IsEnabled = false;
+        RefreshActiveStates();
         SetStatus("Pick a tool and drag to annotate · Ctrl+Z to undo");
+    }
+
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        RefreshActiveStates(); // reflect the surface's tool/stroke/colour once the tree exists
     }
 
     // ---- toolbar ----
 
     private void OnToolClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button button || _surface is null) return;
-        if (Enum.TryParse<AnnotationTool>((string?)button.Tag, out var tool))
+        if (sender is Button { Tag: string tag } && _surface is not null
+            && Enum.TryParse<AnnotationTool>(tag, out var tool))
         {
             _surface.Tool = tool;
-            HighlightActiveTool(button);
             SetStatus(tool == AnnotationTool.None ? "Select" : $"Tool: {tool}");
-        }
-    }
-
-    private void HighlightActiveTool(Button active)
-    {
-        // Track tool buttons the first time, then flip the .active class.
-        if (_toolButtons.Count == 0)
-            CollectToolButtons(this);
-
-        foreach (var b in _toolButtons)
-            b.Classes.Set("active", ReferenceEquals(b, active));
-    }
-
-    private void CollectToolButtons(Visual root)
-    {
-        foreach (var child in root.GetVisualChildren())
-        {
-            if (child is Button b && b.Classes.Contains("tool") && b.Tag is string tag
-                && Enum.TryParse<AnnotationTool>(tag, out _))
-            {
-                _toolButtons.Add(b);
-            }
-            CollectToolButtons(child);
+            RefreshActiveStates();
         }
     }
 
@@ -102,6 +90,7 @@ public partial class EditorWindow : Window
         {
             _surface.StrokeColorHex = hex;
             SetStatus($"Colour {hex}");
+            RefreshActiveStates();
         }
     }
 
@@ -112,6 +101,48 @@ public partial class EditorWindow : Window
         {
             _surface.StrokeWidth = w;
             SetStatus($"Stroke {w:0}px");
+            RefreshActiveStates();
+        }
+    }
+
+    /// <summary>Highlight the tool/stroke/colour buttons that match the surface's current settings.</summary>
+    private void RefreshActiveStates()
+    {
+        if (_surface is null) return;
+        EnsureButtonsCollected();
+
+        foreach (var b in _toolButtons)
+            b.Classes.Set("active", b.Tag is string t && Enum.TryParse<AnnotationTool>(t, out var tool) && tool == _surface.Tool);
+
+        foreach (var b in _strokeButtons)
+            b.Classes.Set("active", b.Tag is string t && double.TryParse(t, out var w) && Math.Abs(w - _surface.StrokeWidth) < 0.01);
+
+        foreach (var b in _swatchButtons)
+            b.Classes.Set("active", b.Tag is string hex && string.Equals(hex, _surface.StrokeColorHex, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void EnsureButtonsCollected()
+    {
+        if (_buttonsCollected) return;
+        _toolButtons.Clear();
+        _strokeButtons.Clear();
+        _swatchButtons.Clear();
+        Collect(this);
+        // Only mark collected once the visual tree actually yielded buttons.
+        if (_toolButtons.Count > 0) _buttonsCollected = true;
+
+        void Collect(Visual root)
+        {
+            foreach (var child in root.GetVisualChildren())
+            {
+                if (child is Button b)
+                {
+                    if (b.Classes.Contains("tool")) _toolButtons.Add(b);
+                    else if (b.Classes.Contains("stroke")) _strokeButtons.Add(b);
+                    else if (b.Classes.Contains("swatch")) _swatchButtons.Add(b);
+                }
+                Collect(child);
+            }
         }
     }
 
