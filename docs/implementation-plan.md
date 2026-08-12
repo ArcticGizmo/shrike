@@ -95,7 +95,8 @@
 
 **Remaining M2 chunks (after the draw/undo/redo/redact first cut):**
 - ✅ **Editor zoom / unzoom** — fit / +/− (1.25× steps) / 100%, Ctrl+wheel zoom-to-cursor, Ctrl+ +/-/0/1 shortcuts; canvas scrolls when zoomed past the viewport. Annotations stay in image-pixel coords so they're zoom-independent.
-- Text tool, step-number badges, select/move existing annotations, crop.
+- ✅ **Text tool** (click to drop an in-place editor; Enter/click-away commits, Esc cancels) and **step-number badges** (click to place; numbers derive from the document so undo/redo renumber automatically).
+- Select/move existing annotations, crop.
 
 ### M3 · Recent-captures ring
 *"Show me the last few and let me re-copy" — memory-only.*

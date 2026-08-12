@@ -170,6 +170,8 @@ public partial class EditorWindow : Window
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        // Let the in-place text editor own the keyboard while a label is being typed.
+        if (_surface?.IsEditingText == true) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)) _document.Redo();

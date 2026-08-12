@@ -25,6 +25,8 @@ public enum AnnotationTool
     Freehand,
     Highlight,
     Redaction,
+    Text,
+    StepBadge,
 }
 
 /// <summary>
@@ -58,9 +60,32 @@ public sealed class AnnotationSurface : UserControl
     private Control? _preview;
     private List<PointD> _freehand = [];
 
-    public AnnotationTool Tool { get; set; } = AnnotationTool.None;
+    /// <summary>The in-place text editor while the Text tool is placing a label (null otherwise).</summary>
+    private TextBox? _textEditor;
+    private PointD _textOrigin;
+
+    /// <summary>Font size for new text labels, in image pixels.</summary>
+    private const double TextFontSize = 24;
+
+    private AnnotationTool _tool = AnnotationTool.None;
+
+    /// <summary>Active tool. Switching tools commits any text edit in progress.</summary>
+    public AnnotationTool Tool
+    {
+        get => _tool;
+        set
+        {
+            if (_tool == value) return;
+            CommitTextEdit();
+            _tool = value;
+        }
+    }
+
     public string StrokeColorHex { get; set; } = "#F5A524";
     public double StrokeWidth { get; set; } = 4;
+
+    /// <summary>True while an in-place text label is being typed (so the editor can pause shortcuts).</summary>
+    public bool IsEditingText => _textEditor is not null;
 
     /// <summary>The scale actually in effect (explicit zoom if set, otherwise the fit scale).</summary>
     private double Scale => _zoom ?? _fitScale;
@@ -100,6 +125,7 @@ public sealed class AnnotationSurface : UserControl
     /// <summary>Load a capture + its annotation document into the surface.</summary>
     public void SetContent(CapturedImage image, AnnotationDocument document)
     {
+        CancelTextEdit();
         if (_document is not null) _document.Changed -= Rerender;
         _image = image;
         _document = document;
@@ -158,8 +184,17 @@ public sealed class AnnotationSurface : UserControl
     {
         if (_document is null || Tool == AnnotationTool.None) return;
 
+        // A text edit in progress commits on the next click elsewhere (like most editors).
+        if (_textEditor is not null) { CommitTextEdit(); return; }
+
+        var canvasPoint = e.GetPosition(_canvas);
+
+        // Click-to-place tools don't drag.
+        if (Tool == AnnotationTool.Text) { BeginTextEdit(canvasPoint); return; }
+        if (Tool == AnnotationTool.StepBadge) { PlaceStepBadge(canvasPoint); return; }
+
         _dragging = true;
-        _dragStart = e.GetPosition(_canvas);
+        _dragStart = canvasPoint;
         _freehand = [ToImage(_dragStart)];
         e.Pointer.Capture(_canvas);
     }
@@ -195,6 +230,92 @@ public sealed class AnnotationSurface : UserControl
     }
 
     private PointD ToImage(Point canvasPoint) => new(canvasPoint.X / Scale, canvasPoint.Y / Scale);
+
+    // ---- click-to-place tools (text, step badges) ----
+
+    /// <summary>Drop an in-place TextBox at the click; it commits to a <see cref="TextAnnotation"/>.</summary>
+    private void BeginTextEdit(Point canvasPoint)
+    {
+        CancelTextEdit();
+        _textOrigin = ToImage(canvasPoint);
+
+        var editor = new TextBox
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x33, 0, 0, 0)),
+            Foreground = ParseBrush(StrokeColorHex),
+            BorderBrush = ParseBrush(StrokeColorHex),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(2, 0),
+            FontSize = TextFontSize * Scale,
+            MinWidth = 40,
+            AcceptsReturn = true,
+            PlaceholderText = "Type…",
+        };
+        Canvas.SetLeft(editor, canvasPoint.X);
+        Canvas.SetTop(editor, canvasPoint.Y);
+
+        editor.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Enter && !ke.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            {
+                ke.Handled = true;
+                CommitTextEdit();
+            }
+            else if (ke.Key == Key.Escape)
+            {
+                ke.Handled = true;
+                CancelTextEdit();
+            }
+        };
+        editor.LostFocus += (_, _) => CommitTextEdit();
+
+        _textEditor = editor;
+        _canvas.Children.Add(editor);
+        editor.Focus();
+    }
+
+    private void CommitTextEdit()
+    {
+        if (_textEditor is null) return;
+        var editor = _textEditor;
+        _textEditor = null; // clear first so LostFocus during removal doesn't re-enter
+
+        var text = editor.Text?.Trim();
+        _canvas.Children.Remove(editor);
+
+        if (!string.IsNullOrEmpty(text) && _document is not null)
+            _document.Add(new TextAnnotation(_textOrigin.X, _textOrigin.Y, text, TextFontSize)
+            { Color = StrokeColorHex, StrokeWidth = StrokeWidth });
+    }
+
+    private void CancelTextEdit()
+    {
+        if (_textEditor is null) return;
+        var editor = _textEditor;
+        _textEditor = null;
+        _canvas.Children.Remove(editor);
+    }
+
+    /// <summary>Place the next sequential numbered badge, centred on the click.</summary>
+    private void PlaceStepBadge(Point canvasPoint)
+    {
+        if (_document is null) return;
+        var p = ToImage(canvasPoint);
+        _document.Add(new StepBadgeAnnotation(p.X, p.Y, NextStepNumber())
+        { Color = StrokeColorHex, StrokeWidth = StrokeWidth });
+    }
+
+    /// <summary>Next badge number, derived from the document so undo/redo renumber for free.</summary>
+    private int NextStepNumber()
+    {
+        if (_document is null) return 1;
+        var highest = 0;
+        foreach (var item in _document.Items)
+            if (item is StepBadgeAnnotation b && b.Number > highest) highest = b.Number;
+        return highest + 1;
+    }
+
+    private double BadgeDiameter(double strokeWidth) => 20 + strokeWidth * 2;
 
     // ---- zoom ----
 
@@ -367,9 +488,43 @@ public sealed class AnnotationSurface : UserControl
                 var poly = new Polyline { Stroke = ParseBrush(fh.Color), StrokeThickness = thickness };
                 foreach (var pt in fh.Points) poly.Points.Add(new Point(pt.X * scale, pt.Y * scale));
                 return poly;
+            case TextAnnotation tx:
+                var text = new TextBlock
+                {
+                    Text = tx.Text,
+                    Foreground = ParseBrush(tx.Color),
+                    FontSize = tx.FontSize * scale,
+                    FontWeight = FontWeight.SemiBold,
+                };
+                Canvas.SetLeft(text, tx.X * scale);
+                Canvas.SetTop(text, tx.Y * scale);
+                return text;
+            case StepBadgeAnnotation sb:
+                return BuildBadge(sb, scale);
             default:
-                return null; // Text / StepBadge land in a later step
+                return null;
         }
+    }
+
+    /// <summary>A filled circle with a centred number, centred on the badge's (X,Y) image point.</summary>
+    private Control BuildBadge(StepBadgeAnnotation badge, double scale)
+    {
+        var diameter = BadgeDiameter(badge.StrokeWidth) * scale;
+        var color = Color.Parse(badge.Color);
+        var panel = new Panel { Width = diameter, Height = diameter };
+        panel.Children.Add(new Ellipse { Fill = new SolidColorBrush(color), Width = diameter, Height = diameter });
+        panel.Children.Add(new TextBlock
+        {
+            Text = badge.Number.ToString(),
+            Foreground = ContrastText(color),
+            FontSize = diameter * 0.5,
+            FontWeight = FontWeight.Bold,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        });
+        Canvas.SetLeft(panel, badge.X * scale - diameter / 2);
+        Canvas.SetTop(panel, badge.Y * scale - diameter / 2);
+        return panel;
     }
 
     private static Control PlaceBox(Control control, double x, double y, double w, double h)
@@ -408,6 +563,13 @@ public sealed class AnnotationSurface : UserControl
     }
 
     private static IBrush ParseBrush(string hex) => new SolidColorBrush(Color.Parse(hex));
+
+    /// <summary>Black or white, whichever reads better on <paramref name="background"/>.</summary>
+    private static IBrush ContrastText(Color background)
+    {
+        var luminance = (0.299 * background.R + 0.587 * background.G + 0.114 * background.B) / 255;
+        return luminance > 0.55 ? Brushes.Black : Brushes.White;
+    }
 
     private static IBrush HighlightBrush(string hex)
     {

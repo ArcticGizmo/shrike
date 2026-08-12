@@ -16,6 +16,15 @@
             <Setter Property="CornerRadius" Value="7" />
             <Setter Property="FontSize" Value="12" />
         </Style>
+        <!-- Icon tool buttons: compact fixed squares with a delayed name tooltip. -->
+        <Style Selector="Button.tool">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="ToolTip.ShowDelay" Value="750" />
+        </Style>
         <Style Selector="Button.tool.active, Button.stroke.active">
             <Setter Property="Background" Value="#F5A524" />
             <Setter Property="Foreground" Value="#1A1305" />
@@ -41,14 +50,49 @@
                 BorderBrush="#322A1E" BorderThickness="0,0,0,1">
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <StackPanel Orientation="Horizontal" Spacing="5">
-                <Button Classes="tool" Tag="None" Content="Select" Click="OnToolClick" />
-                <Button Classes="tool" Tag="Rectangle" Content="Rect" Click="OnToolClick" />
-                <Button Classes="tool" Tag="Ellipse" Content="Oval" Click="OnToolClick" />
-                <Button Classes="tool" Tag="Line" Content="Line" Click="OnToolClick" />
-                <Button Classes="tool" Tag="Arrow" Content="Arrow" Click="OnToolClick" />
-                <Button Classes="tool" Tag="Freehand" Content="Pen" Click="OnToolClick" />
-                <Button Classes="tool" Tag="Highlight" Content="Mark" Click="OnToolClick" />
-                <Button Classes="tool" Tag="Redaction" Content="Redact" Click="OnToolClick" />
+                <Button Classes="tool" Tag="None" Click="OnToolClick" ToolTip.Tip="Select">
+                    <Path Stretch="Uniform" Width="15" Height="15" Fill="{Binding $parent[Button].Foreground}"
+                          Data="M3,2 L3,17 L7.2,13 L10,18.5 L12.4,17.3 L9.6,12 L15,12 Z" />
+                </Button>
+                <Button Classes="tool" Tag="Rectangle" Click="OnToolClick" ToolTip.Tip="Rectangle">
+                    <Rectangle Width="17" Height="13" RadiusX="1.5" RadiusY="1.5"
+                               Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.7" />
+                </Button>
+                <Button Classes="tool" Tag="Ellipse" Click="OnToolClick" ToolTip.Tip="Ellipse">
+                    <Ellipse Width="17" Height="14"
+                             Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.7" />
+                </Button>
+                <Button Classes="tool" Tag="Line" Click="OnToolClick" ToolTip.Tip="Line">
+                    <Path Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.9"
+                          StrokeLineCap="Round" Data="M3,15 L16,4" />
+                </Button>
+                <Button Classes="tool" Tag="Arrow" Click="OnToolClick" ToolTip.Tip="Arrow">
+                    <Path Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.9"
+                          StrokeLineCap="Round" StrokeJoin="Round"
+                          Data="M3,16 L16,3 M16,3 L10.2,3.4 M16,3 L15.6,8.8" />
+                </Button>
+                <Button Classes="tool" Tag="Freehand" Click="OnToolClick" ToolTip.Tip="Pen (freehand)">
+                    <Path Stretch="Uniform" Width="15" Height="15" Fill="{Binding $parent[Button].Foreground}"
+                          Data="M13.6,2.2 L16.3,4.9 L6.6,14.6 L3,15.5 L3.9,11.9 Z" />
+                </Button>
+                <Button Classes="tool" Tag="Highlight" Click="OnToolClick" ToolTip.Tip="Highlighter">
+                    <Rectangle Width="17" Height="9" RadiusX="2.5" RadiusY="2.5"
+                               Fill="{Binding $parent[Button].Foreground}" Opacity="0.6" />
+                </Button>
+                <Button Classes="tool" Tag="Text" Click="OnToolClick" ToolTip.Tip="Text">
+                    <TextBlock Text="T" FontSize="15" FontWeight="Bold" />
+                </Button>
+                <Button Classes="tool" Tag="StepBadge" Click="OnToolClick" ToolTip.Tip="Step number">
+                    <Panel Width="16" Height="16">
+                        <Ellipse Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.6" />
+                        <TextBlock Text="1" FontSize="10" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Panel>
+                </Button>
+                <Button Classes="tool" Tag="Redaction" Click="OnToolClick" ToolTip.Tip="Redact">
+                    <Rectangle Width="17" Height="12" RadiusX="1.5" RadiusY="1.5"
+                               Fill="{Binding $parent[Button].Foreground}" />
+                </Button>
 
                 <Border Width="1" Background="#322A1E" Margin="4,2" />
 
