@@ -19,6 +19,7 @@ internal sealed class CaptureController
     private readonly Action? _onOverlayShown;
 
     private readonly List<OverlayWindow> _overlays = [];
+    private readonly List<DimWindow> _dimmers = [];
     private RegionSelectionSession? _session;
     private CapturedImage? _frozen;
     private EditorWindow? _editor;
@@ -42,27 +43,69 @@ internal sealed class CaptureController
             return;
         }
 
+        var monitors = MonitorsOrFallback();
+
+        // Freeze the CLEAN desktop first — before we dim — so no scrim ever ends up in a capture.
+        // Every mode works from this snapshot.
+        var frozen = TryCaptureFrozen();
+
+        // Dim every monitor behind the chooser to signal "you're mid-capture". A click on any dimmer
+        // (i.e. outside the chooser) cancels.
+        foreach (var monitor in monitors)
+        {
+            var dim = new DimWindow(monitor);
+            dim.Dismissed += TeardownChooser;
+            _dimmers.Add(dim);
+            dim.Show();
+        }
+
         var (cx, cy) = CursorPosition.Get();
         var menu = new CaptureMenuWindow(new PixelPoint(cx, cy));
         menu.Chosen += choice =>
         {
-            _menu = null;
-            switch (choice)
-            {
-                case CaptureMenuChoice.Region: BeginRegionCapture(); break;
-                case CaptureMenuChoice.Monitor: CaptureMonitorUnderCursor(); break;
-                case CaptureMenuChoice.AllMonitors: CaptureFullScreen(); break;
-            }
+            TeardownChooser();
+            RunChoice(choice, frozen);
         };
-        menu.Cancelled += () => _menu = null;
+        menu.Cancelled += TeardownChooser;
         menu.Closed += (_, _) => { if (ReferenceEquals(_menu, menu)) _menu = null; };
 
         _menu = menu;
-        menu.Show();
+        menu.Show();     // shown last, so it sits above the dimmers and takes focus
+        menu.Activate();
+    }
+
+    private void RunChoice(CaptureMenuChoice choice, CapturedImage? frozen)
+    {
+        switch (choice)
+        {
+            case CaptureMenuChoice.Region:
+                BeginRegionCapture(frozen);
+                break;
+            case CaptureMenuChoice.Monitor:
+                CaptureFromFrozen(frozen, MonitorUnderCursorBounds());
+                break;
+            case CaptureMenuChoice.AllMonitors:
+                CaptureFromFrozen(frozen, ScreenCapture.VirtualScreenBounds());
+                break;
+        }
+    }
+
+    private void TeardownChooser()
+    {
+        // Defer so we never close a window from inside its own pointer/key event.
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var dim in _dimmers.ToArray())
+                dim.Close();
+            _dimmers.Clear();
+
+            _menu?.Close();
+            _menu = null;
+        });
     }
 
     /// <summary>Show a region-selection overlay on each monitor (or focus the existing set).</summary>
-    public void BeginRegionCapture()
+    public void BeginRegionCapture(CapturedImage? frozen = null)
     {
         if (_overlays.Count > 0)
         {
@@ -70,13 +113,11 @@ internal sealed class CaptureController
             return;
         }
 
-        var monitors = Monitors.All();
-        if (monitors.Count == 0)
-            monitors = [new MonitorInfo(ScreenCapture.VirtualScreenBounds(), 1.0, true)];
+        var monitors = MonitorsOrFallback();
 
-        // Freeze the whole desktop once: the magnifier samples it and the final selection is cropped
-        // from it, so what the loupe shows is exactly what gets captured.
-        _frozen = TryCaptureFrozen();
+        // Reuse the chooser's clean snapshot when there is one; otherwise freeze now. The magnifier
+        // samples this and the final selection is cropped from it (WYSIWYG with the loupe).
+        _frozen = frozen ?? TryCaptureFrozen();
 
         // Snapshot window rectangles BEFORE showing the overlays, so our overlays aren't in the list.
         var windows = TopLevelWindows.Enumerate();
@@ -112,21 +153,52 @@ internal sealed class CaptureController
         }
     }
 
+    private static IReadOnlyList<MonitorInfo> MonitorsOrFallback()
+    {
+        var monitors = Monitors.All();
+        return monitors.Count > 0
+            ? monitors
+            : [new MonitorInfo(ScreenCapture.VirtualScreenBounds(), 1.0, true)];
+    }
+
+    private static PixelBounds MonitorUnderCursorBounds()
+    {
+        var (cx, cy) = CursorPosition.Get();
+        var monitor = Monitors.All().FirstOrDefault(m =>
+            cx >= m.Bounds.X && cx < m.Bounds.Right && cy >= m.Bounds.Y && cy < m.Bounds.Bottom);
+        return monitor.Bounds.IsEmpty ? ScreenCapture.VirtualScreenBounds() : monitor.Bounds;
+    }
+
+    /// <summary>Crop the given clean snapshot to <paramref name="bounds"/>, or grab live if there's none.</summary>
+    private void CaptureFromFrozen(CapturedImage? frozen, PixelBounds bounds)
+    {
+        if (bounds.IsEmpty)
+            return;
+
+        if (frozen is not null)
+        {
+            try
+            {
+                ShowInEditor(frozen.Crop(bounds));
+                return;
+            }
+            catch
+            {
+                // bounds fell outside the snapshot — fall back to a live grab
+            }
+        }
+
+        CaptureAndEdit(bounds);
+    }
+
     /// <summary>Dismiss the overlays if open (used by the measure-startup path).</summary>
     public void CancelOverlay() => _session?.Cancel();
 
     /// <summary>Capture the whole (all-monitor) desktop straight to the editor.</summary>
     public void CaptureFullScreen() => CaptureAndEdit(ScreenCapture.VirtualScreenBounds());
 
-    /// <summary>Capture the monitor the pointer is currently on.</summary>
-    public void CaptureMonitorUnderCursor()
-    {
-        var (cx, cy) = CursorPosition.Get();
-        var monitor = Monitors.All().FirstOrDefault(m =>
-            cx >= m.Bounds.X && cx < m.Bounds.Right && cy >= m.Bounds.Y && cy < m.Bounds.Bottom);
-
-        CaptureAndEdit(monitor.Bounds.IsEmpty ? ScreenCapture.VirtualScreenBounds() : monitor.Bounds);
-    }
+    /// <summary>Capture the monitor the pointer is currently on (live — for the CLI/IPC path).</summary>
+    public void CaptureMonitorUnderCursor() => CaptureAndEdit(MonitorUnderCursorBounds());
 
     /// <summary>Run a capture action after a delay (for menus/hover states). Zero delay runs now.</summary>
     public void RunAfter(TimeSpan delay, Action action)

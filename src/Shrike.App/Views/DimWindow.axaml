@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.DimWindow"
+        Title="Shrike"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        WindowStartupLocation="Manual">
+    <!-- Same scrim as the capture overlay, so the chooser reads as "you're mid-capture, act". -->
+    <Panel Background="{DynamicResource OverlayScrimBrush}" />
+</Window>

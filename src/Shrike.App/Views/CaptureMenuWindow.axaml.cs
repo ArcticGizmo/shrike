@@ -34,7 +34,6 @@ public partial class CaptureMenuWindow : Window
     {
         _anchor = anchor;
         InitializeComponent();
-        Deactivated += (_, _) => Cancel(); // clicking away dismisses the chooser
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
