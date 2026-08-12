@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using Avalonia;
 using Avalonia.Threading;
 using Shrike.App.Native;
 using Shrike.App.Views;
@@ -21,11 +22,43 @@ internal sealed class CaptureController
     private RegionSelectionSession? _session;
     private CapturedImage? _frozen;
     private EditorWindow? _editor;
+    private CaptureMenuWindow? _menu;
 
     public CaptureController(VirtualDesktopService desktops, Action? onOverlayShown = null)
     {
         _desktops = desktops;
         _onOverlayShown = onOverlayShown;
+    }
+
+    /// <summary>
+    /// Open the capture chooser at the cursor. The single hotkey and the tray both route here; the
+    /// chosen mode then runs. This is the one entry point (and the seam where "Record" will slot in).
+    /// </summary>
+    public void ShowCaptureMenu()
+    {
+        if (_menu is not null)
+        {
+            _menu.Activate();
+            return;
+        }
+
+        var (cx, cy) = CursorPosition.Get();
+        var menu = new CaptureMenuWindow(new PixelPoint(cx, cy));
+        menu.Chosen += choice =>
+        {
+            _menu = null;
+            switch (choice)
+            {
+                case CaptureMenuChoice.Region: BeginRegionCapture(); break;
+                case CaptureMenuChoice.Monitor: CaptureMonitorUnderCursor(); break;
+                case CaptureMenuChoice.AllMonitors: CaptureFullScreen(); break;
+            }
+        };
+        menu.Cancelled += () => _menu = null;
+        menu.Closed += (_, _) => { if (ReferenceEquals(_menu, menu)) _menu = null; };
+
+        _menu = menu;
+        menu.Show();
     }
 
     /// <summary>Show a region-selection overlay on each monitor (or focus the existing set).</summary>
@@ -93,13 +126,6 @@ internal sealed class CaptureController
             cx >= m.Bounds.X && cx < m.Bounds.Right && cy >= m.Bounds.Y && cy < m.Bounds.Bottom);
 
         CaptureAndEdit(monitor.Bounds.IsEmpty ? ScreenCapture.VirtualScreenBounds() : monitor.Bounds);
-    }
-
-    /// <summary>Capture the current foreground window (its visible DWM frame).</summary>
-    public void CaptureActiveWindow()
-    {
-        if (WindowBounds.TryForegroundWindow(out var bounds))
-            CaptureAndEdit(bounds.Intersect(ScreenCapture.VirtualScreenBounds()));
     }
 
     /// <summary>Run a capture action after a delay (for menus/hover states). Zero delay runs now.</summary>

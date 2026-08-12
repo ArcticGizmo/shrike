@@ -1,47 +1,39 @@
 using System.Runtime.Versioning;
 using Shrike.App.Native;
 using Shrike.Core.Hotkeys;
-using Shrike.Core.Ipc;
 
 namespace Shrike.App.Services;
 
 /// <summary>
-/// Owns the global hotkey registrations for the resident app. Must be constructed and started on the
-/// Avalonia UI thread (see <see cref="MessageWindow"/>). M1 registers the four capture modes; M6
-/// makes the whole set rebindable from settings.
+/// Owns the app's single global hotkey. Deliberately one shortcut (default <c>Alt+Shift+Q</c>) that
+/// opens the capture chooser — most people only remember one key for an occasional-use tool. Must be
+/// constructed and started on the Avalonia UI thread (see <see cref="MessageWindow"/>). M6 makes the
+/// key rebindable.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class HotkeyService : IDisposable
 {
-    private MessageWindow? _window;
-    private readonly Dictionary<int, CaptureAction> _actionsById = [];
+    private const int CaptureHotkeyId = 1;
 
-    /// <summary>Raised on the UI thread when a registered hotkey fires.</summary>
-    public event Action<CaptureAction>? Triggered;
+    private MessageWindow? _window;
+
+    /// <summary>Raised on the UI thread when the capture hotkey fires.</summary>
+    public event Action? CaptureRequested;
 
     public void Start()
     {
         _window = new MessageWindow("ShrikeHotkeyWindow");
         _window.HotkeyPressed += OnHotkeyPressed;
 
-        Register(1, Hotkey.DefaultRegion, CaptureAction.CaptureRegion);
-        Register(2, Hotkey.DefaultWindow, CaptureAction.CaptureWindow);
-        Register(3, Hotkey.DefaultMonitor, CaptureAction.CaptureMonitor);
-        Register(4, Hotkey.DefaultFullScreen, CaptureAction.CaptureFullScreen);
-    }
-
-    private void Register(int id, Hotkey hotkey, CaptureAction action)
-    {
-        // A false result (e.g. another app already owns the combo) is non-fatal — that mode just won't
-        // have a live global key this session; the tray menu still triggers it.
-        if (_window!.RegisterHotkey(id, hotkey.ToWin32Modifiers(), hotkey.ToVirtualKey()))
-            _actionsById[id] = action;
+        var hk = Hotkey.DefaultCapture;
+        // A false result (e.g. another app owns the combo) is non-fatal — the tray still works.
+        _window.RegisterHotkey(CaptureHotkeyId, hk.ToWin32Modifiers(), hk.ToVirtualKey());
     }
 
     private void OnHotkeyPressed(int id)
     {
-        if (_actionsById.TryGetValue(id, out var action))
-            Triggered?.Invoke(action);
+        if (id == CaptureHotkeyId)
+            CaptureRequested?.Invoke();
     }
 
     public void Dispose()

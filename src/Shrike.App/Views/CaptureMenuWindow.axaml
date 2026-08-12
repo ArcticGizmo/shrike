@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.CaptureMenuWindow"
+        Title="Shrike Capture"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="Manual">
+
+    <Window.Styles>
+        <Style Selector="Button.mode">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="10,9" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style Selector="Button.mode:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3A2F1E" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+        <Style Selector="Button.mode TextBlock.key">
+            <Setter Property="Foreground" Value="#F5A524" />
+            <Setter Property="FontFamily" Value="Consolas,monospace" />
+            <Setter Property="Width" Value="18" />
+        </Style>
+    </Window.Styles>
+
+    <Border Background="#F214110D" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="12"
+            Padding="8" BoxShadow="0 18 44 -18 #000000">
+        <StackPanel Width="230" Spacing="4">
+            <TextBlock Text="CAPTURE" FontFamily="Consolas,monospace" FontSize="11"
+                       Foreground="#F5A524" LetterSpacing="3" Margin="6,4,0,4" />
+
+            <Button Name="RegionButton" Classes="mode" Click="OnRegion">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="key" Text="1" />
+                    <TextBlock Text="Region or window" />
+                </StackPanel>
+            </Button>
+            <Button Name="MonitorButton" Classes="mode" Click="OnMonitor">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="key" Text="2" />
+                    <TextBlock Text="This monitor" />
+                </StackPanel>
+            </Button>
+            <Button Name="AllButton" Classes="mode" Click="OnAllMonitors">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="key" Text="3" />
+                    <TextBlock Text="All monitors" />
+                </StackPanel>
+            </Button>
+
+            <TextBlock Text="1–3 to pick  ·  Esc to cancel" FontSize="11" Foreground="#8A7C68"
+                       Margin="6,4,0,2" />
+        </StackPanel>
+    </Border>
+</Window>

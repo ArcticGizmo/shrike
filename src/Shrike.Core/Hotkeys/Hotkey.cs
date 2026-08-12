@@ -23,20 +23,12 @@ public sealed record Hotkey(HotkeyModifiers Modifiers, string Key)
 {
     private const uint MOD_NOREPEAT = 0x4000;
 
-    // Default hotkeys (review decision: rebindable Alt+Shift+… to avoid the OS Win+Shift+S).
+    // The single default capture hotkey (review decision: rebindable Alt+Shift+… to avoid the OS
+    // Win+Shift+S). It opens the capture chooser rather than binding one mode.
     private const HotkeyModifiers AltShift = HotkeyModifiers.Alt | HotkeyModifiers.Shift;
 
-    /// <summary>Region capture (drag a rectangle).</summary>
-    public static Hotkey DefaultRegion { get; } = new(AltShift, "Q");
-
-    /// <summary>Active-window capture.</summary>
-    public static Hotkey DefaultWindow { get; } = new(AltShift, "W");
-
-    /// <summary>Capture the monitor under the cursor.</summary>
-    public static Hotkey DefaultMonitor { get; } = new(AltShift, "M");
-
-    /// <summary>Capture the whole (all-monitor) desktop.</summary>
-    public static Hotkey DefaultFullScreen { get; } = new(AltShift, "F");
+    /// <summary>Opens the capture chooser (region / this monitor / all monitors).</summary>
+    public static Hotkey DefaultCapture { get; } = new(AltShift, "Q");
 
     /// <summary>Parse a human string such as <c>"Alt+Shift+Q"</c>. Order-insensitive; throws on garbage.</summary>
     public static Hotkey Parse(string text)

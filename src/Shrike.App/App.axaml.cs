@@ -36,7 +36,7 @@ public partial class App : Application
             if (OperatingSystem.IsWindows())
             {
                 _hotkeys = new HotkeyService();
-                _hotkeys.Triggered += OnAction;
+                _hotkeys.CaptureRequested += () => _capture?.ShowCaptureMenu();
                 _hotkeys.Start();
             }
 
@@ -57,19 +57,19 @@ public partial class App : Application
     {
         var icon = new WindowIcon(AssetLoader.Open(new Uri("avares://shrike/Assets/shrike-tray.png")));
 
-        var region = ModeItem("Capture region", Key.Q, CaptureAction.CaptureRegion);
-        var window = ModeItem("Capture window", Key.W, CaptureAction.CaptureWindow);
-        var monitor = ModeItem("Capture monitor", Key.M, CaptureAction.CaptureMonitor);
-        var full = ModeItem("Capture full screen", Key.F, CaptureAction.CaptureFullScreen);
+        // One capture entry point (the chooser), plus the individual modes for discoverability.
+        var capture = new NativeMenuItem("Capture…")
+        {
+            Gesture = new KeyGesture(Key.Q, KeyModifiers.Alt | KeyModifiers.Shift),
+        };
+        capture.Click += (_, _) => _capture?.ShowCaptureMenu();
 
-        // Delay submenu — region capture after a pause, for menus/hover states.
-        var delay3 = new NativeMenuItem("Region after 3 seconds");
-        delay3.Click += (_, _) => _capture?.RunAfter(TimeSpan.FromSeconds(3), () => _capture!.BeginRegionCapture());
-        var delay5 = new NativeMenuItem("Region after 5 seconds");
-        delay5.Click += (_, _) => _capture?.RunAfter(TimeSpan.FromSeconds(5), () => _capture!.BeginRegionCapture());
-        var delayMenu = new NativeMenuItem("Delayed capture") { Menu = new NativeMenu() };
-        delayMenu.Menu!.Add(delay3);
-        delayMenu.Menu!.Add(delay5);
+        var region = new NativeMenuItem("Region or window");
+        region.Click += (_, _) => _capture?.BeginRegionCapture();
+        var monitor = new NativeMenuItem("This monitor");
+        monitor.Click += (_, _) => _capture?.CaptureMonitorUnderCursor();
+        var full = new NativeMenuItem("All monitors");
+        full.Click += (_, _) => _capture?.CaptureFullScreen();
 
         var recent = new NativeMenuItem("Recent (coming soon)") { IsEnabled = false };
         var settings = new NativeMenuItem("Settings (coming soon)") { IsEnabled = false };
@@ -78,11 +78,11 @@ public partial class App : Application
         quit.Click += (_, _) => desktop.Shutdown();
 
         var menu = new NativeMenu();
+        menu.Add(capture);
+        menu.Add(new NativeMenuItemSeparator());
         menu.Add(region);
-        menu.Add(window);
         menu.Add(monitor);
         menu.Add(full);
-        menu.Add(delayMenu);
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(recent);
         menu.Add(settings);
@@ -96,24 +96,15 @@ public partial class App : Application
             Menu = menu,
             IsVisible = true,
         };
-        _tray.Clicked += (_, _) => OnAction(CaptureAction.ShowOverlay);
+        _tray.Clicked += (_, _) => _capture?.ShowCaptureMenu();
 
         TrayIcon.SetIcons(this, [_tray]);
     }
 
-    private NativeMenuItem ModeItem(string text, Key key, CaptureAction action)
-    {
-        var item = new NativeMenuItem(text)
-        {
-            Gesture = new KeyGesture(key, KeyModifiers.Alt | KeyModifiers.Shift),
-        };
-        item.Click += (_, _) => OnAction(action);
-        return item;
-    }
-
     private void OnAction(CaptureAction action)
     {
-        // Disabled tray entries (recent, settings) are placeholders the later milestones light up.
+        // Routing for actions forwarded from a second launch (CLI verbs). The hotkey and tray call the
+        // controller directly. Recent/Settings are placeholders the later milestones light up.
         switch (action)
         {
             case CaptureAction.CaptureFullScreen:
@@ -122,14 +113,14 @@ public partial class App : Application
             case CaptureAction.CaptureMonitor:
                 _capture?.CaptureMonitorUnderCursor();
                 break;
-            case CaptureAction.CaptureWindow:
-                _capture?.CaptureActiveWindow();
+            case CaptureAction.CaptureRegion:
+                _capture?.BeginRegionCapture();
                 break;
             case CaptureAction.ShowRecent:
             case CaptureAction.ShowSettings:
                 break;
-            default: // CaptureRegion / ShowOverlay
-                _capture?.BeginRegionCapture();
+            default: // ShowOverlay / CaptureWindow → the chooser
+                _capture?.ShowCaptureMenu();
                 break;
         }
     }

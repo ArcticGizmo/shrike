@@ -5,9 +5,9 @@ namespace Shrike.Tests;
 public class HotkeyTests
 {
     [Fact]
-    public void Default_region_hotkey_is_alt_shift_q()
+    public void Default_capture_hotkey_is_alt_shift_q()
     {
-        var hk = Hotkey.DefaultRegion;
+        var hk = Hotkey.DefaultCapture;
         Assert.Equal(HotkeyModifiers.Alt | HotkeyModifiers.Shift, hk.Modifiers);
         Assert.Equal("Q", hk.Key);
         Assert.Equal("Alt+Shift+Q", hk.ToString());
@@ -34,7 +34,7 @@ public class HotkeyTests
     public void ToWin32Modifiers_matches_MOD_constants_with_norepeat()
     {
         // MOD_ALT(1) | MOD_SHIFT(4) | MOD_NOREPEAT(0x4000)
-        Assert.Equal(0x4000u | 0x1u | 0x4u, Hotkey.DefaultRegion.ToWin32Modifiers());
+        Assert.Equal(0x4000u | 0x1u | 0x4u, Hotkey.DefaultCapture.ToWin32Modifiers());
     }
 
     [Theory]

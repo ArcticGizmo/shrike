@@ -126,8 +126,8 @@ public partial class OverlayWindow : Window
         base.OnPointerMoved(e);
         var p = e.GetPosition(this);
 
-        if (_vLine is not null) Canvas.SetLeft(_vLine, p.X);
-        if (_hLine is not null) Canvas.SetTop(_hLine, p.Y);
+        if (_vLine is not null) { Canvas.SetLeft(_vLine, p.X); _vLine.IsVisible = true; }
+        if (_hLine is not null) { Canvas.SetTop(_hLine, p.Y); _hLine.IsVisible = true; }
 
         UpdateLoupe(p);
 
@@ -185,6 +185,17 @@ public partial class OverlayWindow : Window
         _session.Complete(PhysicalX(p.X), PhysicalY(p.Y));
     }
 
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        // The pointer left this monitor — clear its crosshair + loupe so they don't linger behind
+        // while the overlay on the new monitor takes over. (During a drag the pointer is captured,
+        // so exit doesn't fire and the loupe correctly follows the drag.)
+        if (_vLine is not null) _vLine.IsVisible = false;
+        if (_hLine is not null) _hLine.IsVisible = false;
+        if (_loupe is not null) _loupe.IsVisible = false;
+    }
+
     private void Render()
     {
         // Active drag with real area → selection mode.
@@ -202,19 +213,18 @@ public partial class OverlayWindow : Window
         if (_selBorder is not null) _selBorder.IsVisible = false;
         if (_readoutPill is not null) _readoutPill.IsVisible = false;
 
-        // Hovering a window (not dragging) → snap-highlight it.
+        // Hovering a window (not dragging) → highlight only its border; the scrim stays uniform so
+        // the other monitors' brightness doesn't change (the crosshair already shows where you are).
+        UpdateScrim(null);
         var snap = _session.IsDragging ? null : _session.SnapCandidate;
         if (snap is { } window && !window.Normalized().IsEmpty)
         {
-            var w = window.Normalized();
-            SetSnapBorder(w);
-            UpdateScrim(ToLocalRect(w));
+            SetSnapBorder(window.Normalized());
             if (_hintPill is not null) _hintPill.IsVisible = false;
         }
         else
         {
             SetSnapBorder(null);
-            UpdateScrim(null);
             if (_hintPill is not null) _hintPill.IsVisible = !_session.IsDragging;
         }
     }
