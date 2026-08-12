@@ -1,5 +1,7 @@
 using Avalonia;
 using Shrike.App.Services;
+using Shrike.Core.Capture;
+using Shrike.Core.Imaging;
 using Shrike.Core.Ipc;
 using Shrike.Core.Startup;
 
@@ -14,6 +16,11 @@ internal static class Program
     {
         // First line: start the snappy-load clock so every later mark is measured from process entry.
         var budget = StartupBudget.Start();
+
+        // Headless diagnostic: capture the whole virtual screen, encode each format, report sizes.
+        // Proves the capture→encode pipeline without any UI. (Writes to the given dir, default CWD.)
+        if (args.Length > 0 && string.Equals(args[0], "capture-test", StringComparison.OrdinalIgnoreCase))
+            return RunCaptureTest(args.Length > 1 ? args[1] : ".");
 
         var measure = args.Length > 0
             && string.Equals(args[0], "measure-startup", StringComparison.OrdinalIgnoreCase);
@@ -42,6 +49,33 @@ internal static class Program
             single.Dispose();
         }
 
+        return 0;
+    }
+
+    private static int RunCaptureTest(string outputDir)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("capture-test requires Windows.");
+            return 1;
+        }
+
+        var bounds = ScreenCapture.VirtualScreenBounds();
+        var image = ScreenCapture.Capture(bounds);
+        Directory.CreateDirectory(outputDir);
+
+        var stem = CaptureNaming.Expand(CaptureNaming.DefaultTemplate, image.CapturedAt);
+        Console.WriteLine($"captured {image.Width}x{image.Height} from {bounds.X},{bounds.Y}");
+
+        foreach (var format in Enum.GetValues<ImageFormatKind>())
+        {
+            var bytes = ImageCodec.Encode(image, format);
+            var path = Path.Combine(outputDir, stem + ImageCodec.Extension(format));
+            File.WriteAllBytes(path, bytes);
+            Console.WriteLine($"  {format,-5} {bytes.Length,9:n0} bytes -> {path}");
+        }
+
+        Console.WriteLine($"  DIBv5 {ImageCodec.ToDibV5(image).Length,9:n0} bytes (clipboard blob)");
         return 0;
     }
 

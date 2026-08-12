@@ -12,4 +12,9 @@
     <InternalsVisibleTo Include="Shrike.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Managed PNG/JPEG/WebP encoder — keeps Shrike.Core free of native imaging dependencies. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
 </Project>
