@@ -20,10 +20,17 @@ internal static class TopLevelWindows
     public static IReadOnlyList<PixelBounds> Enumerate()
     {
         var list = new List<PixelBounds>();
+        var ownProcessId = (uint)Environment.ProcessId;
 
         EnumWindowsProc callback = (hwnd, _) =>
         {
             if (!IsWindowVisible(hwnd))
+                return true;
+
+            // Never snap-select one of our own windows (chooser, dimmers, overlays, editor) — they may
+            // still be open (teardown is deferred) when the region overlay enumerates windows.
+            GetWindowThreadProcessId(hwnd, out var processId);
+            if (processId == ownProcessId)
                 return true;
 
             // Skip windows cloaked by the shell (other virtual desktops, suspended UWP, etc.).
@@ -82,6 +89,9 @@ internal static class TopLevelWindows
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out RECT value, int size);
