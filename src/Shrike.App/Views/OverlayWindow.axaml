@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Shrike.App.Views.OverlayWindow"
-        Title="Shrike Overlay"
+        Title="Shrike Region"
         WindowDecorations="None"
         Background="Transparent"
         TransparencyLevelHint="Transparent"
@@ -10,32 +10,30 @@
         CanResize="False"
         WindowStartupLocation="Manual">
 
-    <Panel Name="Root" Background="{DynamicResource OverlayScrimBrush}" Cursor="Cross">
+    <Canvas Name="Root" Background="#01000000" Cursor="Cross">
+        <!-- Dimming scrim with a hole punched out for the current selection (geometry set in code). -->
+        <Path Name="Scrim" Fill="{DynamicResource OverlayScrimBrush}" IsHitTestVisible="False" />
 
-        <!-- Crosshair reticle that tracks the pointer (thin amber lines). -->
-        <Canvas Name="CrossLayer" IsHitTestVisible="False">
-            <Rectangle Name="VLine" Width="1" Fill="{DynamicResource AccentBrush}" Opacity="0.7" />
-            <Rectangle Name="HLine" Height="1" Fill="{DynamicResource AccentBrush}" Opacity="0.7" />
-        </Canvas>
+        <!-- Crosshair reticle that tracks the pointer before/while dragging. -->
+        <Rectangle Name="VLine" Width="1" Fill="{DynamicResource AccentBrush}" Opacity="0.55" IsHitTestVisible="False" />
+        <Rectangle Name="HLine" Height="1" Fill="{DynamicResource AccentBrush}" Opacity="0.55" IsHitTestVisible="False" />
 
-        <!-- Centre hint card (M0 stub content). -->
-        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
-                Background="#CC14110D" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
-                CornerRadius="12" Padding="26,20" BoxShadow="0 20 50 -20 #000000">
-            <StackPanel Spacing="10" MinWidth="360">
-                <TextBlock Text="SHRIKE · M0 OVERLAY" FontFamily="Consolas,monospace"
-                           FontSize="12" Foreground="{DynamicResource AccentBrush}"
-                           LetterSpacing="3" HorizontalAlignment="Center" />
-                <TextBlock Text="Region-capture overlay is live on this desktop."
-                           Foreground="{DynamicResource FgBrush}" FontSize="15"
-                           HorizontalAlignment="Center" TextAlignment="Center" />
-                <TextBlock Name="DesktopStatus" Text="Checking virtual desktop…"
-                           Foreground="{DynamicResource MutedBrush}" FontFamily="Consolas,monospace"
-                           FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" />
-                <TextBlock Text="Press Esc or click to dismiss"
-                           Foreground="{DynamicResource MutedBrush}" FontSize="12"
-                           HorizontalAlignment="Center" Margin="0,4,0,0" />
-            </StackPanel>
+        <!-- Selection rectangle outline. -->
+        <Rectangle Name="SelBorder" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5"
+                   IsVisible="False" IsHitTestVisible="False" />
+
+        <!-- Size readout, moved next to the selection while dragging. -->
+        <Border Name="ReadoutPill" IsVisible="False" IsHitTestVisible="False"
+                Background="#CC14110D" CornerRadius="5" Padding="7,3">
+            <TextBlock Name="Readout" FontFamily="Consolas,monospace" FontSize="12"
+                       Foreground="{DynamicResource Accent2Brush}" />
         </Border>
-    </Panel>
+
+        <!-- Instruction pill (positioned centrally in code). -->
+        <Border Name="HintPill" Background="#CC14110D" BorderBrush="{DynamicResource AccentBrush}"
+                BorderThickness="1" CornerRadius="8" Padding="16,9" IsHitTestVisible="False">
+            <TextBlock FontSize="13" Foreground="{DynamicResource FgBrush}"
+                       Text="Drag to select a region  ·  Esc to cancel" />
+        </Border>
+    </Canvas>
 </Window>

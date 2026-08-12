@@ -6,7 +6,6 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Shrike.App.Services;
-using Shrike.App.Views;
 using Shrike.Core.Interop;
 using Shrike.Core.Ipc;
 using Shrike.Core.Startup;
@@ -17,8 +16,8 @@ public partial class App : Application
 {
     private readonly VirtualDesktopService _desktops = VirtualDesktopService.Create();
     private HotkeyService? _hotkeys;
+    private CaptureController? _capture;
     private TrayIcon? _tray;
-    private OverlayWindow? _overlay;
     private bool _overlayMarked;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
@@ -29,6 +28,8 @@ public partial class App : Application
         {
             // Tray-resident: there is no main window, so the app must not exit when no window is open.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+            _capture = new CaptureController(_desktops, onOverlayShown: MarkOverlayShownOnce);
 
             SetupTray(desktop);
 
@@ -90,7 +91,7 @@ public partial class App : Application
 
     private void OnAction(CaptureAction action)
     {
-        // M0 routes every capture intent to the stub overlay; the disabled tray entries (recent,
+        // Every capture intent currently routes to region capture; the disabled tray entries (recent,
         // settings) are placeholders the later milestones light up.
         switch (action)
         {
@@ -98,30 +99,17 @@ public partial class App : Application
             case CaptureAction.ShowSettings:
                 break;
             default:
-                ShowOverlay();
+                _capture?.BeginRegionCapture();
                 break;
         }
     }
 
-    private void ShowOverlay()
+    private void MarkOverlayShownOnce()
     {
-        if (_overlay is not null)
-        {
-            _overlay.Activate();
-            return;
-        }
-
-        var overlay = new OverlayWindow(_desktops);
-        overlay.Closed += (_, _) => _overlay = null;
-        _overlay = overlay;
-        overlay.Show();
-
         // Record only the first overlay for the startup baseline (later shows are already warm).
-        if (!_overlayMarked)
-        {
-            AppEnv.Budget?.Mark(StartupMarks.OverlayShown);
-            _overlayMarked = true;
-        }
+        if (_overlayMarked) return;
+        AppEnv.Budget?.Mark(StartupMarks.OverlayShown);
+        _overlayMarked = true;
     }
 
     /// <summary>
@@ -133,8 +121,8 @@ public partial class App : Application
     {
         Dispatcher.UIThread.Post(() =>
         {
-            ShowOverlay();
-            _overlay?.Close();
+            _capture?.BeginRegionCapture();
+            _capture?.CancelOverlay();
 
             Console.WriteLine(AppEnv.Budget?.ToJson() ?? "{}");
             desktop.Shutdown();

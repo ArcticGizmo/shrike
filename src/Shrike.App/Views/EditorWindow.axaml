@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.EditorWindow"
+        Title="Shrike — Capture"
+        Width="900" Height="620"
+        MinWidth="420" MinHeight="320"
+        WindowStartupLocation="CenterScreen"
+        Background="#14110D">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Background="#1E1913" Padding="10,8"
+                BorderBrush="#322A1E" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Name="CopyButton" Content="Copy" Click="OnCopy" />
+                <Button Name="SaveButton" Content="Save as…" Click="OnSave" />
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+                <Button Name="OpenFolderButton" Content="Open folder" Click="OnOpenFolder" IsEnabled="False" />
+                <Button Name="CopyPathButton" Content="Copy path" Click="OnCopyPath" IsEnabled="False" />
+                <TextBlock Name="Dimensions" VerticalAlignment="Center" Margin="8,0,0,0"
+                           FontFamily="Consolas,monospace" FontSize="12" Foreground="#A89A85" />
+            </StackPanel>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" Background="#1E1913" Padding="12,6"
+                BorderBrush="#322A1E" BorderThickness="0,1,0,0">
+            <TextBlock Name="Status" FontSize="12" Foreground="#A89A85"
+                       Text="Annotation tools arrive in M2 — for now: copy or save." />
+        </Border>
+
+        <!-- Image -->
+        <Border Padding="16" Background="#100E0A">
+            <Image Name="Preview" Stretch="Uniform" />
+        </Border>
+    </DockPanel>
+</Window>
