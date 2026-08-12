@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using Avalonia.Threading;
 using Shrike.App.Native;
 using Shrike.App.Views;
 using Shrike.Core.Capture;
@@ -7,8 +8,8 @@ using Shrike.Core.Interop;
 namespace Shrike.App.Services;
 
 /// <summary>
-/// Orchestrates a capture: pop the region overlay → grab the pixels → show them in the (reused)
-/// editor. Enforces the no-desktop-switch rule when surfacing the editor.
+/// Orchestrates a capture: pop a region overlay on every monitor → grab the pixels → show them in
+/// the (reused) editor. Enforces the no-desktop-switch rule when surfacing the editor.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class CaptureController
@@ -16,7 +17,8 @@ internal sealed class CaptureController
     private readonly VirtualDesktopService _desktops;
     private readonly Action? _onOverlayShown;
 
-    private OverlayWindow? _overlay;
+    private readonly List<OverlayWindow> _overlays = [];
+    private RegionSelectionSession? _session;
     private EditorWindow? _editor;
 
     public CaptureController(VirtualDesktopService desktops, Action? onOverlayShown = null)
@@ -25,27 +27,52 @@ internal sealed class CaptureController
         _onOverlayShown = onOverlayShown;
     }
 
-    /// <summary>Show the region-selection overlay (or focus it if already up).</summary>
+    /// <summary>Show a region-selection overlay on each monitor (or focus the existing set).</summary>
     public void BeginRegionCapture()
     {
-        if (_overlay is not null)
+        if (_overlays.Count > 0)
         {
-            _overlay.Activate();
+            _overlays[0].Activate();
             return;
         }
 
-        var overlay = new OverlayWindow(_desktops);
-        overlay.RegionSelected += OnRegionSelected;
-        overlay.Cancelled += () => { };
-        overlay.Closed += (_, _) => { if (ReferenceEquals(_overlay, overlay)) _overlay = null; };
+        var monitors = Monitors.All();
+        if (monitors.Count == 0)
+            monitors = [new MonitorInfo(ScreenCapture.VirtualScreenBounds(), 1.0, true)];
 
-        _overlay = overlay;
-        overlay.Show();
+        var session = new RegionSelectionSession();
+        session.Completed += region =>
+        {
+            CloseOverlays();
+            OnRegionSelected(region);
+        };
+        session.Cancelled += CloseOverlays;
+        _session = session;
+
+        foreach (var monitor in monitors)
+        {
+            var overlay = new OverlayWindow(session, monitor);
+            _overlays.Add(overlay);
+            overlay.Show();
+        }
+
         _onOverlayShown?.Invoke();
     }
 
-    /// <summary>Dismiss the overlay if it's open (used by the measure-startup path).</summary>
-    public void CancelOverlay() => _overlay?.Close();
+    /// <summary>Dismiss the overlays if open (used by the measure-startup path).</summary>
+    public void CancelOverlay() => _session?.Cancel();
+
+    private void CloseOverlays()
+    {
+        // Defer so we never close a window from inside its own pointer/key event.
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var overlay in _overlays.ToArray())
+                overlay.Close();
+            _overlays.Clear();
+            _session = null;
+        });
+    }
 
     private void OnRegionSelected(PixelBounds region)
     {

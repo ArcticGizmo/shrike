@@ -4,23 +4,26 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Shrike.App.Services;
 using Shrike.Core.Capture;
-using Shrike.Core.Interop;
 using Path = Avalonia.Controls.Shapes.Path;
 
 namespace Shrike.App.Views;
 
 /// <summary>
-/// The region-selection overlay: a borderless, topmost, dimmed full-screen surface. Drag to select a
-/// rectangle (dimming clears over the selection); release to capture; Esc to cancel. A fresh window is
-/// created per invocation, so it is always born on the desktop the user is currently looking at.
+/// One region-selection overlay, covering a single monitor. All overlays in a capture share a
+/// <see cref="RegionSelectionSession"/> (physical-pixel state), so a drag that crosses monitors is
+/// coherent: each window reports pointer positions in physical pixels and renders the shared
+/// selection mapped back into its own DIP space. A fresh set is created per invocation, so overlays
+/// always appear on the current virtual desktop.
 /// </summary>
-/// <remarks>M1 covers the primary screen. Per-monitor overlays and window snap-highlight are the
-/// remaining M1 work; occlusion-correct window capture moves to M4 (Windows.Graphics.Capture).</remarks>
 public partial class OverlayWindow : Window
 {
-    private readonly VirtualDesktopService _desktops;
+    private readonly RegionSelectionSession _session;
+    private readonly MonitorInfo _monitor;
+    private readonly Action _onSessionChanged;
 
+    private Canvas? _root;
     private Path? _scrim;
     private Rectangle? _vLine;
     private Rectangle? _hLine;
@@ -29,25 +32,21 @@ public partial class OverlayWindow : Window
     private TextBlock? _readout;
     private Border? _hintPill;
 
-    private PixelBounds _screenBounds; // physical pixels of the covered screen
-    private double _scaling = 1.0;
-    private Point? _dragStart;
-    private bool _completed;           // guards against firing both selected + cancelled
-
-    /// <summary>Raised with the chosen region in physical pixels.</summary>
-    public event Action<PixelBounds>? RegionSelected;
-
-    /// <summary>Raised when the user dismissed the overlay without selecting.</summary>
-    public event Action? Cancelled;
-
-    // Parameterless ctor kept for the XAML designer only.
-    public OverlayWindow() : this(VirtualDesktopService.Create()) { }
-
-    public OverlayWindow(VirtualDesktopService desktops)
+    // Parameterless ctor for the XAML designer only.
+    public OverlayWindow()
+        : this(new RegionSelectionSession(), new MonitorInfo(new PixelBounds(0, 0, 1920, 1080), 1.0, true))
     {
-        _desktops = desktops;
+    }
+
+    internal OverlayWindow(RegionSelectionSession session, MonitorInfo monitor)
+    {
+        _session = session;
+        _monitor = monitor;
+        _onSessionChanged = Render;
+
         InitializeComponent();
 
+        _root = this.FindControl<Canvas>("Root");
         _scrim = this.FindControl<Path>("Scrim");
         _vLine = this.FindControl<Rectangle>("VLine");
         _hLine = this.FindControl<Rectangle>("HLine");
@@ -55,6 +54,9 @@ public partial class OverlayWindow : Window
         _readoutPill = this.FindControl<Border>("ReadoutPill");
         _readout = this.FindControl<TextBlock>("Readout");
         _hintPill = this.FindControl<Border>("HintPill");
+
+        _session.Changed += _onSessionChanged;
+        Closed += (_, _) => _session.Changed -= _onSessionChanged;
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -63,17 +65,10 @@ public partial class OverlayWindow : Window
     {
         base.OnOpened(e);
 
-        var screen = Screens.Primary ?? (Screens.All.Count > 0 ? Screens.All[0] : null);
-        if (screen is not null)
-        {
-            _screenBounds = new PixelBounds(
-                screen.Bounds.X, screen.Bounds.Y, screen.Bounds.Width, screen.Bounds.Height);
-            _scaling = screen.Scaling <= 0 ? 1.0 : screen.Scaling;
-
-            Position = screen.Bounds.Position;
-            Width = _screenBounds.Width / _scaling;
-            Height = _screenBounds.Height / _scaling;
-        }
+        // Place and size this window to exactly cover its monitor (physical origin; DIP size).
+        Position = new PixelPoint(_monitor.Bounds.X, _monitor.Bounds.Y);
+        Width = _monitor.Bounds.Width / _monitor.Scale;
+        Height = _monitor.Bounds.Height / _monitor.Scale;
 
         if (_vLine is not null) _vLine.Height = Height;
         if (_hLine is not null) _hLine.Width = Width;
@@ -88,7 +83,18 @@ public partial class OverlayWindow : Window
     {
         base.OnKeyDown(e);
         if (e.Key == Key.Escape)
-            Cancel();
+            _session.Cancel();
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        // Capture so this window keeps receiving moves even when the pointer crosses to another monitor.
+        if (_root is not null)
+            e.Pointer.Capture(_root);
+
+        var p = e.GetPosition(this);
+        _session.Begin(PhysicalX(p.X), PhysicalY(p.Y));
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -99,73 +105,63 @@ public partial class OverlayWindow : Window
         if (_vLine is not null) Canvas.SetLeft(_vLine, p.X);
         if (_hLine is not null) Canvas.SetTop(_hLine, p.Y);
 
-        if (_dragStart is { } start)
-            UpdateSelection(start, p);
-    }
-
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        _dragStart = e.GetPosition(this);
-        if (_hintPill is not null) _hintPill.IsVisible = false;
-        if (_selBorder is not null) _selBorder.IsVisible = true;
-        if (_readoutPill is not null) _readoutPill.IsVisible = true;
+        if (_session.IsDragging)
+            _session.Update(PhysicalX(p.X), PhysicalY(p.Y));
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (_dragStart is not { } start)
+        if (!_session.IsDragging)
             return;
 
-        var end = e.GetPosition(this);
-        _dragStart = null;
+        var p = e.GetPosition(this);
+        _session.Complete(PhysicalX(p.X), PhysicalY(p.Y));
+    }
 
-        var region = ToPhysical(start, end);
-        if (region.Width < 2 || region.Height < 2)
+    private void Render()
+    {
+        var cur = _session.Current;
+        if (!_session.IsDragging || cur is not { } selection || selection.Normalized().IsEmpty)
         {
-            Cancel(); // a click / tiny drag cancels rather than capturing a sliver
+            if (_selBorder is not null) _selBorder.IsVisible = false;
+            if (_readoutPill is not null) _readoutPill.IsVisible = false;
+            if (_hintPill is not null) _hintPill.IsVisible = !_session.IsDragging;
+            UpdateScrim(null);
             return;
         }
 
-        _completed = true;
-        RegionSelected?.Invoke(region);
-        Close();
-    }
+        if (_hintPill is not null) _hintPill.IsVisible = false;
 
-    private void Cancel()
-    {
-        if (_completed) return;
-        _completed = true;
-        Cancelled?.Invoke();
-        Close();
-    }
-
-    private void UpdateSelection(Point start, Point current)
-    {
-        var x = Math.Min(start.X, current.X);
-        var y = Math.Min(start.Y, current.Y);
-        var w = Math.Abs(current.X - start.X);
-        var h = Math.Abs(current.Y - start.Y);
-        var rect = new Rect(x, y, w, h);
+        var s = selection.Normalized();
+        var lx = (s.X - _monitor.Bounds.X) / _monitor.Scale;
+        var ly = (s.Y - _monitor.Bounds.Y) / _monitor.Scale;
+        var lw = s.Width / _monitor.Scale;
+        var lh = s.Height / _monitor.Scale;
 
         if (_selBorder is not null)
         {
-            Canvas.SetLeft(_selBorder, x);
-            Canvas.SetTop(_selBorder, y);
-            _selBorder.Width = w;
-            _selBorder.Height = h;
+            Canvas.SetLeft(_selBorder, lx);
+            Canvas.SetTop(_selBorder, ly);
+            _selBorder.Width = lw;
+            _selBorder.Height = lh;
+            _selBorder.IsVisible = true;
         }
 
-        UpdateScrim(rect);
+        UpdateScrim(new Rect(lx, ly, lw, lh));
 
-        // Readout shows physical pixel dimensions (what the file/clipboard will actually be).
-        var physical = ToPhysical(start, current);
-        if (_readout is not null) _readout.Text = $"{physical.Width} × {physical.Height}";
-        if (_readoutPill is not null)
+        // Show the size readout only on monitors the selection actually touches.
+        var touchesThisMonitor = !_monitor.Bounds.Intersect(s).IsEmpty;
+        if (touchesThisMonitor && _readout is not null && _readoutPill is not null)
         {
-            Canvas.SetLeft(_readoutPill, Math.Clamp(x, 0, Math.Max(0, Width - 90)));
-            Canvas.SetTop(_readoutPill, Math.Max(0, y - 26));
+            _readout.Text = $"{s.Width} × {s.Height}";
+            Canvas.SetLeft(_readoutPill, Math.Clamp(lx, 0, Math.Max(0, Width - 90)));
+            Canvas.SetTop(_readoutPill, Math.Max(0, ly - 26));
+            _readoutPill.IsVisible = true;
+        }
+        else if (_readoutPill is not null)
+        {
+            _readoutPill.IsVisible = false;
         }
     }
 
@@ -188,11 +184,6 @@ public partial class OverlayWindow : Window
         Canvas.SetTop(_hintPill, Height * 0.12);
     }
 
-    /// <summary>Convert two window (DIP) points to a physical-pixel region on the covered screen.</summary>
-    private PixelBounds ToPhysical(Point a, Point b)
-    {
-        int X(double dip) => _screenBounds.X + (int)Math.Round(dip * _scaling);
-        int Y(double dip) => _screenBounds.Y + (int)Math.Round(dip * _scaling);
-        return PixelBounds.FromCorners(X(a.X), Y(a.Y), X(b.X), Y(b.Y));
-    }
+    private int PhysicalX(double dip) => _monitor.Bounds.X + (int)Math.Round(dip * _monitor.Scale);
+    private int PhysicalY(double dip) => _monitor.Bounds.Y + (int)Math.Round(dip * _monitor.Scale);
 }

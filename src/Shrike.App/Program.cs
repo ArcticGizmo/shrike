@@ -17,6 +17,10 @@ internal static class Program
         // First line: start the snappy-load clock so every later mark is measured from process entry.
         var budget = StartupBudget.Start();
 
+        // Headless diagnostic: list every detected monitor (bounds + DPI scale). No pixels captured.
+        if (args.Length > 0 && string.Equals(args[0], "monitors", StringComparison.OrdinalIgnoreCase))
+            return RunMonitors();
+
         // Headless diagnostic: capture the whole virtual screen, encode each format, report sizes.
         // Proves the capture→encode pipeline without any UI. (Writes to the given dir, default CWD.)
         if (args.Length > 0 && string.Equals(args[0], "capture-test", StringComparison.OrdinalIgnoreCase))
@@ -49,6 +53,28 @@ internal static class Program
             single.Dispose();
         }
 
+        return 0;
+    }
+
+    private static int RunMonitors()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("monitors requires Windows.");
+            return 1;
+        }
+
+        var monitors = Monitors.All();
+        Console.WriteLine($"{monitors.Count} monitor(s):");
+        foreach (var m in monitors)
+        {
+            var tag = m.IsPrimary ? " (primary)" : "";
+            Console.WriteLine(
+                $"  {m.Bounds.Width}x{m.Bounds.Height} @ {m.Bounds.X},{m.Bounds.Y}  scale {m.Scale:0.##}x{tag}");
+        }
+
+        var vs = ScreenCapture.VirtualScreenBounds();
+        Console.WriteLine($"virtual screen: {vs.Width}x{vs.Height} @ {vs.X},{vs.Y}");
         return 0;
     }
 
