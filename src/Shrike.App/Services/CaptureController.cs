@@ -19,6 +19,7 @@ internal sealed class CaptureController
 
     private readonly List<OverlayWindow> _overlays = [];
     private RegionSelectionSession? _session;
+    private CapturedImage? _frozen;
     private EditorWindow? _editor;
 
     public CaptureController(VirtualDesktopService desktops, Action? onOverlayShown = null)
@@ -40,6 +41,10 @@ internal sealed class CaptureController
         if (monitors.Count == 0)
             monitors = [new MonitorInfo(ScreenCapture.VirtualScreenBounds(), 1.0, true)];
 
+        // Freeze the whole desktop once: the magnifier samples it and the final selection is cropped
+        // from it, so what the loupe shows is exactly what gets captured.
+        _frozen = TryCaptureFrozen();
+
         var session = new RegionSelectionSession();
         session.Completed += region =>
         {
@@ -51,12 +56,24 @@ internal sealed class CaptureController
 
         foreach (var monitor in monitors)
         {
-            var overlay = new OverlayWindow(session, monitor);
+            var overlay = new OverlayWindow(session, monitor, _frozen);
             _overlays.Add(overlay);
             overlay.Show();
         }
 
         _onOverlayShown?.Invoke();
+    }
+
+    private static CapturedImage? TryCaptureFrozen()
+    {
+        try
+        {
+            return ScreenCapture.Capture(ScreenCapture.VirtualScreenBounds());
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>Dismiss the overlays if open (used by the measure-startup path).</summary>
@@ -127,10 +144,28 @@ internal sealed class CaptureController
                 overlay.Close();
             _overlays.Clear();
             _session = null;
+            _frozen = null;
         });
     }
 
-    private void OnRegionSelected(PixelBounds region) => CaptureAndEdit(region);
+    private void OnRegionSelected(PixelBounds region)
+    {
+        // Prefer cropping the frozen snapshot (WYSIWYG with the loupe); fall back to a fresh grab.
+        if (_frozen is not null)
+        {
+            try
+            {
+                ShowInEditor(_frozen.Crop(region));
+                return;
+            }
+            catch
+            {
+                // region outside the frozen buffer — fall through to a live capture
+            }
+        }
+
+        CaptureAndEdit(region);
+    }
 
     private void ShowInEditor(CapturedImage image)
     {

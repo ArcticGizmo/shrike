@@ -4,6 +4,8 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Shrike.App.Imaging;
 using Shrike.App.Services;
 using Shrike.Core.Capture;
 using Path = Avalonia.Controls.Shapes.Path;
@@ -19,8 +21,13 @@ namespace Shrike.App.Views;
 /// </summary>
 public partial class OverlayWindow : Window
 {
+    private const int LoupeSampleHalf = 11;   // sample (2*half+1) px around the cursor
+    private const double LoupeWidth = 164;    // approx loupe box incl. padding
+    private const double LoupeHeight = 176;
+
     private readonly RegionSelectionSession _session;
     private readonly MonitorInfo _monitor;
+    private readonly CapturedImage? _frozen; // frozen full-screen grab for the magnifier
     private readonly Action _onSessionChanged;
 
     private Canvas? _root;
@@ -31,17 +38,21 @@ public partial class OverlayWindow : Window
     private Border? _readoutPill;
     private TextBlock? _readout;
     private Border? _hintPill;
+    private Border? _loupe;
+    private Image? _loupeImage;
+    private TextBlock? _loupeCoords;
 
     // Parameterless ctor for the XAML designer only.
     public OverlayWindow()
-        : this(new RegionSelectionSession(), new MonitorInfo(new PixelBounds(0, 0, 1920, 1080), 1.0, true))
+        : this(new RegionSelectionSession(), new MonitorInfo(new PixelBounds(0, 0, 1920, 1080), 1.0, true), null)
     {
     }
 
-    internal OverlayWindow(RegionSelectionSession session, MonitorInfo monitor)
+    internal OverlayWindow(RegionSelectionSession session, MonitorInfo monitor, CapturedImage? frozen)
     {
         _session = session;
         _monitor = monitor;
+        _frozen = frozen;
         _onSessionChanged = Render;
 
         InitializeComponent();
@@ -54,6 +65,12 @@ public partial class OverlayWindow : Window
         _readoutPill = this.FindControl<Border>("ReadoutPill");
         _readout = this.FindControl<TextBlock>("Readout");
         _hintPill = this.FindControl<Border>("HintPill");
+        _loupe = this.FindControl<Border>("Loupe");
+        _loupeImage = this.FindControl<Image>("LoupeImage");
+        _loupeCoords = this.FindControl<TextBlock>("LoupeCoords");
+
+        if (_loupeImage is not null)
+            RenderOptions.SetBitmapInterpolationMode(_loupeImage, BitmapInterpolationMode.None);
 
         _session.Changed += _onSessionChanged;
         Closed += (_, _) => _session.Changed -= _onSessionChanged;
@@ -105,8 +122,43 @@ public partial class OverlayWindow : Window
         if (_vLine is not null) Canvas.SetLeft(_vLine, p.X);
         if (_hLine is not null) Canvas.SetTop(_hLine, p.Y);
 
+        UpdateLoupe(p);
+
         if (_session.IsDragging)
             _session.Update(PhysicalX(p.X), PhysicalY(p.Y));
+    }
+
+    private void UpdateLoupe(Point local)
+    {
+        if (_frozen is null || _loupe is null || _loupeImage is null)
+            return;
+
+        var cx = PhysicalX(local.X);
+        var cy = PhysicalY(local.Y);
+        var size = LoupeSampleHalf * 2 + 1;
+
+        CapturedImage sample;
+        try
+        {
+            sample = _frozen.Crop(new PixelBounds(cx - LoupeSampleHalf, cy - LoupeSampleHalf, size, size));
+        }
+        catch
+        {
+            _loupe.IsVisible = false;
+            return;
+        }
+
+        _loupeImage.Source = BitmapConverter.ToBitmap(sample);
+        if (_loupeCoords is not null) _loupeCoords.Text = $"{cx}, {cy}";
+
+        // Sit the loupe near the cursor, flipping away from the screen edges.
+        var lx = local.X + 24;
+        var ly = local.Y + 24;
+        if (lx + LoupeWidth > Width) lx = local.X - LoupeWidth - 4;
+        if (ly + LoupeHeight > Height) ly = local.Y - LoupeHeight - 4;
+        Canvas.SetLeft(_loupe, Math.Clamp(lx, 0, Math.Max(0, Width - LoupeWidth)));
+        Canvas.SetTop(_loupe, Math.Clamp(ly, 0, Math.Max(0, Height - LoupeHeight)));
+        _loupe.IsVisible = true;
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)

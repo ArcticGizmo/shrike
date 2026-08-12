@@ -31,4 +31,32 @@ public sealed class CapturedImage
         Source = source;
         CapturedAt = capturedAt;
     }
+
+    /// <summary>
+    /// Extract a sub-image. <paramref name="region"/> is in the same physical-pixel space as
+    /// <see cref="Source"/>; it is clamped to the image, and throws only if there is no overlap.
+    /// Used to crop the final selection (and the magnifier's sample) from a frozen full-screen grab.
+    /// </summary>
+    public CapturedImage Crop(PixelBounds region)
+    {
+        var r = region.Normalized().Intersect(Source);
+        if (r.IsEmpty)
+            throw new ArgumentException("Crop region does not overlap the image.", nameof(region));
+
+        var offsetX = r.X - Source.X;
+        var offsetY = r.Y - Source.Y;
+        var srcStride = Width * 4;
+        var dstStride = r.Width * 4;
+        var outBuffer = new byte[dstStride * r.Height];
+
+        for (var row = 0; row < r.Height; row++)
+        {
+            Array.Copy(
+                Bgra, (offsetY + row) * srcStride + offsetX * 4,
+                outBuffer, row * dstStride,
+                dstStride);
+        }
+
+        return new CapturedImage(r.Width, r.Height, outBuffer, r, CapturedAt);
+    }
 }
