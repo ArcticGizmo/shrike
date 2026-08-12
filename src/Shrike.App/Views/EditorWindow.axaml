@@ -1,38 +1,87 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Shrike.App.Controls"
         x:Class="Shrike.App.Views.EditorWindow"
         Title="Shrike — Capture"
-        Width="900" Height="620"
-        MinWidth="420" MinHeight="320"
+        Width="960" Height="680"
+        MinWidth="520" MinHeight="380"
         WindowStartupLocation="CenterScreen"
         Background="#14110D">
 
+    <Window.Styles>
+        <Style Selector="Button.tool">
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.tool.active">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#1A1305" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.swatch">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+    </Window.Styles>
+
     <DockPanel LastChildFill="True">
 
-        <!-- Toolbar -->
+        <!-- Annotation toolbar -->
         <Border DockPanel.Dock="Top" Background="#1E1913" Padding="10,8"
                 BorderBrush="#322A1E" BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Name="CopyButton" Content="Copy" Click="OnCopy" />
-                <Button Name="SaveButton" Content="Save as…" Click="OnSave" />
+            <StackPanel Orientation="Horizontal" Spacing="5">
+                <Button Classes="tool" Tag="None" Content="Select" Click="OnToolClick" />
+                <Button Classes="tool" Tag="Rectangle" Content="Rect" Click="OnToolClick" />
+                <Button Classes="tool" Tag="Ellipse" Content="Oval" Click="OnToolClick" />
+                <Button Classes="tool" Tag="Line" Content="Line" Click="OnToolClick" />
+                <Button Classes="tool" Tag="Arrow" Content="Arrow" Click="OnToolClick" />
+                <Button Classes="tool" Tag="Freehand" Content="Pen" Click="OnToolClick" />
+                <Button Classes="tool" Tag="Highlight" Content="Mark" Click="OnToolClick" />
+                <Button Classes="tool" Tag="Redaction" Content="Redact" Click="OnToolClick" />
+
                 <Border Width="1" Background="#322A1E" Margin="4,2" />
-                <Button Name="OpenFolderButton" Content="Open folder" Click="OnOpenFolder" IsEnabled="False" />
-                <Button Name="CopyPathButton" Content="Copy path" Click="OnCopyPath" IsEnabled="False" />
-                <TextBlock Name="Dimensions" VerticalAlignment="Center" Margin="8,0,0,0"
-                           FontFamily="Consolas,monospace" FontSize="12" Foreground="#A89A85" />
+
+                <Button Classes="swatch" Tag="#F5A524" Background="#F5A524" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#EF4444" Background="#EF4444" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#4ADE80" Background="#4ADE80" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#60A5FA" Background="#60A5FA" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#EDE6DA" Background="#EDE6DA" Click="OnColorClick" />
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
+                <Button Classes="tool" Tag="2" Content="S" Click="OnStrokeClick" />
+                <Button Classes="tool" Tag="4" Content="M" Click="OnStrokeClick" />
+                <Button Classes="tool" Tag="8" Content="L" Click="OnStrokeClick" />
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
+                <Button Classes="tool" Content="Undo" Click="OnUndo" />
+                <Button Classes="tool" Content="Redo" Click="OnRedo" />
             </StackPanel>
         </Border>
 
-        <!-- Status bar -->
-        <Border DockPanel.Dock="Bottom" Background="#1E1913" Padding="12,6"
+        <!-- Output bar -->
+        <Border DockPanel.Dock="Bottom" Background="#1E1913" Padding="10,8"
                 BorderBrush="#322A1E" BorderThickness="0,1,0,0">
-            <TextBlock Name="Status" FontSize="12" Foreground="#A89A85"
-                       Text="Annotation tools arrive in M2 — for now: copy or save." />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Name="CopyButton" Content="Copy" Click="OnCopy" />
+                <Button Name="SaveButton" Content="Save as…" Click="OnSave" />
+                <Button Name="OpenFolderButton" Content="Open folder" Click="OnOpenFolder" IsEnabled="False" />
+                <Button Name="CopyPathButton" Content="Copy path" Click="OnCopyPath" IsEnabled="False" />
+                <TextBlock Name="Dimensions" VerticalAlignment="Center" Margin="6,0,0,0"
+                           FontFamily="Consolas,monospace" FontSize="12" Foreground="#A89A85" />
+                <TextBlock Name="Status" VerticalAlignment="Center" FontSize="12" Foreground="#8A7C68" />
+            </StackPanel>
         </Border>
 
-        <!-- Image -->
-        <Border Padding="16" Background="#100E0A">
-            <Image Name="Preview" Stretch="Uniform" />
+        <!-- Drawing surface -->
+        <Border Padding="14" Background="#100E0A">
+            <controls:AnnotationSurface Name="Surface" />
         </Border>
     </DockPanel>
 </Window>

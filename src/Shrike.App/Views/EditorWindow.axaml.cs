@@ -1,35 +1,41 @@
 using System.Diagnostics;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
-using Shrike.App.Imaging;
+using Avalonia.VisualTree;
+using Shrike.App.Controls;
 using Shrike.App.Native;
+using Shrike.Core.Annotations;
 using Shrike.Core.Capture;
 using Shrike.Core.Imaging;
 
 namespace Shrike.App.Views;
 
 /// <summary>
-/// The screenshot editor: shows a capture and lets the user copy it (PNG + DIB) or save it
-/// (PNG/JPG/WebP). M1 is view + output only; the annotation toolbox lands in M2. The window is reused
-/// across captures so re-opening is instant.
+/// The screenshot editor: shows a capture, lets the user annotate it (M2), and copy (PNG + DIB) or
+/// save it (PNG/JPG/WebP). Export flattens the capture + annotations, then applies the destructive
+/// redaction scrub. The window is reused across captures so re-opening is instant.
 /// </summary>
 public partial class EditorWindow : Window
 {
     private CapturedImage? _capture;
+    private AnnotationDocument _document = new();
     private string? _lastSavedPath;
 
-    private Image? _preview;
+    private AnnotationSurface? _surface;
     private TextBlock? _dimensions;
     private TextBlock? _status;
     private Button? _openFolderButton;
     private Button? _copyPathButton;
+    private readonly List<Button> _toolButtons = [];
 
     public EditorWindow()
     {
         InitializeComponent();
-        _preview = this.FindControl<Image>("Preview");
+        _surface = this.FindControl<AnnotationSurface>("Surface");
         _dimensions = this.FindControl<TextBlock>("Dimensions");
         _status = this.FindControl<TextBlock>("Status");
         _openFolderButton = this.FindControl<Button>("OpenFolderButton");
@@ -38,26 +44,108 @@ public partial class EditorWindow : Window
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
-    /// <summary>Load a new capture into the editor, resetting per-capture state.</summary>
+    /// <summary>Load a new capture into the editor, resetting annotations + per-capture state.</summary>
     public void SetCapture(CapturedImage image)
     {
         _capture = image;
         _lastSavedPath = null;
+        _document = new AnnotationDocument();
 
-        if (_preview is not null) _preview.Source = BitmapConverter.ToBitmap(image);
+        _surface?.SetContent(image, _document);
+        if (_surface is not null) _surface.Tool = AnnotationTool.None;
+
         if (_dimensions is not null) _dimensions.Text = $"{image.Width} × {image.Height}";
         if (_openFolderButton is not null) _openFolderButton.IsEnabled = false;
         if (_copyPathButton is not null) _copyPathButton.IsEnabled = false;
-        SetStatus("Annotation tools arrive in M2 — for now: copy or save.");
+        SetStatus("Pick a tool and drag to annotate · Ctrl+Z to undo");
     }
 
-    private void OnCopy(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    // ---- toolbar ----
+
+    private void OnToolClick(object? sender, RoutedEventArgs e)
     {
-        if (_capture is null || !OperatingSystem.IsWindows())
+        if (sender is not Button button || _surface is null) return;
+        if (Enum.TryParse<AnnotationTool>((string?)button.Tag, out var tool))
+        {
+            _surface.Tool = tool;
+            HighlightActiveTool(button);
+            SetStatus(tool == AnnotationTool.None ? "Select" : $"Tool: {tool}");
+        }
+    }
+
+    private void HighlightActiveTool(Button active)
+    {
+        // Track tool buttons the first time, then flip the .active class.
+        if (_toolButtons.Count == 0)
+            CollectToolButtons(this);
+
+        foreach (var b in _toolButtons)
+            b.Classes.Set("active", ReferenceEquals(b, active));
+    }
+
+    private void CollectToolButtons(Visual root)
+    {
+        foreach (var child in root.GetVisualChildren())
+        {
+            if (child is Button b && b.Classes.Contains("tool") && b.Tag is string tag
+                && Enum.TryParse<AnnotationTool>(tag, out _))
+            {
+                _toolButtons.Add(b);
+            }
+            CollectToolButtons(child);
+        }
+    }
+
+    private void OnColorClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string hex } && _surface is not null)
+        {
+            _surface.StrokeColorHex = hex;
+            SetStatus($"Colour {hex}");
+        }
+    }
+
+    private void OnStrokeClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string width } && _surface is not null
+            && double.TryParse(width, out var w))
+        {
+            _surface.StrokeWidth = w;
+            SetStatus($"Stroke {w:0}px");
+        }
+    }
+
+    private void OnUndo(object? sender, RoutedEventArgs e) => _document.Undo();
+    private void OnRedo(object? sender, RoutedEventArgs e) => _document.Redo();
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)) _document.Redo();
+            else if (e.Key == Key.Z) _document.Undo();
+            else if (e.Key == Key.Y) _document.Redo();
+        }
+    }
+
+    // ---- export ----
+
+    /// <summary>Flatten the capture + annotations, then apply the destructive redaction scrub.</summary>
+    private CapturedImage? BuildExport()
+    {
+        var flattened = _surface?.RenderFlattened() ?? _capture;
+        if (flattened is null) return null;
+        return Redaction.Apply(flattened, _document.RedactionRects());
+    }
+
+    private void OnCopy(object? sender, RoutedEventArgs e)
+    {
+        if (!OperatingSystem.IsWindows() || BuildExport() is not { } image)
             return;
 
-        var png = ImageCodec.Encode(_capture, ImageFormatKind.Png);
-        var dib = ImageCodec.ToDibV5(_capture);
+        var png = ImageCodec.Encode(image, ImageFormatKind.Png);
+        var dib = ImageCodec.ToDibV5(image);
         var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
 
         SetStatus(ClipboardImage.Set(hwnd, png, dib)
@@ -65,12 +153,12 @@ public partial class EditorWindow : Window
             : "Couldn't reach the clipboard — try again.");
     }
 
-    private async void OnSave(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OnSave(object? sender, RoutedEventArgs e)
     {
-        if (_capture is null)
+        if (BuildExport() is not { } image)
             return;
 
-        var suggested = CaptureNaming.Expand(CaptureNaming.DefaultTemplate, _capture.CapturedAt);
+        var suggested = CaptureNaming.Expand(CaptureNaming.DefaultTemplate, image.CapturedAt);
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save capture",
@@ -92,8 +180,7 @@ public partial class EditorWindow : Window
 
         try
         {
-            var bytes = ImageCodec.Encode(_capture, format);
-            await File.WriteAllBytesAsync(path, bytes);
+            await File.WriteAllBytesAsync(path, ImageCodec.Encode(image, format));
 
             _lastSavedPath = path;
             if (_openFolderButton is not null) _openFolderButton.IsEnabled = true;
@@ -106,19 +193,18 @@ public partial class EditorWindow : Window
         }
     }
 
-    private void OnOpenFolder(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnOpenFolder(object? sender, RoutedEventArgs e)
     {
         if (_lastSavedPath is null || !OperatingSystem.IsWindows())
             return;
 
-        // Open Explorer with the saved file selected.
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{_lastSavedPath}\"")
         {
             UseShellExecute = true,
         });
     }
 
-    private void OnCopyPath(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnCopyPath(object? sender, RoutedEventArgs e)
     {
         if (_lastSavedPath is null || !OperatingSystem.IsWindows())
             return;
