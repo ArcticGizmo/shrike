@@ -25,16 +25,25 @@ public partial class DimWindow : Window
     {
         _monitor = monitor;
         InitializeComponent();
+
+        // Size + position before Show so the scrim never flashes at a default geometry first.
+        ApplyMonitorLayout();
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
-    protected override void OnOpened(EventArgs e)
+    /// <summary>Cover the monitor exactly (physical origin; DIP size).</summary>
+    private void ApplyMonitorLayout()
     {
-        base.OnOpened(e);
         Position = new PixelPoint(_monitor.Bounds.X, _monitor.Bounds.Y);
         Width = _monitor.Bounds.Width / _monitor.Scale;
         Height = _monitor.Bounds.Height / _monitor.Scale;
+    }
+
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        ApplyMonitorLayout(); // re-assert in case the pre-show geometry didn't stick on this platform
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

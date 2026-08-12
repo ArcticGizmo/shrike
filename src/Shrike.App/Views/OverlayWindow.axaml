@@ -33,13 +33,6 @@
                        Foreground="{DynamicResource Accent2Brush}" />
         </Border>
 
-        <!-- Instruction pill (positioned centrally in code). -->
-        <Border Name="HintPill" Background="#CC14110D" BorderBrush="{DynamicResource AccentBrush}"
-                BorderThickness="1" CornerRadius="8" Padding="16,9" IsHitTestVisible="False">
-            <TextBlock FontSize="13" Foreground="{DynamicResource FgBrush}"
-                       Text="Drag to select a region  ·  Esc to cancel" />
-        </Border>
-
         <!-- Magnifier loupe: zoomed frozen-pixel view + centre reticle + coordinate readout. -->
         <Border Name="Loupe" IsVisible="False" IsHitTestVisible="False"
                 Background="#E014110D" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"

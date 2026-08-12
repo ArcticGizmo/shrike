@@ -40,7 +40,6 @@ public partial class OverlayWindow : Window
     private Rectangle? _selBorder;
     private Border? _readoutPill;
     private TextBlock? _readout;
-    private Border? _hintPill;
     private Border? _loupe;
     private Image? _loupeImage;
     private TextBlock? _loupeCoords;
@@ -71,7 +70,6 @@ public partial class OverlayWindow : Window
         _selBorder = this.FindControl<Rectangle>("SelBorder");
         _readoutPill = this.FindControl<Border>("ReadoutPill");
         _readout = this.FindControl<TextBlock>("Readout");
-        _hintPill = this.FindControl<Border>("HintPill");
         _loupe = this.FindControl<Border>("Loupe");
         _loupeImage = this.FindControl<Image>("LoupeImage");
         _loupeCoords = this.FindControl<TextBlock>("LoupeCoords");
@@ -81,15 +79,17 @@ public partial class OverlayWindow : Window
 
         _session.Changed += _onSessionChanged;
         Closed += (_, _) => _session.Changed -= _onSessionChanged;
+
+        // Size + position the window to cover its monitor BEFORE it is shown, so it never paints a
+        // default-geometry frame first (which flashes the scrim + hint pill in the wrong place).
+        ApplyMonitorLayout();
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
-    protected override void OnOpened(EventArgs e)
+    /// <summary>Place and size this window to exactly cover its monitor (physical origin; DIP size).</summary>
+    private void ApplyMonitorLayout()
     {
-        base.OnOpened(e);
-
-        // Place and size this window to exactly cover its monitor (physical origin; DIP size).
         Position = new PixelPoint(_monitor.Bounds.X, _monitor.Bounds.Y);
         Width = _monitor.Bounds.Width / _monitor.Scale;
         Height = _monitor.Bounds.Height / _monitor.Scale;
@@ -97,8 +97,12 @@ public partial class OverlayWindow : Window
         if (_vLine is not null) _vLine.Height = Height;
         if (_hLine is not null) _hLine.Width = Width;
         UpdateScrim(null);
-        CentreHint();
+    }
 
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        ApplyMonitorLayout(); // re-assert in case the pre-show geometry didn't stick on this platform
         Activate();
         Focus();
     }
@@ -205,7 +209,6 @@ public partial class OverlayWindow : Window
         {
             DrawSelection(current.Normalized());
             SetSnapBorder(null);
-            if (_hintPill is not null) _hintPill.IsVisible = false;
             return;
         }
 
@@ -218,15 +221,9 @@ public partial class OverlayWindow : Window
         UpdateScrim(null);
         var snap = _session.IsDragging ? null : _session.SnapCandidate;
         if (snap is { } window && !window.Normalized().IsEmpty)
-        {
             SetSnapBorder(window.Normalized());
-            if (_hintPill is not null) _hintPill.IsVisible = false;
-        }
         else
-        {
             SetSnapBorder(null);
-            if (_hintPill is not null) _hintPill.IsVisible = !_session.IsDragging;
-        }
     }
 
     private void DrawSelection(PixelBounds s)
@@ -290,15 +287,6 @@ public partial class OverlayWindow : Window
         _scrim.Data = hole is { } h && h.Width > 0 && h.Height > 0
             ? new CombinedGeometry(GeometryCombineMode.Exclude, full, new RectangleGeometry(h))
             : full;
-    }
-
-    private void CentreHint()
-    {
-        if (_hintPill is null) return;
-        _hintPill.Measure(new Size(Width, Height));
-        var size = _hintPill.DesiredSize;
-        Canvas.SetLeft(_hintPill, (Width - size.Width) / 2);
-        Canvas.SetTop(_hintPill, Height * 0.12);
     }
 
     private int PhysicalX(double dip) => _monitor.Bounds.X + (int)Math.Round(dip * _monitor.Scale);
