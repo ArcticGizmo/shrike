@@ -30,6 +30,7 @@ public partial class EditorWindow : Window
     private TextBlock? _status;
     private Button? _openFolderButton;
     private Button? _copyPathButton;
+    private Button? _zoomLabel;
 
     private readonly List<Button> _toolButtons = [];
     private readonly List<Button> _strokeButtons = [];
@@ -44,6 +45,9 @@ public partial class EditorWindow : Window
         _status = this.FindControl<TextBlock>("Status");
         _openFolderButton = this.FindControl<Button>("OpenFolderButton");
         _copyPathButton = this.FindControl<Button>("CopyPathButton");
+        _zoomLabel = this.FindControl<Button>("ZoomLabel");
+
+        if (_surface is not null) _surface.ZoomChanged += RefreshZoomLabel;
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -149,6 +153,20 @@ public partial class EditorWindow : Window
     private void OnUndo(object? sender, RoutedEventArgs e) => _document.Undo();
     private void OnRedo(object? sender, RoutedEventArgs e) => _document.Redo();
 
+    // ---- zoom ----
+
+    private void OnZoomIn(object? sender, RoutedEventArgs e) => _surface?.ZoomIn();
+    private void OnZoomOut(object? sender, RoutedEventArgs e) => _surface?.ZoomOut();
+    private void OnZoomFit(object? sender, RoutedEventArgs e) => _surface?.ZoomToFit();
+    private void OnZoomActual(object? sender, RoutedEventArgs e) => _surface?.ZoomToActual();
+
+    /// <summary>Reflect the surface's zoom in the toolbar button ("Fit" or a percentage).</summary>
+    private void RefreshZoomLabel()
+    {
+        if (_zoomLabel is null || _surface is null) return;
+        _zoomLabel.Content = _surface.IsFit ? "Fit" : $"{_surface.ZoomPercent:0}%";
+    }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -157,6 +175,11 @@ public partial class EditorWindow : Window
             if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)) _document.Redo();
             else if (e.Key == Key.Z) _document.Undo();
             else if (e.Key == Key.Y) _document.Redo();
+            // Zoom: Ctrl++ / Ctrl+= (in), Ctrl+- (out), Ctrl+0 (fit), Ctrl+1 (100%).
+            else if (e.Key is Key.OemPlus or Key.Add) { _surface?.ZoomIn(); e.Handled = true; }
+            else if (e.Key is Key.OemMinus or Key.Subtract) { _surface?.ZoomOut(); e.Handled = true; }
+            else if (e.Key is Key.D0 or Key.NumPad0) { _surface?.ZoomToFit(); e.Handled = true; }
+            else if (e.Key is Key.D1 or Key.NumPad1) { _surface?.ZoomToActual(); e.Handled = true; }
         }
     }
 

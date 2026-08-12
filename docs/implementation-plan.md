@@ -94,8 +94,8 @@
 - Snappy-load budget still green.
 
 **Remaining M2 chunks (after the draw/undo/redo/redact first cut):**
+- ✅ **Editor zoom / unzoom** — fit / +/− (1.25× steps) / 100%, Ctrl+wheel zoom-to-cursor, Ctrl+ +/-/0/1 shortcuts; canvas scrolls when zoomed past the viewport. Annotations stay in image-pixel coords so they're zoom-independent.
 - Text tool, step-number badges, select/move existing annotations, crop.
-- **Editor zoom / unzoom** (zoom the canvas for pixel-precise annotation) — requested during M2 review, scheduled for the next M2 chunk.
 
 ### M3 · Recent-captures ring
 *"Show me the last few and let me re-copy" — memory-only.*

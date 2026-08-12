@@ -3,8 +3,8 @@
         xmlns:controls="clr-namespace:Shrike.App.Controls"
         x:Class="Shrike.App.Views.EditorWindow"
         Title="Shrike — Capture"
-        Width="960" Height="680"
-        MinWidth="520" MinHeight="380"
+        Width="1200" Height="680"
+        MinWidth="640" MinHeight="380"
         WindowStartupLocation="CenterScreen"
         Background="#14110D">
 
@@ -39,6 +39,7 @@
         <!-- Annotation toolbar -->
         <Border DockPanel.Dock="Top" Background="#1E1913" Padding="10,8"
                 BorderBrush="#322A1E" BorderThickness="0,0,0,1">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <StackPanel Orientation="Horizontal" Spacing="5">
                 <Button Classes="tool" Tag="None" Content="Select" Click="OnToolClick" />
                 <Button Classes="tool" Tag="Rectangle" Content="Rect" Click="OnToolClick" />
@@ -67,7 +68,16 @@
 
                 <Button Classes="action" Content="Undo" Click="OnUndo" />
                 <Button Classes="action" Content="Redo" Click="OnRedo" />
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
+                <Button Classes="action" Content="−" Click="OnZoomOut" ToolTip.Tip="Zoom out (Ctrl+-)" />
+                <Button Name="ZoomLabel" Classes="action" Content="Fit" Click="OnZoomFit"
+                        MinWidth="52" ToolTip.Tip="Fit to window (Ctrl+0)" />
+                <Button Classes="action" Content="+" Click="OnZoomIn" ToolTip.Tip="Zoom in (Ctrl++)" />
+                <Button Classes="action" Content="100%" Click="OnZoomActual" ToolTip.Tip="Actual size (Ctrl+1)" />
             </StackPanel>
+          </ScrollViewer>
         </Border>
 
         <!-- Output bar -->

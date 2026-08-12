@@ -1,10 +1,12 @@
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Shrike.App.Imaging;
 using Shrike.Core.Annotations;
 using Shrike.Core.Capture;
@@ -33,13 +35,23 @@ public enum AnnotationTool
 /// </summary>
 public sealed class AnnotationSurface : UserControl
 {
-    private readonly Grid _root = new();
+    private readonly ScrollViewer _scroller = new();
     private readonly Canvas _canvas = new() { Background = Brushes.Transparent };
     private readonly Image _baseImage = new() { Stretch = Stretch.Fill };
 
     private CapturedImage? _image;
     private AnnotationDocument? _document;
-    private double _scale = 1;
+
+    /// <summary>Scale that fits the whole capture inside the viewport (recomputed on resize).</summary>
+    private double _fitScale = 1;
+
+    /// <summary>Explicit zoom scale, or <c>null</c> for auto-fit mode.</summary>
+    private double? _zoom;
+
+    /// <summary>Zoom bounds (image-px : DIP). Fit can go below <see cref="MinZoom"/> for huge captures.</summary>
+    private const double MinZoom = 0.1;
+    private const double MaxZoom = 8;
+    private const double ZoomStep = 1.25;
 
     private bool _dragging;
     private Point _dragStart;
@@ -50,20 +62,37 @@ public sealed class AnnotationSurface : UserControl
     public string StrokeColorHex { get; set; } = "#F5A524";
     public double StrokeWidth { get; set; } = 4;
 
+    /// <summary>The scale actually in effect (explicit zoom if set, otherwise the fit scale).</summary>
+    private double Scale => _zoom ?? _fitScale;
+
+    /// <summary>True while the surface auto-fits the capture to the viewport.</summary>
+    public bool IsFit => _zoom is null;
+
+    /// <summary>Current zoom as a percentage (100% = one image pixel per DIP).</summary>
+    public double ZoomPercent => Scale * 100;
+
+    /// <summary>Raised whenever the effective zoom changes, so the editor can update its label.</summary>
+    public event Action? ZoomChanged;
+
     public AnnotationSurface()
     {
         ClipToBounds = true;
+
         _canvas.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
         _canvas.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         _canvas.Children.Add(_baseImage);
-        _root.Children.Add(_canvas);
-        Content = _root;
+
+        _scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+        _scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        _scroller.Content = _canvas;
+        Content = _scroller;
 
         _baseImage.IsHitTestVisible = false;
 
         _canvas.PointerPressed += OnPressed;
         _canvas.PointerMoved += OnMoved;
         _canvas.PointerReleased += OnReleased;
+        PointerWheelChanged += OnWheel;
 
         SizeChanged += (_, _) => Layout();
     }
@@ -76,7 +105,9 @@ public sealed class AnnotationSurface : UserControl
         _document = document;
         _document.Changed += Rerender;
         _baseImage.Source = BitmapConverter.ToBitmap(image);
+        _zoom = null; // every new capture opens fit-to-window
         Layout();
+        ZoomChanged?.Invoke();
     }
 
     private void Layout()
@@ -86,11 +117,12 @@ public sealed class AnnotationSurface : UserControl
         var availH = Bounds.Height;
         if (availW <= 0 || availH <= 0) return;
 
-        var scale = Math.Min(availW / _image.Width, availH / _image.Height);
-        _scale = scale is <= 0 or double.NaN ? 1 : Math.Min(scale, 4);
+        var fit = Math.Min(availW / _image.Width, availH / _image.Height);
+        _fitScale = fit is <= 0 or double.NaN ? 1 : Math.Min(fit, 4);
 
-        _canvas.Width = _image.Width * _scale;
-        _canvas.Height = _image.Height * _scale;
+        var scale = Scale;
+        _canvas.Width = _image.Width * scale;
+        _canvas.Height = _image.Height * scale;
         _baseImage.Width = _canvas.Width;
         _baseImage.Height = _canvas.Height;
         Canvas.SetLeft(_baseImage, 0);
@@ -111,7 +143,7 @@ public sealed class AnnotationSurface : UserControl
         if (_document is null) return;
         foreach (var annotation in _document.Items)
         {
-            var control = BuildControl(annotation, _scale);
+            var control = BuildControl(annotation, Scale);
             if (control is not null)
             {
                 control.IsHitTestVisible = false;
@@ -162,7 +194,84 @@ public sealed class AnnotationSurface : UserControl
             _document.Add(annotation); // Changed → Rerender paints the committed shape
     }
 
-    private PointD ToImage(Point canvasPoint) => new(canvasPoint.X / _scale, canvasPoint.Y / _scale);
+    private PointD ToImage(Point canvasPoint) => new(canvasPoint.X / Scale, canvasPoint.Y / Scale);
+
+    // ---- zoom ----
+
+    /// <summary>Ctrl+wheel zooms toward the cursor; a plain wheel scrolls (handled by the ScrollViewer).</summary>
+    private void OnWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+        e.Handled = true;
+        var factor = e.Delta.Y > 0 ? ZoomStep : 1 / ZoomStep;
+        ApplyZoom(Scale * factor, e.GetPosition(this));
+    }
+
+    /// <summary>Zoom in one step about the viewport centre.</summary>
+    public void ZoomIn() => ApplyZoom(Scale * ZoomStep, ViewportCentre());
+
+    /// <summary>Zoom out one step about the viewport centre.</summary>
+    public void ZoomOut() => ApplyZoom(Scale / ZoomStep, ViewportCentre());
+
+    /// <summary>Snap to 100% (one image pixel per DIP), about the viewport centre.</summary>
+    public void ZoomToActual() => ApplyZoom(1.0, ViewportCentre());
+
+    /// <summary>Return to auto-fit mode.</summary>
+    public void ZoomToFit()
+    {
+        if (_image is null) return;
+        _zoom = null;
+        Layout();
+        ZoomChanged?.Invoke();
+    }
+
+    private Point ViewportCentre() => new(Bounds.Width / 2, Bounds.Height / 2);
+
+    /// <summary>
+    /// Set an explicit zoom scale (clamped) and keep the image point under <paramref name="viewportAnchor"/>
+    /// (a point in this control's coordinates) fixed, so zooming feels anchored to the cursor/centre.
+    /// </summary>
+    private void ApplyZoom(double target, Point viewportAnchor)
+    {
+        if (_image is null) return;
+
+        var clamped = Math.Clamp(target, MinZoom, MaxZoom);
+        var oldScale = Scale;
+        if (Math.Abs(clamped - oldScale) < 0.0001) return;
+
+        // Image point currently under the anchor (canvas coords → image coords).
+        var canvasPoint = TranslateToCanvas(viewportAnchor);
+        var imageX = canvasPoint.X / oldScale;
+        var imageY = canvasPoint.Y / oldScale;
+
+        _zoom = clamped;
+        Layout();
+
+        // After the canvas resizes, scroll so the same image point sits back under the anchor.
+        Dispatcher.UIThread.Post(() =>
+        {
+            var newCanvasX = imageX * Scale;
+            var newCanvasY = imageY * Scale;
+            _scroller.Offset = new Vector(
+                Math.Max(0, newCanvasX - viewportAnchor.X),
+                Math.Max(0, newCanvasY - viewportAnchor.Y));
+        }, DispatcherPriority.Render);
+
+        ZoomChanged?.Invoke();
+    }
+
+    /// <summary>Map a point in this control's coordinates to canvas coordinates via the scroll offset.</summary>
+    private Point TranslateToCanvas(Point viewportPoint)
+    {
+        // The canvas may be centred (smaller than viewport) or scrolled (larger). Offset accounts for
+        // scrolling; when centred, the canvas origin sits at (viewport - canvas)/2.
+        var offset = _scroller.Offset;
+        var extentW = _canvas.Bounds.Width;
+        var extentH = _canvas.Bounds.Height;
+        var padX = extentW < Bounds.Width ? (Bounds.Width - extentW) / 2 : 0;
+        var padY = extentH < Bounds.Height ? (Bounds.Height - extentH) / 2 : 0;
+        return new Point(viewportPoint.X - padX + offset.X, viewportPoint.Y - padY + offset.Y);
+    }
 
     /// <summary>Build the annotation (image coords) for the finished drag, or null if too small.</summary>
     private Annotation? BuildAnnotation(Point start, Point end)
@@ -203,7 +312,7 @@ public sealed class AnnotationSurface : UserControl
     private Control? BuildPreview(Point start, Point current)
     {
         var brush = ParseBrush(StrokeColorHex);
-        var thickness = StrokeWidth * _scale;
+        var thickness = StrokeWidth * Scale;
         var x = Math.Min(start.X, current.X);
         var y = Math.Min(start.Y, current.Y);
         var w = Math.Abs(current.X - start.X);
@@ -225,7 +334,7 @@ public sealed class AnnotationSurface : UserControl
     private Control FreehandPreview(IBrush brush, double thickness)
     {
         var poly = new Polyline { Stroke = brush, StrokeThickness = thickness };
-        foreach (var pt in _freehand) poly.Points.Add(new Point(pt.X * _scale, pt.Y * _scale));
+        foreach (var pt in _freehand) poly.Points.Add(new Point(pt.X * Scale, pt.Y * Scale));
         return poly;
     }
 
