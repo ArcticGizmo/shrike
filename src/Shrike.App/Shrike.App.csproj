@@ -19,6 +19,10 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets/**" />
+    <!-- Embedded so the About window can show the changelog without shipping a loose file. -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md">
+      <LogicalName>CHANGELOG.md</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +35,8 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.5" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Install/update lifecycle + in-app updates from GitHub Releases (mirrors sprig). -->
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
   <ItemGroup>

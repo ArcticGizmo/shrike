@@ -1,9 +1,12 @@
 using Avalonia;
+using Shrike.App.Native;
 using Shrike.App.Services;
 using Shrike.Core.Capture;
 using Shrike.Core.Imaging;
 using Shrike.Core.Ipc;
+using Shrike.Core.Settings;
 using Shrike.Core.Startup;
+using Velopack;
 
 namespace Shrike.App;
 
@@ -16,6 +19,14 @@ internal static class Program
     {
         // First line: start the snappy-load clock so every later mark is measured from process entry.
         var budget = StartupBudget.Start();
+
+        // Velopack install/update lifecycle hook — must run before Avalonia/single-instance. A no-op on a
+        // normal launch; during an update it re-asserts the autostart entry so the login Run key points at
+        // the new version (otherwise it would keep launching the old one). Windows-only, matching autostart.
+        var velopack = VelopackApp.Build();
+        if (OperatingSystem.IsWindows())
+            velopack.OnAfterUpdateFastCallback(_ => Autostart.Apply(new SettingsStore().Load().Autostart));
+        velopack.Run();
 
         // Headless diagnostic: list every detected monitor (bounds + DPI scale). No pixels captured.
         if (args.Length > 0 && string.Equals(args[0], "monitors", StringComparison.OrdinalIgnoreCase))

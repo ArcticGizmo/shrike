@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Shrike.App.Imaging;
 using Shrike.App.Native;
 using Shrike.App.Services;
+using Shrike.App.Updates;
 using Shrike.App.Views;
 using Shrike.Core.Capture;
 using Shrike.Core.Interop;
@@ -26,6 +27,7 @@ public partial class App : Application
     private TrayIcon? _tray;
     private NativeMenuItem? _recentMenu;
     private SettingsWindow? _settingsWindow;
+    private AboutWindow? _aboutWindow;
     private bool _overlayMarked;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
@@ -70,6 +72,9 @@ public partial class App : Application
             if (OperatingSystem.IsWindows())
                 Task.Run(() => { try { Shrike.Core.Recording.Ffmpeg.Locate(); } catch { /* best effort */ } });
 
+            // Notify-only update check in the background (no-op on dev builds). A quiet toast if newer.
+            CheckForUpdatesInBackground();
+
             AppEnv.Budget?.Mark(StartupMarks.TrayReady);
 
             if (AppEnv.MeasureMode)
@@ -107,6 +112,9 @@ public partial class App : Application
         var settings = new NativeMenuItem("Settings…");
         settings.Click += (_, _) => OpenSettings();
 
+        var about = new NativeMenuItem("About Shrike…");
+        about.Click += (_, _) => OpenAbout();
+
         var quit = new NativeMenuItem("Quit Shrike");
         quit.Click += (_, _) => desktop.Shutdown();
 
@@ -120,6 +128,7 @@ public partial class App : Application
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(recent);
         menu.Add(settings);
+        menu.Add(about);
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(quit);
 
@@ -228,6 +237,30 @@ public partial class App : Application
         _settingsWindow = win;
         win.Show();
         win.Activate();
+    }
+
+    private void OpenAbout()
+    {
+        if (_aboutWindow is not null) { _aboutWindow.Activate(); return; }
+
+        var win = new AboutWindow();
+        win.Closed += (_, _) => { if (ReferenceEquals(_aboutWindow, win)) _aboutWindow = null; };
+        _aboutWindow = win;
+        win.Show();
+        win.Activate();
+    }
+
+    private static void CheckForUpdatesInBackground()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        _ = Task.Run(async () =>
+        {
+            string? notice;
+            try { notice = await UpdateChecker.CheckAsync(); }
+            catch { return; }   // never let a flaky feed disturb a normal launch
+            if (notice is not null)
+                Dispatcher.UIThread.Post(() => ToastWindow.Show(notice));
+        });
     }
 
     private void MarkOverlayShownOnce()
