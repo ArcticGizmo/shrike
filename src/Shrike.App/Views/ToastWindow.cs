@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Shrike.App.Native;
 
 namespace Shrike.App.Views;
 
@@ -71,6 +72,10 @@ public sealed class ToastWindow : Window
                 b.X + (b.Width - wpx) / 2,
                 b.Y + (int)(b.Height * 0.82) - hpx / 2);
         }
+
+        // A toast that pops during a recording shouldn't land in the recording either.
+        if (OperatingSystem.IsWindows())
+            WindowExclusion.Hide(TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
 
         _life.Start();
     }

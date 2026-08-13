@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Shrike.App.Native;
 using Shrike.Core.Capture;
 using Shrike.Core.Recording;
 
@@ -54,6 +55,12 @@ public partial class RecordingHudWindow : Window
     {
         base.OnOpened(e);
         PositionOutsideRegion();
+
+        // The whole point: keep the HUD out of the recording (essential for full-screen captures, where
+        // there's nowhere outside the region to sit). The window stays visible to the user regardless.
+        if (OperatingSystem.IsWindows())
+            WindowExclusion.Hide(TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
+
         _tick.Start();
         Refresh();
     }
