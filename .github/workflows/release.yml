@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+# Tag-triggered Velopack release (mirrors sprig). Shrike is Windows-only, so one job publishes, fetches
+# the bundled ffmpeg, packs, and creates the GitHub Release with the Velopack feed attached.
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Install vpk CLI
+        run: dotnet tool install -g vpk
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
+
+      - name: Publish
+        run: |
+          dotnet publish src/Shrike.App/Shrike.App.csproj -c Release -r win-x64 --self-contained true `
+            -p:Version=${{ steps.version.outputs.VERSION }} `
+            -o publish/
+
+      # Drop the bundled ffmpeg.exe next to shrike.exe so it ships inside the package (the locator finds
+      # it first). Pinned + hash-verified in tools/fetch-ffmpeg.ps1.
+      - name: Fetch bundled ffmpeg
+        run: pwsh tools/fetch-ffmpeg.ps1 -OutDir publish
+
+      - name: Pack with Velopack
+        run: >
+          vpk pack
+          --packId Shrike
+          --packTitle "Shrike"
+          --packVersion ${{ steps.version.outputs.VERSION }}
+          --packDir publish/
+          --mainExe shrike.exe
+          --icon src/Shrike.App/Assets/shrike.ico
+          --outputDir releases/
+
+      # SHA256SUMS.txt is what install.ps1 verifies Shrike-win-Setup.exe against before running it, so it
+      # must describe exactly the bytes uploaded — generated here, after the pack.
+      - name: Generate SHA256SUMS.txt
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Resolve-Path releases
+
+          if (-not (Test-Path -LiteralPath (Join-Path $dir 'Shrike-win-Setup.exe'))) {
+            Write-Host '::error::Shrike-win-Setup.exe is missing - install.ps1 depends on it.'
+            exit 1
+          }
+
+          $lines = Get-ChildItem -File -LiteralPath $dir |
+            Where-Object Name -ne 'SHA256SUMS.txt' | Sort-Object Name | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          }
+
+          # Written outside releases/ and moved in, so the manifest can never hash itself.
+          $manifest = Join-Path $dir 'SHA256SUMS.txt'
+          $tmp = Join-Path $env:RUNNER_TEMP 'SHA256SUMS.txt'
+          [System.IO.File]::WriteAllText($tmp, ($lines -join "`n") + "`n")
+          Move-Item -LiteralPath $tmp -Destination $manifest -Force
+
+          # Prove the manifest matches the installer before publishing (the same check install.ps1 makes).
+          $setup = Join-Path $dir 'Shrike-win-Setup.exe'
+          $want = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if (-not ((Get-Content -LiteralPath $manifest) -contains "$want  Shrike-win-Setup.exe")) {
+            Write-Host "::error::SHA256SUMS.txt does not match Shrike-win-Setup.exe ($want) - refusing to publish."
+            exit 1
+          }
+          Write-Host "Verified SHA256SUMS.txt describes Shrike-win-Setup.exe ($want)"
+
+          '### Published assets' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          '```'                  | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Get-Content -LiteralPath $manifest | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          '```'                  | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: releases/*
+          generate_release_notes: true

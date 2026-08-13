@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Shrike.App.Controls"
+        x:Class="Shrike.App.Views.TimelineEditorWindow"
+        Title="Shrike — Trim &amp; Export"
+        Width="960" Height="640"
+        MinWidth="640" MinHeight="460"
+        Background="#140F0A"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Styles>
+        <Style Selector="Button.tool">
+            <Setter Property="Padding" Value="11,7" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3A2F1E" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#140F0A" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FFB840" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="#9A8F7D" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="14">
+        <!-- Preview -->
+        <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
+            <controls:PreviewSurface Name="Preview" />
+        </Border>
+
+        <!-- Transport -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" Margin="2,12,2,8">
+            <Button Grid.Column="0" Name="PlayButton" Classes="tool" Content="▶ Play" Click="OnPlayPause" />
+            <TextBlock Grid.Column="1" Name="TimeLabel" Classes="hint" VerticalAlignment="Center"
+                       Margin="12,0,0,0" FontFamily="Consolas,monospace" Text="00:00 / 00:00" />
+            <TextBlock Grid.Column="3" Name="KeptLabel" Classes="hint" VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Scrubber -->
+        <controls:TimelineStrip Grid.Row="2" Name="Strip" Margin="0,0,0,10" />
+
+        <!-- Toolbar -->
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
+            <Button Grid.Column="0" Classes="tool" Content="Mark In"   Click="OnMarkIn"    Margin="0,0,6,0" />
+            <Button Grid.Column="1" Classes="tool" Content="Mark Out"  Click="OnMarkOut"   Margin="0,0,6,0" />
+            <Button Grid.Column="2" Classes="tool" Content="Cut"       Click="OnCut"       Margin="0,0,6,0" />
+            <Button Grid.Column="3" Classes="tool" Content="Keep only" Click="OnKeepOnly"  Margin="0,0,6,0" />
+            <Button Grid.Column="4" Classes="tool" Content="Restore"   Click="OnRestoreAt" Margin="0,0,6,0" />
+            <Button Grid.Column="5" Classes="tool" Content="Reset"     Click="OnResetAll"  Margin="0,0,6,0" />
+            <Button Grid.Column="7" Classes="tool accent" Content="Export…" Click="OnExport" />
+        </Grid>
+    </Grid>
+</Window>

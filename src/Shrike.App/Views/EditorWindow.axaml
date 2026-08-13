@@ -1,0 +1,171 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Shrike.App.Controls"
+        x:Class="Shrike.App.Views.EditorWindow"
+        Title="Shrike — Capture"
+        Width="1200" Height="680"
+        MinWidth="640" MinHeight="380"
+        WindowStartupLocation="CenterScreen"
+        Background="#14110D">
+
+    <Window.Styles>
+        <Style Selector="Button.tool, Button.stroke, Button.action">
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <!-- Icon tool buttons: compact fixed squares with a delayed name tooltip. -->
+        <Style Selector="Button.tool">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="ToolTip.ShowDelay" Value="750" />
+        </Style>
+        <Style Selector="Button.tool.active, Button.stroke.active">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#1A1305" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.swatch">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="CornerRadius" Value="11" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="Button.swatch.active">
+            <Setter Property="BorderBrush" Value="#EDE6DA" />
+        </Style>
+        <!-- Recent filmstrip thumbnails -->
+        <Style Selector="Button.recent">
+            <Setter Property="Padding" Value="2" />
+            <Setter Property="Background" Value="#241D14" />
+            <Setter Property="BorderBrush" Value="#3A3020" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="ToolTip.ShowDelay" Value="600" />
+        </Style>
+        <Style Selector="Button.recent:pointerover /template/ ContentPresenter">
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+    </Window.Styles>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Annotation toolbar -->
+        <Border DockPanel.Dock="Top" Background="#1E1913" Padding="10,8"
+                BorderBrush="#322A1E" BorderThickness="0,0,0,1">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+                <Button Classes="tool" Tag="None" Click="OnToolClick" ToolTip.Tip="Select">
+                    <Path Stretch="Uniform" Width="15" Height="15" Fill="{Binding $parent[Button].Foreground}"
+                          Data="M3,2 L3,17 L7.2,13 L10,18.5 L12.4,17.3 L9.6,12 L15,12 Z" />
+                </Button>
+                <Button Classes="tool" Tag="Rectangle" Click="OnToolClick" ToolTip.Tip="Rectangle">
+                    <Rectangle Width="17" Height="13" RadiusX="1.5" RadiusY="1.5"
+                               Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.7" />
+                </Button>
+                <Button Classes="tool" Tag="Ellipse" Click="OnToolClick" ToolTip.Tip="Ellipse">
+                    <Ellipse Width="17" Height="14"
+                             Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.7" />
+                </Button>
+                <Button Classes="tool" Tag="Line" Click="OnToolClick" ToolTip.Tip="Line">
+                    <Path Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.9"
+                          StrokeLineCap="Round" Data="M3,15 L16,4" />
+                </Button>
+                <Button Classes="tool" Tag="Arrow" Click="OnToolClick" ToolTip.Tip="Arrow">
+                    <Path Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.9"
+                          StrokeLineCap="Round" StrokeJoin="Round"
+                          Data="M3,16 L16,3 M16,3 L10.2,3.4 M16,3 L15.6,8.8" />
+                </Button>
+                <Button Classes="tool" Tag="Freehand" Click="OnToolClick" ToolTip.Tip="Pen (freehand)">
+                    <Path Stretch="Uniform" Width="15" Height="15" Fill="{Binding $parent[Button].Foreground}"
+                          Data="M13.6,2.2 L16.3,4.9 L6.6,14.6 L3,15.5 L3.9,11.9 Z" />
+                </Button>
+                <Button Classes="tool" Tag="Highlight" Click="OnToolClick" ToolTip.Tip="Highlighter">
+                    <Rectangle Width="17" Height="9" RadiusX="2.5" RadiusY="2.5"
+                               Fill="{Binding $parent[Button].Foreground}" Opacity="0.6" />
+                </Button>
+                <Button Classes="tool" Tag="Text" Click="OnToolClick" ToolTip.Tip="Text">
+                    <TextBlock Text="T" FontSize="15" FontWeight="Bold" />
+                </Button>
+                <Button Classes="tool" Tag="StepBadge" Click="OnToolClick" ToolTip.Tip="Step number">
+                    <Panel Width="16" Height="16">
+                        <Ellipse Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.6" />
+                        <TextBlock Text="1" FontSize="10" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Panel>
+                </Button>
+                <Button Classes="tool" Tag="Redaction" Click="OnToolClick" ToolTip.Tip="Redact">
+                    <Rectangle Width="17" Height="12" RadiusX="1.5" RadiusY="1.5"
+                               Fill="{Binding $parent[Button].Foreground}" />
+                </Button>
+                <Button Classes="tool" Tag="Crop" Click="OnToolClick" ToolTip.Tip="Crop">
+                    <Path Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.7"
+                          StrokeLineCap="Round" StrokeJoin="Round"
+                          Data="M5,1 L5,13 L17,13 M1,5 L13,5 L13,17" />
+                </Button>
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
+                <Button Classes="swatch" Tag="#F5A524" Background="#F5A524" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#EF4444" Background="#EF4444" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#4ADE80" Background="#4ADE80" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#60A5FA" Background="#60A5FA" Click="OnColorClick" />
+                <Button Classes="swatch" Tag="#EDE6DA" Background="#EDE6DA" Click="OnColorClick" />
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
+                <Button Classes="stroke" Tag="2" Content="S" Click="OnStrokeClick" />
+                <Button Classes="stroke" Tag="4" Content="M" Click="OnStrokeClick" />
+                <Button Classes="stroke" Tag="8" Content="L" Click="OnStrokeClick" />
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
+                <Button Classes="action" Content="Undo" Click="OnUndo" />
+                <Button Classes="action" Content="Redo" Click="OnRedo" />
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
+                <Button Classes="action" Content="−" Click="OnZoomOut" ToolTip.Tip="Zoom out (Ctrl+-)" />
+                <Button Name="ZoomLabel" Classes="action" Content="Fit" Click="OnZoomFit"
+                        MinWidth="52" ToolTip.Tip="Fit to window (Ctrl+0)" />
+                <Button Classes="action" Content="+" Click="OnZoomIn" ToolTip.Tip="Zoom in (Ctrl++)" />
+                <Button Classes="action" Content="100%" Click="OnZoomActual" ToolTip.Tip="Actual size (Ctrl+1)" />
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+
+        <!-- Output bar -->
+        <Border DockPanel.Dock="Bottom" Background="#1E1913" Padding="10,8"
+                BorderBrush="#322A1E" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Name="CopyButton" Content="Copy" Click="OnCopy" />
+                <Button Name="SaveButton" Content="Save as…" Click="OnSave" />
+                <Button Name="OpenFolderButton" Content="Open folder" Click="OnOpenFolder" IsEnabled="False" />
+                <Button Name="CopyPathButton" Content="Copy path" Click="OnCopyPath" IsEnabled="False" />
+                <TextBlock Name="Dimensions" VerticalAlignment="Center" Margin="6,0,0,0"
+                           FontFamily="Consolas,monospace" FontSize="12" Foreground="#A89A85" />
+                <TextBlock Name="Status" VerticalAlignment="Center" FontSize="12" Foreground="#8A7C68" />
+            </StackPanel>
+        </Border>
+
+        <!-- Recent-captures filmstrip (hidden until the ring has something in it) -->
+        <Border Name="RecentStrip" DockPanel.Dock="Bottom" Background="#1A1510"
+                BorderBrush="#322A1E" BorderThickness="0,1,0,0" Padding="8,6" IsVisible="False">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Name="RecentItems" Orientation="Horizontal" Spacing="6" />
+            </ScrollViewer>
+        </Border>
+
+        <!-- Drawing surface -->
+        <Border Padding="14" Background="#100E0A">
+            <controls:AnnotationSurface Name="Surface" />
+        </Border>
+    </DockPanel>
+</Window>

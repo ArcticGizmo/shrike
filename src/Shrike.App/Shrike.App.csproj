@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Shrike.App</RootNamespace>
+    <AssemblyName>shrike</AssemblyName>
+    <Product>Shrike</Product>
+    <Company>Shrike</Company>
+    <Description>A snappy, tray-resident capture studio for Windows.</Description>
+    <Version>0.0.1</Version>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The .exe icon (taskbar, Explorer, installer) — generated from shrike.svg by tools/gen-icons.ps1. -->
+    <ApplicationIcon>Assets/shrike.ico</ApplicationIcon>
+    <!-- Snappy cold path: pre-JIT the hot code with ReadyToRun on publish. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/**" />
+    <!-- Embedded so the About window can show the changelog without shipping a loose file. -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md">
+      <LogicalName>CHANGELOG.md</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Shrike.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.5" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Install/update lifecycle + in-app updates from GitHub Releases (mirrors sprig). -->
+    <PackageReference Include="Velopack" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shrike.Core\Shrike.Core.csproj" />
+  </ItemGroup>
+
+</Project>

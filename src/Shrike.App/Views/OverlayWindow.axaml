@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.OverlayWindow"
+        Title="Shrike Region"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        WindowStartupLocation="Manual">
+
+    <Canvas Name="Root" Background="#01000000" Cursor="Cross">
+        <!-- Dimming scrim with a hole punched out for the current selection (geometry set in code). -->
+        <Path Name="Scrim" Fill="{DynamicResource OverlayScrimBrush}" IsHitTestVisible="False" />
+
+        <!-- Crosshair reticle that tracks the pointer before/while dragging. -->
+        <Rectangle Name="VLine" Width="1" Fill="{DynamicResource AccentBrush}" Opacity="0.55" IsHitTestVisible="False" />
+        <Rectangle Name="HLine" Height="1" Fill="{DynamicResource AccentBrush}" Opacity="0.55" IsHitTestVisible="False" />
+
+        <!-- Window snap-highlight outline (dashed), shown while hovering a window. -->
+        <Rectangle Name="SnapBorder" Stroke="{DynamicResource Accent2Brush}" StrokeThickness="2"
+                   StrokeDashArray="4,3" IsVisible="False" IsHitTestVisible="False" />
+
+        <!-- Selection rectangle outline. -->
+        <Rectangle Name="SelBorder" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5"
+                   IsVisible="False" IsHitTestVisible="False" />
+
+        <!-- Size readout, moved next to the selection while dragging. -->
+        <Border Name="ReadoutPill" IsVisible="False" IsHitTestVisible="False"
+                Background="#CC14110D" CornerRadius="5" Padding="7,3">
+            <TextBlock Name="Readout" FontFamily="Consolas,monospace" FontSize="12"
+                       Foreground="{DynamicResource Accent2Brush}" />
+        </Border>
+
+        <!-- Magnifier loupe: zoomed frozen-pixel view + centre reticle + coordinate readout. -->
+        <Border Name="Loupe" IsVisible="False" IsHitTestVisible="False"
+                Background="#E014110D" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                CornerRadius="8" Padding="6" Width="152">
+            <StackPanel Spacing="5">
+                <Panel Width="138" Height="138" ClipToBounds="True">
+                    <Image Name="LoupeImage" Stretch="Fill" />
+                    <!-- centre crosshair over the magnified pixel -->
+                    <Rectangle Width="1" Height="138" Fill="{DynamicResource AccentBrush}" Opacity="0.8"
+                               HorizontalAlignment="Center" />
+                    <Rectangle Height="1" Width="138" Fill="{DynamicResource AccentBrush}" Opacity="0.8"
+                               VerticalAlignment="Center" />
+                </Panel>
+                <TextBlock Name="LoupeCoords" FontFamily="Consolas,monospace" FontSize="11"
+                           Foreground="{DynamicResource Accent2Brush}" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+    </Canvas>
+</Window>
