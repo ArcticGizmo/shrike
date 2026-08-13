@@ -13,6 +13,8 @@
     <Version>0.0.1</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The .exe icon (taskbar, Explorer, installer) — generated from shrike.svg by tools/gen-icons.ps1. -->
+    <ApplicationIcon>Assets/shrike.ico</ApplicationIcon>
     <!-- Snappy cold path: pre-JIT the hot code with ReadyToRun on publish. -->
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>

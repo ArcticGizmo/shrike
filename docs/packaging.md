@@ -37,21 +37,55 @@ and generates a delta.
 Trimming is deliberately **off** — Avalonia leans on reflection, and the startup-budget win from R2R
 alone is enough without risking a trimmed-away type at runtime.
 
-### ffmpeg (M6.3)
+### ffmpeg
 
-Recording/export need ffmpeg. The shipping plan is to bundle a **lean GPL ffmpeg** (~30–50 MB, only
-our codecs) next to `shrike.exe`, where `Shrike.Core.Recording.Ffmpeg.Locate()` finds it first. Until
-that M6.3 packaging step lands, a dev machine uses the copy in `%LOCALAPPDATA%\Shrike\ffmpeg` (or a
-`SHRIKE_FFMPEG` override). The lean build carries the GPL licence + written-offer notices required by
-redistribution.
+Recording/export need ffmpeg, bundled next to `shrike.exe` (where `Shrike.Core.Recording.Ffmpeg.Locate()`
+finds it first). [`tools/fetch-ffmpeg.ps1`](../tools/fetch-ffmpeg.ps1) downloads a **pinned, hash-verified**
+prebuilt GPL ffmpeg and drops `ffmpeg.exe` into the publish folder; the release workflow runs it before
+`vpk pack`. A pinned prebuilt (not a source build) is the reliable path in GitHub Actions — to update,
+bump `$Version` in the script, run once to print the new hash, paste it into `$Sha256`, and commit.
+
+The pin is a **full static** build (~150 MB), larger than the ~30–50 MB "lean" target. Because the locator
+only needs *an* `ffmpeg.exe` at that path, a hand-built lean exe can later be dropped there with no code
+change — the fetch script just automates the reproducible CI download in the meantime. The GPL licence +
+written-offer notices required by redistribution ship alongside. A dev machine can instead use a copy in
+`%LOCALAPPDATA%\Shrike\ffmpeg` (or a `SHRIKE_FFMPEG` override) with no bundling step.
+
+### Icon
+
+All raster icon assets are generated from the single source-of-truth [`shrike.svg`](../shrike.svg) by
+[`tools/gen-icons.ps1`](../tools/gen-icons.ps1) (a small SVG→PNG/ICO tool under `tools/IconGen`):
+`src/Shrike.App/Assets/shrike.ico` (the `.exe`/`vpk --icon` icon), `Assets/icon.png` (256px), and
+`shrike-icon.png` (512px, the README header). Re-run it after editing the SVG and commit the assets.
 
 ## Install
 
-`Setup.exe` installs per-user to `%LocalAppData%\Shrike` (no admin needed) with Start Menu + Desktop
+The primary install path is the PowerShell one-liner ([`install.ps1`](../install.ps1) at the repo root):
+
+```powershell
+irm https://raw.githubusercontent.com/quartexsoftware/shrike/main/install.ps1 | iex
+```
+
+It resolves the latest GitHub release, fetches `SHA256SUMS.txt` + `Shrike-win-Setup.exe`, verifies the
+installer against the manifest (deleting it rather than running it on any mismatch), then hands off to
+Velopack's setup. Downloading via PowerShell rather than a browser skips the mark-of-the-web, so it avoids
+the SmartScreen "unknown publisher" dialog an unsigned browser download hits. Pin a version with
+`$env:SHRIKE_VERSION = '0.1.0'` before the pipe, or a fork with `$env:SHRIKE_REPO`.
+
+> **`install.ps1` must stay pure ASCII** (no BOM) — Windows PowerShell 5.1 decodes it as the system
+> codepage, and a stray non-ASCII dash/quote silently terminates a string.
+
+`Setup.exe` itself installs per-user to `%LocalAppData%\Shrike` (no admin needed) with Start Menu + Desktop
 shortcuts. `--silent` installs without UI. Uninstall via `%LocalAppData%\Shrike\Update.exe --uninstall`
-(or Add/Remove Programs). Because the download is unsigned, a browser download trips SmartScreen's
-"unknown publisher" prompt on first run; a PowerShell-based install one-liner (M6.3) avoids the
-mark-of-the-web and so the prompt.
+(or Add/Remove Programs).
+
+## Cutting a release (CI)
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) is triggered by **pushing a `v*` tag**.
+On a `windows-latest` runner it derives the version from the tag, publishes, fetches the bundled ffmpeg,
+`vpk pack`s, generates a `SHA256SUMS.txt` (and fails the build if it doesn't match `Shrike-win-Setup.exe`),
+and creates the GitHub Release with the Velopack feed attached. Keep the pushed tag and the csproj
+`<Version>` in step.
 
 ## Updates
 
@@ -75,10 +109,13 @@ path that applies an available release.
 `CHANGELOG.md` (repo root, [Keep a Changelog](https://keepachangelog.com/) format) is **embedded** into
 the app (resource `CHANGELOG.md`) at build time and shown by the About window.
 
-## Not yet done (future / M6.3)
+## Not yet done (future)
 
-- **Lean ffmpeg bundle** + the CI step that produces it.
+- **Create the GitHub repo** — no git remote is configured yet. Once it exists, replace the
+  `TODO(release)` placeholder in `UpdateChecker.DefaultFeedUrl` and confirm the `quartexsoftware/shrike`
+  slug in `install.ps1` / `release.yml`.
+- **Pin the ffmpeg hash** — `tools/fetch-ffmpeg.ps1` currently downloads without an enforced `$Sha256`
+  (it warns and prints the hash). Paste the printed hash in to lock it.
 - **Code signing** — `vpk pack` warns that files are unsigned; add `--signParams` once a cert exists.
-- **CI release workflow** (tag-triggered `dotnet publish` + `vpk pack` + GitHub Release) and a verified
-  install one-liner.
-- **App icon** (`shrike.ico` from the amber shrike mark) — the `--icon` path above assumes it exists.
+- **A truly lean ffmpeg** — swap the ~150 MB pinned prebuilt for a ~30–50 MB custom build dropped at the
+  same path, if bundle size becomes a concern.
