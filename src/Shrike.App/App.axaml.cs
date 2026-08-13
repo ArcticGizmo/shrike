@@ -66,11 +66,10 @@ public partial class App : Application
             {
                 _hotkeys = new HotkeyService();
                 _hotkeys.CaptureRequested += () => _capture?.ShowCaptureMenu();
-                _hotkeys.RecordRequested += () => _capture?.BeginRegionRecording();
                 _hotkeys.Start();
-                _hotkeys.Apply(_settings!.Current.CaptureHotkey, _settings.Current.RecordHotkey);
+                _hotkeys.Apply(_settings!.Current.CaptureHotkey);
                 // Re-register whenever the user rebinds in the settings window.
-                _settings.Changed += ns => _hotkeys?.Apply(ns.CaptureHotkey, ns.RecordHotkey);
+                _settings.Changed += ns => _hotkeys?.Apply(ns.CaptureHotkey);
             }
 
             // Forwarded actions from a second launch arrive on a pool thread — marshal to the UI thread.

@@ -25,7 +25,6 @@ public class SettingsStoreTests
             var settings = new AppSettings
             {
                 CaptureHotkey = "Ctrl+Alt+P",
-                RecordHotkey = "",
                 DesktopBehaviour = DesktopBehaviour.NewWindowHere,
                 RingSize = 25,
                 RingByteCap = 256L * 1024 * 1024,

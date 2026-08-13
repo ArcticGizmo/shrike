@@ -23,7 +23,7 @@ public partial class SettingsWindow : Window
 {
     private readonly SettingsService _settings;
 
-    private TextBox _captureBox = null!, _recordBox = null!, _saveDirBox = null!;
+    private TextBox _captureBox = null!, _saveDirBox = null!;
     private ComboBox _desktopBox = null!, _formatBox = null!;
     private NumericUpDown _ringSizeBox = null!;
     private CheckBox _autostartBox = null!, _changelogBox = null!;
@@ -38,7 +38,6 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         _captureBox = this.FindControl<TextBox>("CaptureHotkeyBox")!;
-        _recordBox = this.FindControl<TextBox>("RecordHotkeyBox")!;
         _saveDirBox = this.FindControl<TextBox>("SaveDirBox")!;
         _desktopBox = this.FindControl<ComboBox>("DesktopBox")!;
         _formatBox = this.FindControl<ComboBox>("FormatBox")!;
@@ -58,7 +57,6 @@ public partial class SettingsWindow : Window
     private void LoadFrom(AppSettings s)
     {
         _captureBox.Text = s.CaptureHotkey;
-        _recordBox.Text = s.RecordHotkey;
         _desktopBox.SelectedIndex = s.DesktopBehaviour == DesktopBehaviour.NewWindowHere ? 1 : 0;
         _ringSizeBox.Value = s.RingSize;
         _formatBox.SelectedIndex = (int)s.DefaultImageFormat;   // Png=0, Jpeg=1, WebP=2
@@ -80,8 +78,8 @@ public partial class SettingsWindow : Window
 
     private void OnSave(object? sender, RoutedEventArgs e)
     {
-        // Hotkeys must parse (empty = unbound). Show the first problem rather than silently dropping it.
-        if (!ValidateHotkey(_captureBox.Text, "Capture") || !ValidateHotkey(_recordBox.Text, "Record"))
+        // The hotkey must parse (empty = unbound). Show the problem rather than silently dropping it.
+        if (!ValidateHotkey(_captureBox.Text, "Capture"))
             return;
 
         var dir = string.IsNullOrWhiteSpace(_saveDirBox.Text) ? null : _saveDirBox.Text!.Trim();
@@ -89,7 +87,6 @@ public partial class SettingsWindow : Window
         var updated = _settings.Current with
         {
             CaptureHotkey = (_captureBox.Text ?? "").Trim(),
-            RecordHotkey = (_recordBox.Text ?? "").Trim(),
             DesktopBehaviour = _desktopBox.SelectedIndex == 1 ? DesktopBehaviour.NewWindowHere : DesktopBehaviour.FollowMe,
             RingSize = (int)(_ringSizeBox.Value ?? _settings.Current.RingSize),
             DefaultImageFormat = (ImageFormatKind)Math.Max(0, _formatBox.SelectedIndex),

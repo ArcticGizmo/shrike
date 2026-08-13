@@ -52,9 +52,10 @@ Shrike has no main window — it's the amber-and-navy bird in your system tray.
   window, or monitor. Your shot opens in the editor.
 - **Annotate & export** — use the toolbar to mark it up, redact, crop, or zoom; then **copy** it or
   **save** it (PNG / JPG / WebP).
-- **Record** — press `Alt+Shift+R` (or *Record region* in the tray), drag out the area, and use the
-  control bar to pause or stop. On stop it opens the timeline editor: scrub, set in/out, cut a section,
-  then **Export** with a preset and **Save** or **Copy file** to paste into Slack.
+- **Record** — open the chooser (`Alt+Shift+Q` or the tray icon) and pick *Record region* (or use
+  *Record region* in the tray), drag out the area, and use the control bar to pause or stop. On stop it
+  opens the timeline editor: scrub, set in/out, cut a section, then **Export** with a preset and **Save**
+  or **Copy file** to paste into Slack.
 - **Recent** — re-copy or re-open your last few captures from the tray's **Recent** menu or the
   editor's filmstrip.
 - **Settings** — tray → **Settings…** to rebind hotkeys, set your save folder/format, or turn on

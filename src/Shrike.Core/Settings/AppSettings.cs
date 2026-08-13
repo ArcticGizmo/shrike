@@ -23,9 +23,6 @@ public sealed record AppSettings
     /// <summary>Opens the capture chooser. Empty = unbound.</summary>
     public string CaptureHotkey { get; init; } = "Alt+Shift+Q";
 
-    /// <summary>Jumps straight to record-region. Empty = unbound.</summary>
-    public string RecordHotkey { get; init; } = "Alt+Shift+R";
-
     public DesktopBehaviour DesktopBehaviour { get; init; } = DesktopBehaviour.FollowMe;
 
     /// <summary>Max captures kept in the recent ring.</summary>

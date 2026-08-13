@@ -40,33 +40,30 @@
     </Window.Styles>
 
     <StackPanel Margin="20" Spacing="14">
-        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
 
             <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="Capture hotkey" />
             <TextBox   Grid.Row="0" Grid.Column="1" Name="CaptureHotkeyBox" PlaceholderText="e.g. Alt+Shift+Q" />
 
-            <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="Record hotkey" />
-            <TextBox   Grid.Row="1" Grid.Column="1" Name="RecordHotkeyBox" PlaceholderText="e.g. Alt+Shift+R (blank = off)" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="When re-opening" />
+            <ComboBox  Grid.Row="1" Grid.Column="1" Name="DesktopBox" HorizontalAlignment="Stretch" />
 
-            <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="When re-opening" />
-            <ComboBox  Grid.Row="2" Grid.Column="1" Name="DesktopBox" HorizontalAlignment="Stretch" />
-
-            <TextBlock Grid.Row="3" Grid.Column="0" Classes="label" Text="Recent captures" />
-            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Recent captures" />
+            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <NumericUpDown Name="RingSizeBox" Minimum="1" Maximum="100" Increment="1" Width="120" FormatString="0" />
                 <TextBlock Classes="hint" VerticalAlignment="Center" Text="kept in memory (applies on restart)" />
             </StackPanel>
 
-            <TextBlock Grid.Row="4" Grid.Column="0" Classes="label" Text="Default format" />
-            <ComboBox  Grid.Row="4" Grid.Column="1" Name="FormatBox" HorizontalAlignment="Stretch" />
+            <TextBlock Grid.Row="3" Grid.Column="0" Classes="label" Text="Default format" />
+            <ComboBox  Grid.Row="3" Grid.Column="1" Name="FormatBox" HorizontalAlignment="Stretch" />
 
-            <TextBlock Grid.Row="5" Grid.Column="0" Classes="label" Text="Save folder" />
-            <Grid Grid.Row="5" Grid.Column="1" ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Row="4" Grid.Column="0" Classes="label" Text="Save folder" />
+            <Grid Grid.Row="4" Grid.Column="1" ColumnDefinitions="*,Auto">
                 <TextBox Grid.Column="0" Name="SaveDirBox" PlaceholderText="Ask each time" />
                 <Button  Grid.Column="1" Classes="tool" Content="Browse…" Click="OnBrowse" Margin="8,0,0,0" />
             </Grid>
 
-            <StackPanel Grid.Row="6" Grid.Column="1" Spacing="8">
+            <StackPanel Grid.Row="5" Grid.Column="1" Spacing="8">
                 <CheckBox Name="AutostartBox" Content="Launch Shrike at login" />
                 <CheckBox Name="ChangelogBox" Content="Show what's new after updates" />
             </StackPanel>

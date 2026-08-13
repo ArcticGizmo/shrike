@@ -206,8 +206,9 @@ Settings           { Hotkeys, DesktopBehaviour(FollowMe|NewWindow), RingSize, De
 | Region screenshot | `Alt+Shift+Q` |
 | Window screenshot | `Alt+Shift+W` |
 | Full-screen screenshot | `Alt+Shift+F` |
-| Start/stop recording | `Alt+Shift+R` |
 | Open recent flyout | `Alt+Shift+V` |
+
+Recording is started from the capture chooser (*Record region*) rather than its own hotkey.
 
 All hotkeys are **fully rebindable** in settings; the `Alt+Shift+…` family avoids the OS `Win+Shift+S`.
 Defaults are provisional and finalised in M6.

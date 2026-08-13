@@ -6,6 +6,8 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ## [Unreleased]
 
+- Removed the dedicated record hotkey — start a recording from the capture chooser's *Record region* option (or the tray) instead
+
 ---
 
 ## [v0.1.0] - 2026-08-13

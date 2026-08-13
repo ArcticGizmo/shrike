@@ -5,25 +5,20 @@ using Shrike.Core.Hotkeys;
 namespace Shrike.App.Services;
 
 /// <summary>
-/// Owns the app's global hotkeys. Two rebindable shortcuts: one opens the capture chooser (default
-/// <c>Alt+Shift+Q</c>), one jumps straight to record-region (default <c>Alt+Shift+R</c>); either can be
-/// unbound. <see cref="Apply"/> re-registers from the current settings, so a rebind in the settings window
-/// takes effect immediately. Must be constructed and driven on the Avalonia UI thread (see
-/// <see cref="MessageWindow"/>).
+/// Owns the app's global hotkey: a single rebindable shortcut that opens the capture chooser (default
+/// <c>Alt+Shift+Q</c>), which can be unbound. <see cref="Apply"/> re-registers from the current settings,
+/// so a rebind in the settings window takes effect immediately. Must be constructed and driven on the
+/// Avalonia UI thread (see <see cref="MessageWindow"/>).
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class HotkeyService : IDisposable
 {
     private const int CaptureHotkeyId = 1;
-    private const int RecordHotkeyId = 2;
 
     private MessageWindow? _window;
 
     /// <summary>Raised on the UI thread when the capture-chooser hotkey fires.</summary>
     public event Action? CaptureRequested;
-
-    /// <summary>Raised on the UI thread when the record-region hotkey fires.</summary>
-    public event Action? RecordRequested;
 
     public void Start()
     {
@@ -31,17 +26,14 @@ internal sealed class HotkeyService : IDisposable
         _window.HotkeyPressed += OnHotkeyPressed;
     }
 
-    /// <summary>Register (or re-register) the two hotkeys from their settings strings. Bad/empty strings
-    /// are simply left unbound — never fatal.</summary>
-    public void Apply(string? captureHotkey, string? recordHotkey)
+    /// <summary>Register (or re-register) the capture hotkey from its settings string. A bad/empty string
+    /// is simply left unbound — never fatal.</summary>
+    public void Apply(string? captureHotkey)
     {
         if (_window is null) return;
 
         _window.UnregisterHotkey(CaptureHotkeyId);
-        _window.UnregisterHotkey(RecordHotkeyId);
-
         Register(CaptureHotkeyId, captureHotkey);
-        Register(RecordHotkeyId, recordHotkey);
     }
 
     private void Register(int id, string? text)
@@ -62,7 +54,6 @@ internal sealed class HotkeyService : IDisposable
         switch (id)
         {
             case CaptureHotkeyId: CaptureRequested?.Invoke(); break;
-            case RecordHotkeyId: RecordRequested?.Invoke(); break;
         }
     }
 
