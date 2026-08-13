@@ -23,6 +23,14 @@ public sealed class Recorder : IDisposable
     public string OutputPath { get; }
     public RecordingState State => _session.State;
 
+    /// <summary>Frame size and rate of the source — the facts the timeline editor needs to build a <see cref="RecordingSource"/>.</summary>
+    public int Width => _source.Width;
+    public int Height => _source.Height;
+    public int Fps => _fps;
+
+    /// <summary>Final recorded (un-paused) length, captured at <see cref="Stop"/>. Zero until then.</summary>
+    public TimeSpan Duration { get; private set; }
+
     public Recorder(IFrameSource source, IFrameEncoder encoder, string outputPath, int fps)
     {
         if (fps <= 0) throw new ArgumentOutOfRangeException(nameof(fps));
@@ -58,7 +66,13 @@ public sealed class Recorder : IDisposable
     public string Stop()
     {
         StopLoop();
-        lock (_gate) _session.Stop();
+        lock (_gate)
+        {
+            // Freeze the length before stopping the clock, so the editor gets the real recorded duration.
+            Duration = TimeSpan.FromMilliseconds(_session.ElapsedMs(_clock.ElapsedMilliseconds));
+            _session.Stop();
+        }
+        _clock.Stop();
         return OutputPath;
     }
 

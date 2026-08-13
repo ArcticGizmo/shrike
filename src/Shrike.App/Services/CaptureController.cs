@@ -346,12 +346,28 @@ internal sealed class CaptureController
 
     private void OnRecordingFinished(string? savedPath)
     {
+        var recorder = _recorder;
         _recorder = null;
-        if (savedPath is not null && File.Exists(savedPath) && OperatingSystem.IsWindows())
+        if (savedPath is null || !File.Exists(savedPath)) return;
+
+        // Hand the source to the timeline editor to trim and export (M5). Too-short clips (or a missing
+        // ffmpeg) skip straight to revealing the file — the M4 drag-into-Slack path.
+        if (recorder is not null && recorder.Duration >= TimeSpan.FromMilliseconds(500) && Ffmpeg.Locate() is { } ffmpeg)
         {
-            // Reveal the clip so it can be dragged straight into Slack/Explorer (the core use case).
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{savedPath}\"") { UseShellExecute = true });
+            var source = new RecordingSource(savedPath, recorder.Width, recorder.Height, recorder.Fps, recorder.Duration);
+            var editor = new TimelineEditorWindow(source, ffmpeg);
+            editor.Show();
+            editor.Activate();
+            return;
         }
+
+        RevealInExplorer(savedPath);
+    }
+
+    private static void RevealInExplorer(string path)
+    {
+        if (OperatingSystem.IsWindows())
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
     }
 
     // ~0.1 bits per pixel per frame, clamped to a sane band, as the default target bitrate.

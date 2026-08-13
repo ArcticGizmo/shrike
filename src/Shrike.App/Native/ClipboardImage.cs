@@ -13,6 +13,7 @@ namespace Shrike.App.Native;
 internal static class ClipboardImage
 {
     private const uint CF_UNICODETEXT = 13;
+    private const uint CF_HDROP = 15;
     private const uint CF_DIBV5 = 17;
     private const uint GMEM_MOVEABLE = 0x0002;
 
@@ -49,6 +50,38 @@ internal static class ClipboardImage
         {
             CloseClipboard();
         }
+    }
+
+    /// <summary>
+    /// Put a file on the clipboard as CF_HDROP, so a paste into Slack/Explorer drops the actual file
+    /// (the "copy the exported clip and paste it into Slack" flow). Returns false if the clipboard was busy.
+    /// </summary>
+    public static bool SetFileDrop(IntPtr ownerHwnd, string path)
+    {
+        if (!OpenClipboard(ownerHwnd))
+            return false;
+        try
+        {
+            EmptyClipboard();
+            PlaceFormat(CF_HDROP, BuildDropFiles(path));
+            return true;
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+    }
+
+    // A DROPFILES header (20 bytes: pFiles offset, POINT, fNC, fWide) followed by the double-null-terminated
+    // wide file list. pFiles = 20 (list starts right after the header); fWide = 1 (Unicode).
+    private static byte[] BuildDropFiles(string path)
+    {
+        var list = System.Text.Encoding.Unicode.GetBytes(path + "\0\0");
+        var buf = new byte[20 + list.Length];
+        buf[0] = 20;    // pFiles (DWORD, little-endian) = 20
+        buf[16] = 1;    // fWide = TRUE
+        Array.Copy(list, 0, buf, 20, list.Length);
+        return buf;
     }
 
     private static void PlaceFormat(uint format, byte[] data)
