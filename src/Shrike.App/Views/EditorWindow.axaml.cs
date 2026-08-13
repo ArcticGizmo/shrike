@@ -332,11 +332,24 @@ public partial class EditorWindow : Window
     private async Task SaveImageAsync(CapturedImage image)
     {
         var suggested = CaptureNaming.Expand(CaptureNaming.DefaultTemplate, image.CapturedAt);
+        var settings = Shrike.App.Services.SettingsService.Instance?.Current;
+
+        var defaultExt = settings?.DefaultImageFormat switch
+        {
+            Shrike.Core.Imaging.ImageFormatKind.Jpeg => "jpg",
+            Shrike.Core.Imaging.ImageFormatKind.WebP => "webp",
+            _ => "png",
+        };
+        IStorageFolder? start = null;
+        if (settings?.DefaultSaveDirectory is { } dir && Directory.Exists(dir))
+            start = await StorageProvider.TryGetFolderFromPathAsync(dir);
+
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save capture",
             SuggestedFileName = suggested,
-            DefaultExtension = "png",
+            DefaultExtension = defaultExt,
+            SuggestedStartLocation = start,
             FileTypeChoices =
             [
                 new FilePickerFileType("PNG image") { Patterns = ["*.png"], MimeTypes = ["image/png"] },

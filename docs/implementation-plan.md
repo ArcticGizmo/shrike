@@ -207,6 +207,11 @@
 - Update flow works via Velopack; autostart only when the user opts in.
 - All performance gates green in CI. **v1.0 tag.**
 
+**Chunks**
+- ✅ **M6.1 — settings.** Headless `AppSettings` (record with per-field defaults, so an older/partial settings file still loads sensibly) + `SettingsStore` (JSON at `%APPDATA%\Shrike\settings.json`, corruption-tolerant → defaults, values clamped) — tested (`SettingsStoreTests`, 6 cases). A `SettingsWindow` edits: **rebindable** capture + record hotkeys (validated via `Hotkey.Parse`, blank = unbound), desktop behaviour (follow-me / new-window-here), recent-ring size, default image format + save folder, and the **opt-in autostart** toggle. Wiring: `SettingsService` holds the live value and, on save, persists + applies autostart (HKCU `Run`, via `Autostart`) + re-registers hotkeys live; `HotkeyService` gained a second (record-region) hotkey and an `Apply(...)` re-register; ring size is built from settings at startup; save folder / default format seed the editor + export save pickers; desktop behaviour drives editor reuse-vs-new. *(Cursor-in-recording is in the model for later; its GDI compositing isn't wired yet, so it's kept out of the UI rather than shipped as a dead toggle.)*
+- ⏭ **M6.2 — packaging + updates + About.** Mirror `sprig`'s Velopack lifecycle hooks + `UpdateChecker`; `ReadyToRun`/trim on the cold path; About/changelog viewer. *(Decisions: release distribution / update feed, code signing.)*
+- ⏭ **M6.3 — lean ffmpeg bundle + perf/QA gates + branding, v1.0.** Lean GPL ffmpeg bundle step; CI startup-budget gate + memory/throughput/clipboard/DPI matrices; icon/branding (`shrike.svg`) + first-run. *(Decision: ffmpeg build-from-source vs. ship a known-good minimal build.)*
+
 ---
 
 ## Dependencies & sequencing

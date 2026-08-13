@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Shrike.App.Native;
+using Shrike.App.Services;
 using Shrike.Core.Capture;
 using Shrike.Core.Recording;
 using static Shrike.Core.Recording.HardwareEncoders;
@@ -104,11 +105,17 @@ public partial class ExportDialog : Window
     {
         if (_running) return;
         var profile = Selected;
+
+        IStorageFolder? start = null;
+        if (SettingsService.Instance?.Current.DefaultSaveDirectory is { } dir && Directory.Exists(dir))
+            start = await StorageProvider.TryGetFolderFromPathAsync(dir);
+
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export recording",
             SuggestedFileName = CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now),
             DefaultExtension = profile.Extension.TrimStart('.'),
+            SuggestedStartLocation = start,
             FileTypeChoices = new[]
             {
                 new FilePickerFileType(profile.Codec.ToString())

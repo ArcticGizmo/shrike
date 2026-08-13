@@ -7,6 +7,7 @@ using Shrike.App.Views;
 using Shrike.Core.Capture;
 using Shrike.Core.Interop;
 using Shrike.Core.Recording;
+using Shrike.Core.Settings;
 
 namespace Shrike.App.Services;
 
@@ -19,6 +20,7 @@ internal sealed class CaptureController
 {
     private readonly VirtualDesktopService _desktops;
     private readonly RecentRing _ring;
+    private readonly SettingsService? _settings;
     private readonly Action? _onOverlayShown;
 
     private readonly List<OverlayWindow> _overlays = [];
@@ -31,10 +33,12 @@ internal sealed class CaptureController
     private RecordingHudWindow? _hud;
     private RecordingBorderWindow? _border;
 
-    public CaptureController(VirtualDesktopService desktops, RecentRing ring, Action? onOverlayShown = null)
+    public CaptureController(VirtualDesktopService desktops, RecentRing ring,
+        SettingsService? settings = null, Action? onOverlayShown = null)
     {
         _desktops = desktops;
         _ring = ring;
+        _settings = settings;
         _onOverlayShown = onOverlayShown;
     }
 
@@ -407,8 +411,12 @@ internal sealed class CaptureController
         if (addToRing)
             _ring.Add(image);
 
+        // "New window here" opens a fresh editor each time on the current desktop; "follow me" (default)
+        // reuses the one pre-built editor and brings it to the desktop you're looking at.
+        var newWindowHere = _settings?.Current.DesktopBehaviour == DesktopBehaviour.NewWindowHere;
+
         var editor = _editor;
-        if (editor is null)
+        if (editor is null || newWindowHere)
         {
             editor = new EditorWindow();
             editor.Closed += (_, _) => { if (ReferenceEquals(_editor, editor)) _editor = null; };

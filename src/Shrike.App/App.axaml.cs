@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Shrike.App.Imaging;
 using Shrike.App.Native;
 using Shrike.App.Services;
+using Shrike.App.Views;
 using Shrike.Core.Capture;
 using Shrike.Core.Interop;
 using Shrike.Core.Ipc;
@@ -18,11 +19,13 @@ namespace Shrike.App;
 public partial class App : Application
 {
     private readonly VirtualDesktopService _desktops = VirtualDesktopService.Create();
-    private readonly RecentRing _recentRing = new();
+    private RecentRing _recentRing = new();
+    private SettingsService? _settings;
     private HotkeyService? _hotkeys;
     private CaptureController? _capture;
     private TrayIcon? _tray;
     private NativeMenuItem? _recentMenu;
+    private SettingsWindow? _settingsWindow;
     private bool _overlayMarked;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
@@ -34,7 +37,16 @@ public partial class App : Application
             // Tray-resident: there is no main window, so the app must not exit when no window is open.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-            _capture = new CaptureController(_desktops, _recentRing, onOverlayShown: MarkOverlayShownOnce);
+            // Settings first — the ring size and hotkeys below come from them.
+            if (OperatingSystem.IsWindows())
+            {
+                _settings = new SettingsService();
+                _settings.ApplyAtStartup();
+                var s = _settings.Current;
+                _recentRing = new RecentRing(s.RingSize, s.RingByteCap);
+            }
+
+            _capture = new CaptureController(_desktops, _recentRing, _settings, MarkOverlayShownOnce);
 
             SetupTray(desktop);
 
@@ -42,7 +54,11 @@ public partial class App : Application
             {
                 _hotkeys = new HotkeyService();
                 _hotkeys.CaptureRequested += () => _capture?.ShowCaptureMenu();
+                _hotkeys.RecordRequested += () => _capture?.BeginRegionRecording();
                 _hotkeys.Start();
+                _hotkeys.Apply(_settings!.Current.CaptureHotkey, _settings.Current.RecordHotkey);
+                // Re-register whenever the user rebinds in the settings window.
+                _settings.Changed += ns => _hotkeys?.Apply(ns.CaptureHotkey, ns.RecordHotkey);
             }
 
             // Forwarded actions from a second launch arrive on a pool thread — marshal to the UI thread.
@@ -88,7 +104,8 @@ public partial class App : Application
         _recentRing.Changed += () => Dispatcher.UIThread.Post(RebuildRecentMenu);
         RebuildRecentMenu();
 
-        var settings = new NativeMenuItem("Settings (coming soon)") { IsEnabled = false };
+        var settings = new NativeMenuItem("Settings…");
+        settings.Click += (_, _) => OpenSettings();
 
         var quit = new NativeMenuItem("Quit Shrike");
         quit.Click += (_, _) => desktop.Shutdown();
@@ -199,6 +216,18 @@ public partial class App : Application
                 _capture?.ShowCaptureMenu();
                 break;
         }
+    }
+
+    private void OpenSettings()
+    {
+        if (!OperatingSystem.IsWindows() || _settings is null) return;
+        if (_settingsWindow is not null) { _settingsWindow.Activate(); return; }
+
+        var win = new SettingsWindow(_settings);
+        win.Closed += (_, _) => { if (ReferenceEquals(_settingsWindow, win)) _settingsWindow = null; };
+        _settingsWindow = win;
+        win.Show();
+        win.Activate();
     }
 
     private void MarkOverlayShownOnce()

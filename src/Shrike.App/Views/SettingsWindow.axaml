@@ -1,0 +1,79 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.SettingsWindow"
+        Title="Shrike — Settings"
+        Width="520" SizeToContent="Height"
+        CanResize="False"
+        Background="#140F0A"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="#9A8F7D" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Button.tool">
+            <Setter Property="Padding" Value="11,7" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3A2F1E" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#140F0A" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FFB840" />
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="20" Spacing="14">
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="Capture hotkey" />
+            <TextBox   Grid.Row="0" Grid.Column="1" Name="CaptureHotkeyBox" PlaceholderText="e.g. Alt+Shift+Q" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="Record hotkey" />
+            <TextBox   Grid.Row="1" Grid.Column="1" Name="RecordHotkeyBox" PlaceholderText="e.g. Alt+Shift+R (blank = off)" />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="When re-opening" />
+            <ComboBox  Grid.Row="2" Grid.Column="1" Name="DesktopBox" HorizontalAlignment="Stretch" />
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Classes="label" Text="Recent captures" />
+            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <NumericUpDown Name="RingSizeBox" Minimum="1" Maximum="100" Increment="1" Width="120" FormatString="0" />
+                <TextBlock Classes="hint" VerticalAlignment="Center" Text="kept in memory (applies on restart)" />
+            </StackPanel>
+
+            <TextBlock Grid.Row="4" Grid.Column="0" Classes="label" Text="Default format" />
+            <ComboBox  Grid.Row="4" Grid.Column="1" Name="FormatBox" HorizontalAlignment="Stretch" />
+
+            <TextBlock Grid.Row="5" Grid.Column="0" Classes="label" Text="Save folder" />
+            <Grid Grid.Row="5" Grid.Column="1" ColumnDefinitions="*,Auto">
+                <TextBox Grid.Column="0" Name="SaveDirBox" PlaceholderText="Ask each time" />
+                <Button  Grid.Column="1" Classes="tool" Content="Browse…" Click="OnBrowse" Margin="8,0,0,0" />
+            </Grid>
+
+            <CheckBox  Grid.Row="6" Grid.Column="1" Name="AutostartBox" Content="Launch Shrike at login" />
+        </Grid>
+
+        <TextBlock Name="ErrorText" Foreground="#EF4444" FontSize="12" IsVisible="False" TextWrapping="Wrap" />
+
+        <Grid ColumnDefinitions="*,Auto,Auto">
+            <Button Grid.Column="1" Classes="tool" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" />
+            <Button Grid.Column="2" Classes="tool accent" Content="Save" Click="OnSave" />
+        </Grid>
+    </StackPanel>
+</Window>
