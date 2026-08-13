@@ -121,10 +121,10 @@
 ## Phase C — Recording
 
 ### M4 · Screen recording + HUD
-*Reliable region recording to a playable file.*
+*Reliable region recording to a playable file.* Delivered in three chunks (like M2).
 
 **Build**
-- **Recorder (`Shrike.Core`)**: WGC frame source → **Media Foundation H.264** encoder on a background thread, writing an MP4 to a temp source file. Frame pacing / drop handling. Optional cursor capture. **No audio** (deferred).
+- **Recorder (`Shrike.Core`)**: ~~WGC frame source → Media Foundation H.264 encoder~~ **FFmpeg-backed H.264 encoder** (see decision below) on a background thread, writing an MP4 to a temp source file. Frame pacing / drop handling. Optional cursor capture. **No audio** (deferred).
 - **Region selection**: reuse the M1 overlay to pick a region / window / monitor.
 - **HUD (`Shrike.App`)**: small floating bar — elapsed time, pause/resume, stop, discard. On stop, hands the source to the timeline editor (M5).
 
@@ -132,6 +132,13 @@
 - Record a region and produce a **playable MP4**.
 - Sustains the target fps at 1080p without runaway frame drops (throughput smoke test).
 - Recording, HUD and overlay all obey the desktop rule.
+
+**Chunks**
+- ✅ **M4.1 — recording pipeline core.** `IFrameEncoder` + `FfmpegMp4Encoder` (pipes top-down BGRA to `ffmpeg` stdin → libx264 MP4; stderr drained off-thread), an `Ffmpeg` locator (env override → bundled → winget shim → PATH, graceful when absent), and a headless `RecordingSession` (constant-fps pacing, duplicate-on-slow-capture, pause excludes time, discard/stop state machine). Tests: encoder round-trip + 1080p throughput smoke (skip when no ffmpeg), `RecordingSession` pacing/pause/state.
+- ⬜ **M4.2 — WGC frame source.** `Windows.Graphics.Capture` feeding real frames to the encoder (needs the Windows-SDK projection / target-framework bump).
+- ⬜ **M4.3 — HUD + region wiring.** Reuse the M1 overlay to pick region/window/monitor; floating HUD (elapsed, pause/resume, stop, discard); desktop-rule compliance; hand the MP4 to the timeline (M5) on stop.
+
+> **Encoder decision (2026-08-13):** the locked "no-dependency MP4 via built-in Media Foundation" plan was **abandoned** for the encoder. A hand-rolled MF `IMFSinkWriter` was implemented and proven correct (all attribute readbacks matched), but this dev machine's H.264 encoder MFT rejects a textbook-valid output type (`MF_E_ATTRIBUTENOTFOUND`), and the sink writer fails downstream (`MF_E_INVALIDMEDIATYPE`) — reproduced across every input format, profile, resolution, and an exact replica of a known-working sample. Rather than ship an encoder that silently fails on some machines, Shrike now encodes MP4 via **FFmpeg** (the design already contemplated an optional FFmpeg backend for GIF/WebP in M5 — this widens it to the MP4 path). Cost: a bundled `ffmpeg.exe` dependency (packaged in M6); benefit: robust, portable encoding. The MF encoder + NV12 converter were removed.
 
 ### M5 · Timeline trimming + export presets
 *Quick edits and the footprint dial — the "Slack-small" lever.*
