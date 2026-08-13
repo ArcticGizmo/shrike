@@ -6,7 +6,8 @@ using Svg;
 // Generates every raster icon asset from the single source-of-truth SVG (shrike.svg).
 //
 //   src/Shrike.App/Assets/icon.png    256x256 PNG — window icons and the in-app logo
-//   src/Shrike.App/Assets/shrike.ico  multi-resolution ICO (16..256) — tray + the .exe ApplicationIcon
+//   src/Shrike.App/Assets/tray.png     32x32   PNG — the system-tray icon (rendered small, not downscaled)
+//   src/Shrike.App/Assets/shrike.ico  multi-resolution ICO (16..256) — the .exe ApplicationIcon
 //   landing-icon.png                   512x512 PNG — the README header logo
 //
 // Re-run after editing shrike.svg:  dotnet run --project tools/IconGen
@@ -29,6 +30,7 @@ int[] icoSizes = { 16, 24, 32, 48, 64, 128, 256 };
 
 string assetsDir = Path.Combine(repoRoot, "src", "Shrike.App", "Assets");
 WritePng(doc, Path.Combine(assetsDir, "icon.png"), 256);
+WritePng(doc, Path.Combine(assetsDir, "tray.png"), 32);   // small native render for the notification area
 WritePng(doc, Path.Combine(repoRoot, "landing-icon.png"), 512);
 WriteIco(doc, Path.Combine(assetsDir, "shrike.ico"), icoSizes);
 
