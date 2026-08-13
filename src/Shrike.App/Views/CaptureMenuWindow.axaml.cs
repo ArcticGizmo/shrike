@@ -12,6 +12,7 @@ internal enum CaptureMenuChoice
     Region,
     Monitor,
     AllMonitors,
+    Recent,
 }
 
 /// <summary>
@@ -22,6 +23,7 @@ internal enum CaptureMenuChoice
 public partial class CaptureMenuWindow : Window
 {
     private readonly PixelPoint _anchor;
+    private readonly int _recentCount;
     private bool _done;
 
     internal event Action<CaptureMenuChoice>? Chosen;
@@ -30,11 +32,21 @@ public partial class CaptureMenuWindow : Window
     // Parameterless ctor for the XAML designer only.
     public CaptureMenuWindow() : this(new PixelPoint(0, 0)) { }
 
-    internal CaptureMenuWindow(PixelPoint anchor)
+    internal CaptureMenuWindow(PixelPoint anchor, int recentCount = 0)
     {
         _anchor = anchor;
+        _recentCount = recentCount;
         InitializeComponent();
+
+        // Recent opens the editor on the newest shot; greyed out until there's something to open.
+        var recentButton = this.FindControl<Button>("RecentButton");
+        if (recentButton is not null)
+            recentButton.IsEnabled = _recentCount > 0;
+        if (this.FindControl<TextBlock>("RecentText") is { } text)
+            text.Text = _recentCount > 0 ? $"Recent captures ({_recentCount})" : "Recent captures";
     }
+
+    private bool HasRecent => _recentCount > 0;
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
@@ -68,6 +80,7 @@ public partial class CaptureMenuWindow : Window
             case Key.D1 or Key.NumPad1: Choose(CaptureMenuChoice.Region); break;
             case Key.D2 or Key.NumPad2: Choose(CaptureMenuChoice.Monitor); break;
             case Key.D3 or Key.NumPad3: Choose(CaptureMenuChoice.AllMonitors); break;
+            case Key.D4 or Key.NumPad4 when HasRecent: Choose(CaptureMenuChoice.Recent); break;
             case Key.Escape: Cancel(); break;
         }
     }
@@ -75,6 +88,7 @@ public partial class CaptureMenuWindow : Window
     private void OnRegion(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Region);
     private void OnMonitor(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Monitor);
     private void OnAllMonitors(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.AllMonitors);
+    private void OnRecent(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Recent);
 
     private void Choose(CaptureMenuChoice choice)
     {

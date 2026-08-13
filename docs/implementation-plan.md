@@ -99,20 +99,22 @@
 - ✅ **Select/move** existing annotations — Select tool hit-tests topmost, drag to move (single undo per gesture via `BeginInteractive`/`ReplaceLive`), dashed selection box, move-cursor on hover, Delete/Backspace to remove. Pure geometry (bounds/hit-test/translate) lives in `Shrike.Core.AnnotationGeometry` with tests.
 - ✅ **Crop** — non-destructive export rectangle: drag with the Crop tool to set it (tiny drag clears), editor masks the discarded area with a bright keep-border, size readout shows "(cropped)". Applied last in export (flatten → redact → crop), so redaction coordinates stay correct.
 
-> **M2 toolbox complete.** All annotation tools, undo/redo, destructive redaction, zoom, and crop are in. Next: M3 (recent-captures ring).
+> **M2 toolbox complete.** All annotation tools, undo/redo, destructive redaction, zoom, and crop are in. ✅ M3 (recent-captures ring) is now done too — see below.
 
-### M3 · Recent-captures ring
+### M3 · Recent-captures ring ✅
 *"Show me the last few and let me re-copy" — memory-only.*
 
 **Build**
-- **Ring (`Shrike.Core`)**: bounded in-memory list of the last **N** (configurable, default 10) captures + thumbnails; total-bytes cap with eviction; **cleared on quit**.
-- **Surfaces (`Shrike.App`)**: tray flyout list + a strip along the editor. Per-item actions: **copy again**, **open in editor**, **save**, **delete**.
+- ✅ **Ring (`Shrike.Core`)**: `RecentRing` — bounded in-memory list of the last **N** (configurable, default 10) captures + thumbnails; total-bytes cap (default 512 MB) with newest-first eviction that always keeps the most recent shot; `Changed` event; **cleared on quit** (no disk spill in v1). Thumbnails via a headless box-average `Thumbnail.Downscale`.
+- ✅ **Surfaces (`Shrike.App`)**: tray **Recent** flyout (thumbnail-iconed submenu per capture → copy / open in editor / delete, plus **Clear recent**) + a thumbnail **filmstrip** along the bottom of the editor (click to re-open; right-click context menu → copy / save / delete). Strip hides when the ring is empty.
 
 **Exit criteria**
-- After several captures, the last N are re-copyable from the tray **without re-capturing**.
-- Ring respects both the count cap and the byte cap; memory does not grow unbounded; state is gone after quit.
+- ✅ After several captures, the last N are re-copyable from the tray **without re-capturing**.
+- ✅ Ring respects both the count cap and the byte cap; memory does not grow unbounded; state is gone after quit. *(Covered by `RecentRingTests` / `ThumbnailTests`.)*
 
-> **→ Release candidate: Shrike v0.x (screenshots).** Phase B is shippable here.
+> **M3 complete.** Phase B (the screenshot MVP) is feature-complete.
+>
+> **→ Release candidate: Shrike v0.x (screenshots).** Phase B is shippable here. Next: **M4** (screen recording + HUD) begins Phase C.
 
 ---
 

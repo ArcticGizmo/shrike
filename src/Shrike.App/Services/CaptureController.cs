@@ -16,6 +16,7 @@ namespace Shrike.App.Services;
 internal sealed class CaptureController
 {
     private readonly VirtualDesktopService _desktops;
+    private readonly RecentRing _ring;
     private readonly Action? _onOverlayShown;
 
     private readonly List<OverlayWindow> _overlays = [];
@@ -25,9 +26,10 @@ internal sealed class CaptureController
     private EditorWindow? _editor;
     private CaptureMenuWindow? _menu;
 
-    public CaptureController(VirtualDesktopService desktops, Action? onOverlayShown = null)
+    public CaptureController(VirtualDesktopService desktops, RecentRing ring, Action? onOverlayShown = null)
     {
         _desktops = desktops;
+        _ring = ring;
         _onOverlayShown = onOverlayShown;
     }
 
@@ -60,7 +62,7 @@ internal sealed class CaptureController
         }
 
         var (cx, cy) = CursorPosition.Get();
-        var menu = new CaptureMenuWindow(new PixelPoint(cx, cy));
+        var menu = new CaptureMenuWindow(new PixelPoint(cx, cy), _ring.Count);
         menu.Chosen += choice =>
         {
             TeardownChooser();
@@ -86,6 +88,11 @@ internal sealed class CaptureController
                 break;
             case CaptureMenuChoice.AllMonitors:
                 CaptureFromFrozen(frozen, ScreenCapture.VirtualScreenBounds());
+                break;
+            case CaptureMenuChoice.Recent:
+                // Open the editor on the newest capture; the filmstrip surfaces the rest.
+                if (_ring.Items.Count > 0)
+                    OpenInEditor(_ring.Items[0].Image);
                 break;
         }
     }
@@ -268,8 +275,14 @@ internal sealed class CaptureController
         CaptureAndEdit(region);
     }
 
-    private void ShowInEditor(CapturedImage image)
+    /// <summary>Re-open a capture already in the recent ring, without pushing a duplicate entry.</summary>
+    public void OpenInEditor(CapturedImage image) => ShowInEditor(image, addToRing: false);
+
+    private void ShowInEditor(CapturedImage image, bool addToRing = true)
     {
+        if (addToRing)
+            _ring.Add(image);
+
         var editor = _editor;
         if (editor is null)
         {
@@ -278,6 +291,8 @@ internal sealed class CaptureController
             _editor = editor;
         }
 
+        // Wire the strip to the ring + re-open path (idempotent; the editor guards re-subscribe).
+        editor.AttachRecentRing(_ring, OpenInEditor);
         editor.SetCapture(image);
 
         // No desktop teleport: if the reused editor is parked on another desktop, bring it to the one

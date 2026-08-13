@@ -3,10 +3,13 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using Shrike.App.Controls;
+using Shrike.App.Imaging;
 using Shrike.App.Native;
 using Shrike.Core.Annotations;
 using Shrike.Core.Capture;
@@ -25,12 +28,17 @@ public partial class EditorWindow : Window
     private AnnotationDocument _document = new();
     private string? _lastSavedPath;
 
+    private RecentRing? _ring;
+    private Action<CapturedImage>? _openInEditor;
+
     private AnnotationSurface? _surface;
     private TextBlock? _dimensions;
     private TextBlock? _status;
     private Button? _openFolderButton;
     private Button? _copyPathButton;
     private Button? _zoomLabel;
+    private Border? _recentStrip;
+    private StackPanel? _recentItems;
 
     private readonly List<Button> _toolButtons = [];
     private readonly List<Button> _strokeButtons = [];
@@ -46,6 +54,8 @@ public partial class EditorWindow : Window
         _openFolderButton = this.FindControl<Button>("OpenFolderButton");
         _copyPathButton = this.FindControl<Button>("CopyPathButton");
         _zoomLabel = this.FindControl<Button>("ZoomLabel");
+        _recentStrip = this.FindControl<Border>("RecentStrip");
+        _recentItems = this.FindControl<StackPanel>("RecentItems");
 
         if (_surface is not null)
         {
@@ -55,6 +65,22 @@ public partial class EditorWindow : Window
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    /// <summary>
+    /// Bind the editor's recent filmstrip to the shared ring. Idempotent — the controller calls this on
+    /// every capture, but we only subscribe once. <paramref name="openInEditor"/> re-opens a ring item
+    /// without pushing a duplicate entry.
+    /// </summary>
+    public void AttachRecentRing(RecentRing ring, Action<CapturedImage> openInEditor)
+    {
+        _openInEditor = openInEditor;
+        if (ReferenceEquals(_ring, ring))
+            return;
+
+        _ring = ring;
+        ring.Changed += RebuildRecentStrip;
+        RebuildRecentStrip();
+    }
 
     /// <summary>Load a new capture into the editor, resetting annotations + per-capture state.</summary>
     public void SetCapture(CapturedImage image)
@@ -188,6 +214,76 @@ public partial class EditorWindow : Window
         _dimensions.Text = _surface.IsCropped ? $"{w} × {h} (cropped)" : $"{w} × {h}";
     }
 
+    // ---- recent filmstrip ----
+
+    /// <summary>Rebuild the thumbnail strip from the ring (newest first); hide it when the ring is empty.</summary>
+    private void RebuildRecentStrip()
+    {
+        if (_recentItems is null || _recentStrip is null || _ring is null)
+            return;
+
+        _recentItems.Children.Clear();
+
+        if (_ring.Count == 0)
+        {
+            _recentStrip.IsVisible = false;
+            return;
+        }
+
+        foreach (var item in _ring.Items)
+            _recentItems.Children.Add(BuildThumbButton(item));
+
+        _recentStrip.IsVisible = true;
+    }
+
+    private Button BuildThumbButton(RecentCapture item)
+    {
+        var image = new Image
+        {
+            Source = BitmapConverter.ToBitmap(item.Thumbnail),
+            Height = 46,
+            Stretch = Avalonia.Media.Stretch.Uniform,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Avalonia.Media.RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
+
+        var button = new Button
+        {
+            Classes = { "recent" },
+            Content = image,
+            [ToolTip.TipProperty] = $"{item.CapturedAt.LocalDateTime:HH:mm:ss} · {item.Image.Width}×{item.Image.Height}",
+        };
+        // Click re-opens; the context menu carries copy / save / delete.
+        button.Click += (_, _) => _openInEditor?.Invoke(item.Image);
+
+        var copy = new MenuItem { Header = "Copy" };
+        copy.Click += (_, _) => CopyImage(item.Image);
+        var save = new MenuItem { Header = "Save as…" };
+        save.Click += async (_, _) => await SaveImageAsync(item.Image);
+        var delete = new MenuItem { Header = "Delete" };
+        delete.Click += (_, _) => _ring?.Remove(item);
+
+        button.ContextMenu = new ContextMenu { ItemsSource = new[] { copy, save, delete } };
+        return button;
+    }
+
+    private void CopyImage(CapturedImage image)
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        SetStatus(CaptureClipboard.Copy(hwnd, image)
+            ? "Copied to clipboard — PNG + bitmap."
+            : "Couldn't reach the clipboard — try again.");
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (_ring is not null)
+            _ring.Changed -= RebuildRecentStrip;
+        base.OnClosed(e);
+    }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -223,23 +319,18 @@ public partial class EditorWindow : Window
 
     private void OnCopy(object? sender, RoutedEventArgs e)
     {
-        if (!OperatingSystem.IsWindows() || BuildExport() is not { } image)
-            return;
-
-        var png = ImageCodec.Encode(image, ImageFormatKind.Png);
-        var dib = ImageCodec.ToDibV5(image);
-        var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-
-        SetStatus(ClipboardImage.Set(hwnd, png, dib)
-            ? "Copied to clipboard — PNG + bitmap."
-            : "Couldn't reach the clipboard — try again.");
+        if (BuildExport() is { } image)
+            CopyImage(image);
     }
 
     private async void OnSave(object? sender, RoutedEventArgs e)
     {
-        if (BuildExport() is not { } image)
-            return;
+        if (BuildExport() is { } image)
+            await SaveImageAsync(image);
+    }
 
+    private async Task SaveImageAsync(CapturedImage image)
+    {
         var suggested = CaptureNaming.Expand(CaptureNaming.DefaultTemplate, image.CapturedAt);
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {

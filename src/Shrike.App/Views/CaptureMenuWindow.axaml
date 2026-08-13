@@ -29,6 +29,10 @@
             <Setter Property="FontFamily" Value="Consolas,monospace" />
             <Setter Property="Width" Value="18" />
         </Style>
+        <!-- Disabled row (e.g. Recent with an empty ring): dim, but keep the layout stable. -->
+        <Style Selector="Button.mode:disabled">
+            <Setter Property="Opacity" Value="0.4" />
+        </Style>
     </Window.Styles>
 
     <Border Background="#F214110D" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="12"
@@ -56,7 +60,16 @@
                 </StackPanel>
             </Button>
 
-            <TextBlock Text="1–3 to pick  ·  Esc to cancel" FontSize="11" Foreground="#8A7C68"
+            <Border Height="1" Background="#322A1E" Margin="4,3" />
+
+            <Button Name="RecentButton" Classes="mode" Click="OnRecent">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="key" Text="4" />
+                    <TextBlock Name="RecentText" Text="Recent captures" />
+                </StackPanel>
+            </Button>
+
+            <TextBlock Text="1–4 to pick  ·  Esc to cancel" FontSize="11" Foreground="#8A7C68"
                        Margin="6,4,0,2" />
         </StackPanel>
     </Border>
