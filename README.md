@@ -82,6 +82,13 @@ run.bat                    # or: dotnet run --project src\Shrike.App
 dotnet test                # run the test suite
 ```
 
+A `run.bat` (Debug) build runs as a **dev instance**: it keeps its settings in
+`%APPDATA%\Shrike (Dev)` and namespaces its single-instance mutex, IPC pipe, autostart entry, and tray
+tooltip with ` (Dev)`, so it runs fully side-by-side with an installed release without touching its data.
+Isolation is a runtime concern only — there is no separate dev installer; the release installs to
+`%LocalAppData%\Shrike` as usual. `AppProfile` (in `Shrike.Core`) is the single switch, and
+`SHRIKE_DEV=1` / `SHRIKE_DEV=0` forces the profile on or off for a Release build without a rebuild.
+
 Packaging and release details are in [`docs/packaging.md`](docs/packaging.md); the full design and
 phased plan live in [`docs/design.md`](docs/design.md) and
 [`docs/implementation-plan.md`](docs/implementation-plan.md).

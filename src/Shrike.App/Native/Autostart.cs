@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using Microsoft.Win32;
+using Shrike.Core;
 
 namespace Shrike.App.Native;
 
@@ -12,7 +13,9 @@ namespace Shrike.App.Native;
 internal static class Autostart
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "Shrike";
+
+    // "Shrike (Dev)" for a dev build, so toggling autostart there never overwrites the release's entry.
+    private static readonly string ValueName = "Shrike" + AppProfile.DisplaySuffix;
 
     /// <summary>Add or remove the login entry to match <paramref name="enabled"/>. Best-effort.</summary>
     public static void Apply(bool enabled)

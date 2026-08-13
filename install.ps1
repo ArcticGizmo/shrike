@@ -117,7 +117,7 @@ The download has been deleted. Retry; if it keeps failing, report it at $(Get-Re
     Write-Host ''
     Write-Host "Shrike $tag is installed and starting." -ForegroundColor Green
     Write-Host '  It lives in the tray (no main window). Find it in the Start Menu; installed under %LocalAppData%\Shrike (no admin needed).' -ForegroundColor DarkGray
-    Write-Host '  Press Alt+Shift+Q to open the capture chooser, or Alt+Shift+R to record a region.' -ForegroundColor DarkGray
+    Write-Host '  Press Alt+Shift+Q to open the capture chooser, then pick a capture or Record region.' -ForegroundColor DarkGray
     Write-Host '  Updates from here are in-app: tray -> About Shrike -> Check for updates.' -ForegroundColor DarkGray
 }
 

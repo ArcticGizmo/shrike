@@ -7,8 +7,10 @@ namespace Shrike.Core.Ipc;
 /// </summary>
 public static class IpcProtocol
 {
-    /// <summary>Named-pipe identity. The <c>.v1</c> suffix guards against protocol drift.</summary>
-    public const string PipeName = "Shrike.Ipc.v1";
+    /// <summary>Named-pipe identity. The <c>.v1</c> suffix guards against protocol drift; a dev build gets
+    /// a further <c>.Dev</c> suffix so it never shares the pipe with the installed release (see
+    /// <see cref="AppProfile"/>) — otherwise the two single-instance servers would collide.</summary>
+    public static readonly string PipeName = "Shrike.Ipc.v1" + (AppProfile.IsDev ? ".Dev" : "");
 
     /// <summary>Encode an action for the wire.</summary>
     public static string Format(CaptureAction action) => action.ToString();

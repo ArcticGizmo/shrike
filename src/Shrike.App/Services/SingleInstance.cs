@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
+using Shrike.Core;
 using Shrike.Core.Ipc;
 
 namespace Shrike.App.Services;
@@ -11,7 +12,10 @@ namespace Shrike.App.Services;
 /// </summary>
 internal sealed class SingleInstance : IDisposable
 {
-    private const string MutexName = @"Local\Shrike.SingleInstance.v1";
+    // A dev build gets a ".Dev" suffix so it doesn't no-op against the installed release's mutex
+    // (see AppProfile) — the two run side-by-side, each primary in its own namespace.
+    private static readonly string MutexName =
+        @"Local\Shrike.SingleInstance.v1" + (AppProfile.IsDev ? ".Dev" : "");
 
     private readonly Mutex? _mutex;
     private CancellationTokenSource? _serverCts;

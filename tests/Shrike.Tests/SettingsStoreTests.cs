@@ -1,3 +1,4 @@
+using Shrike.Core;
 using Shrike.Core.Imaging;
 using Shrike.Core.Settings;
 
@@ -95,9 +96,11 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public void Default_path_is_under_appdata_shrike()
+    public void Default_path_is_under_appdata_profile_folder()
     {
+        // Release → "Shrike"; a dev build (this test runs in Debug) → "Shrike (Dev)". Either way the
+        // path lives under the profile's data folder so dev and release never share settings.
         var p = SettingsStore.DefaultPath();
-        Assert.EndsWith(Path.Combine("Shrike", "settings.json"), p);
+        Assert.EndsWith(Path.Combine(AppProfile.DataFolderName, "settings.json"), p);
     }
 }

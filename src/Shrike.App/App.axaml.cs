@@ -10,6 +10,7 @@ using Shrike.App.Native;
 using Shrike.App.Services;
 using Shrike.App.Updates;
 using Shrike.App.Views;
+using Shrike.Core;
 using Shrike.Core.Capture;
 using Shrike.Core.Changelog;
 using Shrike.Core.Interop;
@@ -147,7 +148,7 @@ public partial class App : Application
         _tray = new TrayIcon
         {
             Icon = icon,
-            ToolTipText = "Shrike — ready",
+            ToolTipText = $"Shrike{AppProfile.DisplaySuffix} — ready",
             Menu = menu,
             IsVisible = true,
         };

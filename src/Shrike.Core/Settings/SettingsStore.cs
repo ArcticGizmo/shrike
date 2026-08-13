@@ -4,8 +4,9 @@ using System.Text.Json.Serialization;
 namespace Shrike.Core.Settings;
 
 /// <summary>
-/// Loads and saves <see cref="AppSettings"/> as JSON under <c>%APPDATA%\Shrike\settings.json</c>. Loading
-/// is deliberately forgiving: a missing file, unreadable file, or malformed JSON all fall back to
+/// Loads and saves <see cref="AppSettings"/> as JSON under <c>%APPDATA%\Shrike\settings.json</c> (a dev
+/// build uses <c>%APPDATA%\Shrike (Dev)\settings.json</c> — see <see cref="AppProfile"/>). Loading is
+/// deliberately forgiving: a missing file, unreadable file, or malformed JSON all fall back to
 /// <see cref="AppSettings.Default"/> rather than throwing — settings should never stop the app from
 /// starting. Values are clamped on load. The path is injectable so the whole thing is headless-testable.
 /// </summary>
@@ -23,11 +24,12 @@ public sealed class SettingsStore
 
     public SettingsStore(string? path = null) => Path = path ?? DefaultPath();
 
-    /// <summary>The canonical location: <c>%APPDATA%\Shrike\settings.json</c>.</summary>
+    /// <summary>The canonical location: <c>%APPDATA%\Shrike\settings.json</c> (or the <c>Shrike (Dev)</c>
+    /// folder for a dev build, so it never reads/writes the installed release's settings).</summary>
     public static string DefaultPath()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return System.IO.Path.Combine(appData, "Shrike", "settings.json");
+        return System.IO.Path.Combine(appData, AppProfile.DataFolderName, "settings.json");
     }
 
     /// <summary>Read settings, or the defaults if the file is absent/unreadable/corrupt.</summary>
