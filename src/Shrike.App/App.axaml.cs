@@ -86,7 +86,7 @@ public partial class App : Application
 
     private void SetupTray(IClassicDesktopStyleApplicationLifetime desktop)
     {
-        var icon = new WindowIcon(AssetLoader.Open(new Uri("avares://shrike/Assets/shrike-tray.png")));
+        var icon = new WindowIcon(AssetLoader.Open(new Uri("avares://shrike/Assets/icon.png")));
 
         // One capture entry point (the chooser), plus the individual modes for discoverability.
         var capture = new NativeMenuItem("Capture…")

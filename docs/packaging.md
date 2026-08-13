@@ -56,14 +56,14 @@ written-offer notices required by redistribution ship alongside. A dev machine c
 All raster icon assets are generated from the single source-of-truth [`shrike.svg`](../shrike.svg) by
 [`tools/gen-icons.ps1`](../tools/gen-icons.ps1) (a small SVG→PNG/ICO tool under `tools/IconGen`):
 `src/Shrike.App/Assets/shrike.ico` (the `.exe`/`vpk --icon` icon), `Assets/icon.png` (256px), and
-`shrike-icon.png` (512px, the README header). Re-run it after editing the SVG and commit the assets.
+`landing-icon.png` (512px, the README header). Re-run it after editing the SVG and commit the assets.
 
 ## Install
 
 The primary install path is the PowerShell one-liner ([`install.ps1`](../install.ps1) at the repo root):
 
 ```powershell
-irm https://raw.githubusercontent.com/quartexsoftware/shrike/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/ArcticGizmo/shrike/main/install.ps1 | iex
 ```
 
 It resolves the latest GitHub release, fetches `SHA256SUMS.txt` + `Shrike-win-Setup.exe`, verifies the
@@ -112,7 +112,7 @@ the app (resource `CHANGELOG.md`) at build time and shown by the About window.
 ## Not yet done (future)
 
 - **Create the GitHub repo** — no git remote is configured yet. Once it exists, replace the
-  `TODO(release)` placeholder in `UpdateChecker.DefaultFeedUrl` and confirm the `quartexsoftware/shrike`
+  `TODO(release)` placeholder in `UpdateChecker.DefaultFeedUrl` and confirm the `ArcticGizmo/shrike`
   slug in `install.ps1` / `release.yml`.
 - **Pin the ffmpeg hash** — `tools/fetch-ffmpeg.ps1` currently downloads without an enforced `$Sha256`
   (it warns and prints the hash). Paste the printed hash in to lock it.

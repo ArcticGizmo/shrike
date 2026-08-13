@@ -9,7 +9,7 @@
 
     Designed to be run as a one-liner:
 
-        irm https://raw.githubusercontent.com/quartexsoftware/shrike/main/install.ps1 | iex
+        irm https://raw.githubusercontent.com/ArcticGizmo/shrike/main/install.ps1 | iex
 
     Downloading via PowerShell rather than a browser skips the mark-of-the-web, so this route avoids the
     "Windows protected your PC" SmartScreen dialog (the build is not code-signed yet).
@@ -23,13 +23,13 @@
         $env:SHRIKE_VERSION = '0.1.0'; irm .../install.ps1 | iex
 
 .PARAMETER Repo
-    owner/name of the GitHub repository to install from. Defaults to quartexsoftware/shrike; override for a
+    owner/name of the GitHub repository to install from. Defaults to ArcticGizmo/shrike; override for a
     fork. Also reads $env:SHRIKE_REPO.
 #>
 #Requires -Version 5.1
 param(
     [string] $Version = $env:SHRIKE_VERSION,
-    [string] $Repo    = $(if ($env:SHRIKE_REPO) { $env:SHRIKE_REPO } else { 'quartexsoftware/shrike' })
+    [string] $Repo    = $(if ($env:SHRIKE_REPO) { $env:SHRIKE_REPO } else { 'ArcticGizmo/shrike' })
 )
 
 # Failures are raised with `throw`, never `exit`: this script is normally executed by `iex` inside the

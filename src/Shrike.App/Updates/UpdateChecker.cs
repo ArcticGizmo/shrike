@@ -39,9 +39,9 @@ public static class UpdateChecker
 {
     public const string FeedEnvVar = "SHRIKE_UPDATE_FEED";
 
-    // TODO(release): point this at Shrike's real GitHub Releases once the repo exists. Until then the
-    // check is a no-op on dev builds (not Velopack-installed) and swallows any failure on installed ones.
-    public const string DefaultFeedUrl = "https://github.com/quartexsoftware/shrike";
+    // The GitHub Releases feed. Harmless until the repo is created: the check is a no-op on dev builds
+    // (not Velopack-installed) and swallows any failure on installed ones.
+    public const string DefaultFeedUrl = "https://github.com/ArcticGizmo/shrike";
 
     /// <summary>Full-detail check used by the About window. Never throws.</summary>
     public static async Task<UpdateCheckResult> CheckDetailedAsync()

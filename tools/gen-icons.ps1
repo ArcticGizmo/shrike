@@ -3,7 +3,7 @@
 #
 #   src/Shrike.App/Assets/icon.png    256x256 PNG   (window icons + in-app logo)
 #   src/Shrike.App/Assets/shrike.ico  multi-res ICO (tray icon + .exe ApplicationIcon + vpk --icon)
-#   shrike-icon.png                   512x512 PNG   (README header)
+#   landing-icon.png                   512x512 PNG   (README header)
 #
 # Run this after editing shrike.svg, then commit the regenerated assets.
 
