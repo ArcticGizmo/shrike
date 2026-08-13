@@ -116,7 +116,7 @@ public partial class EditorWindow : Window
             SetStatus(tool switch
             {
                 AnnotationTool.None => "Select",
-                AnnotationTool.Crop => "Drag to set the crop · click (tiny drag) to clear it",
+                AnnotationTool.Crop => "Drag to set the crop · drag the handles or inside to adjust · tiny drag outside to clear",
                 _ => $"Tool: {tool}",
             });
             RefreshActiveStates();

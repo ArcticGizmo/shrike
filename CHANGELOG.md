@@ -6,8 +6,13 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ## [Unreleased]
 
-- Removed the dedicated record hotkey — start a recording from the capture chooser's *Record region* option (or the tray) instead
-- Dev builds now run side-by-side with an installed release: a Debug/`run.bat` instance uses a separate `Shrike (Dev)` settings folder and namespaces its mutex, IPC pipe, autostart entry, and tray tooltip (mirrors perch/sprig; `SHRIKE_DEV` forces the profile)
+---
+
+## [v0.1.1] - 2026-08-13
+
+- Drag handles to move or resize the editor's crop rectangle
+- Start recording from the capture chooser instead of a dedicated hotkey
+- Dev builds run side-by-side with an installed release, keeping their own settings
 
 ---
 

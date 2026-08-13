@@ -76,12 +76,25 @@ public sealed class AnnotationSurface : UserControl
     private Annotation? _moveOriginal;
     private bool _moveCheckpointed;
     private static readonly Cursor MoveCursor = new(StandardCursorType.SizeAll);
+    private static readonly Cursor SizeWECursor = new(StandardCursorType.SizeWestEast);
+    private static readonly Cursor SizeNSCursor = new(StandardCursorType.SizeNorthSouth);
+    private static readonly Cursor TopLeftCursor = new(StandardCursorType.TopLeftCorner);
+    private static readonly Cursor TopRightCursor = new(StandardCursorType.TopRightCorner);
+    private static readonly Cursor BottomLeftCursor = new(StandardCursorType.BottomLeftCorner);
+    private static readonly Cursor BottomRightCursor = new(StandardCursorType.BottomRightCorner);
 
     /// <summary>Export crop in image pixels, or null for the whole image. Non-destructive (applied on export).</summary>
     private RectD? _cropRect;
 
     /// <summary>Raised when the crop rectangle is set or cleared, so the editor can update the size readout.</summary>
     public event Action? CropChanged;
+
+    // ---- crop handle drag state (Crop tool) ----
+    /// <summary>Which part of the crop rect a drag is manipulating: an edge/corner handle, the interior (move), or nothing.</summary>
+    private enum CropGrip { None, Move, Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight }
+    private CropGrip _cropGrip = CropGrip.None;
+    private RectD _cropOriginal;   // crop rect (image px) when the handle drag began
+    private Point _cropDragStart;  // canvas point where the handle drag began
 
     private AnnotationTool _tool = AnnotationTool.None;
 
@@ -239,6 +252,21 @@ public sealed class AnnotationSurface : UserControl
         if (Tool == AnnotationTool.Text) { BeginTextEdit(canvasPoint); return; }
         if (Tool == AnnotationTool.StepBadge) { PlaceStepBadge(canvasPoint); return; }
 
+        // Crop tool: grab a handle (resize) or the interior (move) of an existing crop; otherwise fall
+        // through and draw a fresh crop rectangle.
+        if (Tool == AnnotationTool.Crop && _cropRect is { } crop)
+        {
+            var grip = HitCropGrip(canvasPoint);
+            if (grip != CropGrip.None)
+            {
+                _cropGrip = grip;
+                _cropOriginal = crop;
+                _cropDragStart = canvasPoint;
+                e.Pointer.Capture(_canvas);
+                return;
+            }
+        }
+
         _dragging = true;
         _dragStart = canvasPoint;
         _freehand = [ToImage(_dragStart)];
@@ -249,10 +277,29 @@ public sealed class AnnotationSurface : UserControl
     {
         if (_movingSelection) { DragSelection(e.GetPosition(_canvas)); return; }
 
+        // Crop handle drag: resize the grabbed edge/corner or move the whole rect, live.
+        if (_cropGrip != CropGrip.None)
+        {
+            var cp = e.GetPosition(_canvas);
+            var ddx = (cp.X - _cropDragStart.X) / Scale;
+            var ddy = (cp.Y - _cropDragStart.Y) / Scale;
+            _cropRect = _cropGrip == CropGrip.Move ? MoveCrop(ddx, ddy) : ResizeCrop(_cropGrip, ddx, ddy);
+            Rerender();
+            CropChanged?.Invoke();
+            return;
+        }
+
         // Select tool, hovering: show the move cursor over a selectable annotation.
         if (!_dragging && Tool == AnnotationTool.None)
         {
             Cursor = HitTestTopmost(ToImage(e.GetPosition(_canvas))) >= 0 ? MoveCursor : Cursor.Default;
+            return;
+        }
+
+        // Crop tool, hovering an existing crop: show the resize/move cursor over its handles and interior.
+        if (!_dragging && Tool == AnnotationTool.Crop && _cropRect is not null)
+        {
+            Cursor = CropCursor(HitCropGrip(e.GetPosition(_canvas)));
             return;
         }
 
@@ -280,6 +327,9 @@ public sealed class AnnotationSurface : UserControl
             _moveCheckpointed = false;
             return;
         }
+
+        // Finish a crop handle drag (resize/move); the rect is already committed live.
+        if (_cropGrip != CropGrip.None) { _cropGrip = CropGrip.None; return; }
 
         if (!_dragging || _document is null) return;
         _dragging = false;
@@ -392,6 +442,88 @@ public sealed class AnnotationSurface : UserControl
         CropChanged?.Invoke();
     }
 
+    /// <summary>Radius (canvas px) within which a handle counts as grabbed, and its drawn size.</summary>
+    private const double CropHandleHit = 9;
+    private const double CropHandleSize = 8;
+
+    /// <summary>The eight resize handles of a crop rect (canvas coords), each tagged with the grip it drives.</summary>
+    private static IEnumerable<(CropGrip Grip, double X, double Y)> CropHandles(double cx, double cy, double cw, double ch)
+    {
+        var mx = cx + cw / 2;
+        var my = cy + ch / 2;
+        yield return (CropGrip.TopLeft, cx, cy);
+        yield return (CropGrip.Top, mx, cy);
+        yield return (CropGrip.TopRight, cx + cw, cy);
+        yield return (CropGrip.Right, cx + cw, my);
+        yield return (CropGrip.BottomRight, cx + cw, cy + ch);
+        yield return (CropGrip.Bottom, mx, cy + ch);
+        yield return (CropGrip.BottomLeft, cx, cy + ch);
+        yield return (CropGrip.Left, cx, my);
+    }
+
+    /// <summary>Which grip a canvas point grabs: a handle if near one, else Move if inside the rect, else None.</summary>
+    private CropGrip HitCropGrip(Point p)
+    {
+        if (_cropRect is not { } c) return CropGrip.None;
+        var cx = c.X * Scale;
+        var cy = c.Y * Scale;
+        var cw = c.Width * Scale;
+        var ch = c.Height * Scale;
+
+        foreach (var (grip, hx, hy) in CropHandles(cx, cy, cw, ch))
+            if (Math.Abs(p.X - hx) <= CropHandleHit && Math.Abs(p.Y - hy) <= CropHandleHit) return grip;
+
+        if (p.X >= cx && p.X <= cx + cw && p.Y >= cy && p.Y <= cy + ch) return CropGrip.Move;
+        return CropGrip.None;
+    }
+
+    /// <summary>The cursor for a grip: directional resize on a handle, move over the interior.</summary>
+    private static Cursor CropCursor(CropGrip grip) => grip switch
+    {
+        CropGrip.Left or CropGrip.Right => SizeWECursor,
+        CropGrip.Top or CropGrip.Bottom => SizeNSCursor,
+        CropGrip.TopLeft => TopLeftCursor,
+        CropGrip.TopRight => TopRightCursor,
+        CropGrip.BottomLeft => BottomLeftCursor,
+        CropGrip.BottomRight => BottomRightCursor,
+        CropGrip.Move => MoveCursor,
+        _ => Cursor.Default,
+    };
+
+    /// <summary>Resize the crop by moving the grabbed edge(s) by an image-pixel delta, clamped to the image with a min size.</summary>
+    private RectD ResizeCrop(CropGrip grip, double dx, double dy)
+    {
+        const double min = 5;
+        var x0 = _cropOriginal.X;
+        var y0 = _cropOriginal.Y;
+        var x1 = x0 + _cropOriginal.Width;
+        var y1 = y0 + _cropOriginal.Height;
+        var iw = (double)_image!.Width;
+        var ih = (double)_image.Height;
+
+        var left = grip is CropGrip.Left or CropGrip.TopLeft or CropGrip.BottomLeft;
+        var right = grip is CropGrip.Right or CropGrip.TopRight or CropGrip.BottomRight;
+        var top = grip is CropGrip.Top or CropGrip.TopLeft or CropGrip.TopRight;
+        var bottom = grip is CropGrip.Bottom or CropGrip.BottomLeft or CropGrip.BottomRight;
+
+        if (left) x0 = Math.Clamp(x0 + dx, 0, x1 - min);
+        if (right) x1 = Math.Clamp(x1 + dx, x0 + min, iw);
+        if (top) y0 = Math.Clamp(y0 + dy, 0, y1 - min);
+        if (bottom) y1 = Math.Clamp(y1 + dy, y0 + min, ih);
+
+        return new RectD(x0, y0, x1 - x0, y1 - y0);
+    }
+
+    /// <summary>Move the whole crop rect by an image-pixel delta, kept fully inside the image.</summary>
+    private RectD MoveCrop(double dx, double dy)
+    {
+        var w = _cropOriginal.Width;
+        var h = _cropOriginal.Height;
+        var x = Math.Clamp(_cropOriginal.X + dx, 0, _image!.Width - w);
+        var y = Math.Clamp(_cropOriginal.Y + dy, 0, _image.Height - h);
+        return new RectD(x, y, w, h);
+    }
+
     /// <summary>Remove the crop (back to the full image).</summary>
     public void ClearCrop()
     {
@@ -450,6 +582,25 @@ public sealed class AnnotationSurface : UserControl
         var border = new Rectangle { Stroke = Brushes.White, StrokeThickness = 1, IsHitTestVisible = false };
         PlaceBox(border, cx, cy, cw, ch);
         _canvas.Children.Add(border);
+
+        // Resize handles, only while the Crop tool is active (they'd be noise under other tools).
+        if (Tool != AnnotationTool.Crop) return;
+        var handleStroke = new SolidColorBrush(Color.FromArgb(0xCC, 0, 0, 0));
+        foreach (var (_, hx, hy) in CropHandles(cx, cy, cw, ch))
+        {
+            var handle = new Rectangle
+            {
+                Width = CropHandleSize,
+                Height = CropHandleSize,
+                Fill = Brushes.White,
+                Stroke = handleStroke,
+                StrokeThickness = 1,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(handle, hx - CropHandleSize / 2);
+            Canvas.SetTop(handle, hy - CropHandleSize / 2);
+            _canvas.Children.Add(handle);
+        }
     }
 
     // ---- click-to-place tools (text, step badges) ----
