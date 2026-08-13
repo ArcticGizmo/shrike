@@ -112,7 +112,7 @@ shrike.slnx
 
 ### Shrike.Core responsibilities
 - **Capture**: screen/region/window/monitor grab (Windows.Graphics.Capture primary; GDI `BitBlt` fallback for older paths).
-- **Recording**: frame source → encoder (Media Foundation H.264/HEVC; pluggable FFmpeg backend for GIF/WebP/AV1).
+- **Recording**: frame source → encoder. **Superseded (2026-08-13): FFmpeg, not Media Foundation** — MF ships no video encoders on stripped images, so Shrike bundles a lean ffmpeg and live-encodes a high-quality H.264 *source*; downscale/trim/H.265 happen at export. See the encoder-decision box in `implementation-plan.md`.
 - **Annotation model**: vector document (ordered layers of shapes/text/strokes) rendered over the bitmap; non-destructive.
 - **Timeline model**: ordered list of kept segments over a source recording; trims are metadata until export.
 - **Encoding presets**: named target profiles (codec, container, resolution scale, bitrate/CRF, fps).
@@ -224,8 +224,8 @@ Defaults are provisional and finalised in M6.
 | --- | --- |
 | Virtual-desktop COM API is partly undocumented / build-fragile. | Use only the **documented** `IVirtualDesktopManager` surface (detect + move). Feature-flag; degrade gracefully to "new window" behaviour if the interop fails on a given build. |
 | WGC availability / capture of protected content (DRM) shows black. | Detect and message; GDI fallback where legal/possible. |
-| Recording performance at high resolution / multi-monitor. | Background encode, fps cap, hardware encoder (MF) first; measure early. |
-| FFmpeg dependency for GIF/WebP bloats install. | Make FFmpeg an **optional/bundled-on-demand** backend; MP4 path uses built-in Media Foundation with no extra dependency. |
+| Recording performance at high resolution / multi-monitor. | **Live-encode** during capture (source ready ~instantly at stop); fps cap + downscale; prefer **hardware ffmpeg encoders** (`hevc_qsv`/`nvenc`/`amf`) when present; measure early. |
+| FFmpeg dependency bloats install / licensing. | Project is **GPL** (accepted); **bundle a lean ffmpeg** (~30–50 MB, only our codecs). GIF/WebP export needs no ffmpeg at all (ImageSharp). *(Prior "MP4 via built-in Media Foundation, no dependency" plan dropped — MF is absent on stripped images.)* |
 | Clipboard multi-format quirks across target apps. | Set PNG + DIB; test against Slack, Teams, Office, browsers. |
 | Snappy-load regressions creep in over time. | Enforce the startup-budget test in CI. |
 

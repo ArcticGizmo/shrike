@@ -50,10 +50,14 @@ public static class Ffmpeg
         yield return Path.Combine(baseDir, "ffmpeg.exe");
         yield return Path.Combine(baseDir, "ffmpeg", "ffmpeg.exe");
 
-        // winget's shim directory (not always on the current process's PATH).
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (!string.IsNullOrEmpty(local))
+        {
+            // Shrike-managed copy (where a first-run provisioner places it).
+            yield return Path.Combine(local, "Shrike", "ffmpeg", "ffmpeg.exe");
+            // winget's shim directory (not always on the current process's PATH).
             yield return Path.Combine(local, "Microsoft", "WinGet", "Links", "ffmpeg.exe");
+        }
 
         // Last resort: let the OS resolve it on PATH.
         yield return "ffmpeg";

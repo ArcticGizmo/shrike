@@ -15,6 +15,8 @@
 | CLI | **Deferred** — no `Shrike.Cli` in v1. |
 | Redaction | **True, pixel-destroying** redaction on export. |
 | Audio | **Deferred** — v1 records video only. |
+| Video encoder | **FFmpeg**, not Media Foundation (MF proved unavailable on stripped images — see M4). Project is **GPL** (accepted). **Bundle a lean ffmpeg** (~30–50 MB, only our codecs) with the app — not download, not user-install. |
+| Recording model | **Live-encode a high-quality H.264 _source_** during capture (instant at stop, any length). **Downscale / trim / final codec (H.265) are _export_-time re-encodes** (M5), plus an optional capture-time downscale for the quick path. |
 
 ## Guiding rules for every milestone
 
@@ -134,32 +136,47 @@
 - Recording, HUD and overlay all obey the desktop rule.
 
 **Chunks**
-- ✅ **M4.1 — recording pipeline core.** `IFrameEncoder` + `FfmpegMp4Encoder` (pipes top-down BGRA to `ffmpeg` stdin → libx264 MP4; stderr drained off-thread), an `Ffmpeg` locator (env override → bundled → winget shim → PATH, graceful when absent), and a headless `RecordingSession` (constant-fps pacing, duplicate-on-slow-capture, pause excludes time, discard/stop state machine). Tests: encoder round-trip + 1080p throughput smoke (skip when no ffmpeg), `RecordingSession` pacing/pause/state.
+- ✅ **M4.1 — recording pipeline core.** `IFrameEncoder` + `FfmpegMp4Encoder` (pipes top-down BGRA to `ffmpeg` stdin → **live-encoded high-quality H.264 _source_**; stderr drained off-thread), an `Ffmpeg` locator (env override → managed `%LOCALAPPDATA%\Shrike\ffmpeg` → bundled → winget shim → PATH, graceful when absent), and a headless `RecordingSession` (constant-fps pacing, duplicate-on-slow-capture, pause excludes time, discard/stop state machine). Tests: encoder round-trip + 1080p throughput smoke (skip when no ffmpeg), `RecordingSession` pacing/pause/state. *(Follow-up: tune the capture preset to an explicit high-quality-source CRF, and add an optional capture-time downscale.)*
 - ✅ **M4.2 — frame source + recorder.** `IFrameSource` seam with a `GdiFrameSource` (BitBlt the region each frame, rounded to even dims) and a threaded `Recorder` (background capture loop → paced `RecordingSession`, pause/resume/stop/discard serialised behind one lock, monotonic `Stopwatch` clock). Chose **GDI BitBlt over WGC** for v1: reuses the working/tested capture, ships an end-to-end recorder now, and keeps WGC as a drop-in `IFrameSource` upgrade later. Tests: recorder lifecycle (fakes), `GdiFrameSource` sizing, and an **end-to-end record-a-region → playable MP4** integration test (real screen + ffmpeg).
 - ✅ **M4.3 — HUD + region wiring.** "Record region" in the capture chooser (key 4) and the tray reuse the M1 region overlay to pick the area; a floating `RecordingHudWindow` (live elapsed clock, pause/resume, stop, discard) drives the `Recorder`. Stop finalises off the UI thread and reveals the MP4 in Explorer (drag straight into Slack); discard deletes it. `ToastWindow` surfaces a clear notice when ffmpeg isn't found. HUD is born on the current desktop and positioned just outside the region.
 >
 > **HUD stays out of frame:** `WindowExclusion` sets `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` on the HUD (and any toast), so DWM keeps it out of the capture path — it shows on the physical display but never lands in the recording, even for full-screen captures. Verified against the real GDI BitBlt path on this machine (captured-before-exclude=true, captured-after=false).
 >
-> **v1 limitations (GDI capture):** GDI grabs only what's composited — no exclusive-fullscreen/DX-exclusive content; that goes away with the WGC `IFrameSource` upgrade. ffmpeg must be **bundled** at packaging (M6); until then the app finds it via `SHRIKE_FFMPEG` / PATH.
+> **v1 limitations (GDI capture):** GDI grabs only what's composited — no exclusive-fullscreen/DX-exclusive content; that goes away with the WGC `IFrameSource` upgrade. (ffmpeg delivery is settled — bundle a lean build at M6; see the encoder-decision box.)
 
-> **M4 complete.** Region → HUD → paced capture → FFmpeg H.264 → playable MP4, revealed for sharing. Next: **M5** (timeline trimming + export presets).
+> **M4 complete.** Region → HUD → paced capture → FFmpeg live-encode → high-quality **source** MP4, revealed for sharing. Next: **M5** turns that source into the small, trimmed, downscaled deliverable.
 
-> **Encoder decision (2026-08-13):** the locked "no-dependency MP4 via built-in Media Foundation" plan was **abandoned** for the encoder. A hand-rolled MF `IMFSinkWriter` was implemented and proven correct (all attribute readbacks matched), but this dev machine's H.264 encoder MFT rejects a textbook-valid output type (`MF_E_ATTRIBUTENOTFOUND`), and the sink writer fails downstream (`MF_E_INVALIDMEDIATYPE`) — reproduced across every input format, profile, resolution, and an exact replica of a known-working sample. Rather than ship an encoder that silently fails on some machines, Shrike now encodes MP4 via **FFmpeg** (the design already contemplated an optional FFmpeg backend for GIF/WebP in M5 — this widens it to the MP4 path). Cost: a bundled `ffmpeg.exe` dependency (packaged in M6); benefit: robust, portable encoding. The MF encoder + NV12 converter were removed.
+> ### Encoder decision (2026-08-13) — FFmpeg, bundled lean; live-source + export re-encode
+>
+> The locked "no-dependency MP4 via built-in Media Foundation" plan was **abandoned**. What we found and decided:
+>
+> - **MF is not viable.** A hand-rolled `IMFSinkWriter` was proven correct (every attribute read back matched), yet failed. A thorough spike (`spikes/Shrike.MfSpike`) then found the root cause: **`MFTEnumEx` returns _zero_ video encoders on this machine** — the Media Foundation `VideoEncoder` MFT-category registry key doesn't even exist. This is a stripped enterprise/VM image (media features removed), not normal Windows. So MF works for _most_ end users but is absent on stripped images/N-editions/some VMs, and can't be relied on alone. (A runtime `MFTEnumEx` probe cleanly detects it: 0 → no MF.)
+> - **Decision: FFmpeg, and the project is GPL** (accepted by the owner). ffmpeg encodes on every machine regardless of MF state.
+> - **Delivery: bundle a _lean_ ffmpeg** (~30–50 MB — only `libx264`/`libx265`, the hardware encoders `qsv`/`nvenc`/`amf`, the `mp4`/`gif`/`webp` muxers, and the `scale` filter), **not** the 212 MB full build, **not** a first-run download, **not** user-install. Rationale: recording must work instantly, offline, first time; bundling avoids fetch failures, AV false-positives, and version drift. Producing the lean build is an M6 packaging task; until then dev uses the copy in `%LOCALAPPDATA%\Shrike\ffmpeg`.
+> - **Recording model: encode _live_ during capture to a high-quality H.264 _source_.** Because ffmpeg encodes as frames stream in, the source is ready **~1–2 s after stop, at any length** — a 10-min recording has no post-stop compression wait (verified: `libx264 veryfast` ≈ 12× real-time, `libx265 ultrafast` ≈ 9×; this box's Intel Arc also exposes `hevc_qsv`). The catch: only **real-time-capable presets** can encode live, so the source is high-quality H.264 (a fast preset), _not_ the final small file.
+> - **Downscale / trim / final small codec (H.265) are _export_ operations (M5).** You can't resize or re-cut a compressed stream in place — editing is a decode→re-encode from the source. So the small/downsampled/trimmed final is produced at export (with progress + a size estimate). Two places to downscale: **at capture** (baked in, instant, no going back) or **at export** (flexible re-encode). Rough keyframe-boundary trims can stream-copy (no re-encode); resolution/codec changes always re-encode.
+> - **GIF/WebP stay on the table as self-contained export formats** via **ImageSharp** (already a dependency, MIT, no size/GPL cost) — verified encoding animated GIF/WebP; WebP is tiny and inline-shareable. Secondary to the MP4/H.265 path but a nice, dependency-free option for short clips.
+>
+> The MF encoder + NV12 converter were removed. The spike lives under `spikes/` as the record of this investigation.
 
 ### M5 · Timeline trimming + export presets
-*Quick edits and the footprint dial — the "Slack-small" lever.*
+*Quick edits and the footprint dial — the "Slack-small" lever.* **This is the _export_ half of recording:** M4 captured a high-quality source; M5 re-encodes it into the small, trimmed, downscaled deliverable.
 
 **Build**
-- **Timeline model (`Shrike.Core`)**: segment list over the source; non-destructive **cut / keep / restore**; playback maps to joined kept ranges; source untouched until export.
+- **Timeline model (`Shrike.Core`)**: segment list over the M4 source; non-destructive **cut / keep / restore**; playback maps to joined kept ranges; **source untouched until export** (all edits are just a range list — no re-encode happens until you export).
 - **Timeline editor (`Shrike.App`)**: preview player, thumbnail filmstrip scrubber, segment lanes, set in/out, cut a middle section (split), delete/restore a segment.
-- **Export (`Shrike.Core`)**: named **presets** — Slack-small (H.264 720p, capped fps/CRF), Balanced (1080p), High (source/HEVC), GIF/WebP (via **optional FFmpeg backend**; MP4 path uses built-in MF, no extra dependency). Controls for resolution scale / fps cap / codec / quality.
-- **Live size estimate** that updates as preset and trims change.
+- **Export (`Shrike.Core`)** — ffmpeg **re-encodes from the source** applying the kept ranges + `scale` (downscale) + target codec/bitrate:
+  - Named **presets** — *Slack-small* (**H.265** ~720p, capped fps, quality-targeted), *Balanced* (H.265/H.264 1080p), *Most-compatible* (H.264), *Source* (stream-copy trim only, no re-encode), plus **GIF / animated WebP** (self-contained via **ImageSharp** — no ffmpeg needed for these).
+  - Controls for **resolution scale / fps cap / codec / quality**. Prefer **hardware encoders** (`hevc_qsv`/`nvenc`/`amf`) when present; software `libx265` fast preset otherwise.
+  - **Rough trims that land on keyframes stream-copy** (instant, no re-encode); resolution/codec changes always re-encode.
+  - Runs off the UI thread with **progress + a live size estimate**; an optional **"maximum compression"** slow-preset pass for users who want the smallest file and will wait.
+- **Codec-compatibility note surfaced in the UI:** H.265 = smallest but not universally previewable (Slack inline / older browsers need the HEVC extension); H.264 = universal, larger.
 - Output: **copy-as-file** to clipboard (paste into Slack/Explorer) or save to disk.
 
 **Exit criteria**
 - Trim a recording (cut ≥1 section), export at a chosen preset; result plays and matches the kept segments.
-- **Slack-small** preset produces a genuinely small file (target: a short clip in the low hundreds of KB); the pre-export size estimate is within a sensible tolerance of the actual output.
-- GIF/WebP export works when the FFmpeg backend is present, and degrades with a clear message when it isn't.
+- **Slack-small** produces a genuinely small file; the pre-export size estimate is within a sensible tolerance of the actual output; export shows progress and never blocks the UI.
+- GIF/WebP export works with no external dependency (ImageSharp); H.265/H.264 export uses the bundled ffmpeg and prefers a hardware encoder when available.
 
 ---
 
@@ -171,8 +188,9 @@
 **Build**
 - **Settings window**: rebind all hotkeys; **desktop behaviour** (follow-me / new-window-here); ring size; default save dir + format; **autostart-at-login toggle (opt-in, off by default)**; cursor-in-recording toggle. Finalise the `Alt+Shift+…` default set.
 - **Packaging**: Velopack install/update (mirror sprig's lifecycle hooks); autostart registration driven by the opt-in toggle only; `ReadyToRun`/trimming on the cold path.
+- **Bundle a lean ffmpeg**: a build/CI step produces a minimal GPL ffmpeg (only `libx264`/`libx265`, hardware encoders, `mp4`/`gif`/`webp`, `scale`; target ~30–50 MB) and ships it next to the app (found first by the `Ffmpeg` locator). Carry the GPL licence + source-offer notices required by redistribution.
 - **About / changelog** viewer (embed `CHANGELOG.md`, sprig-style).
-- **Perf & QA pass**: CI startup-budget gate enforced; memory-ceiling test for the ring; encoder throughput test; clipboard matrix (Slack/Teams/Office/browser); multi-monitor + mixed-DPI sweep.
+- **Perf & QA pass**: CI startup-budget gate enforced; memory-ceiling test for the ring; encoder throughput test; clipboard matrix (Slack/Teams/Office/browser); multi-monitor + mixed-DPI sweep; **verify recording end-to-end on a machine _with_ MF stripped (bundled ffmpeg) and confirm hardware-encoder selection.**
 - Icon/branding (amber shrike mark), first-run experience.
 
 **Exit criteria**
@@ -202,8 +220,8 @@ M0 ──▶ M1 ──▶ M2 ──▶ M3 ─┐
 | --- | --- |
 | **Snappy-load budget** | Established M0; guarded in every milestone; enforced in CI at M6. |
 | **Virtual-desktop rule** | Overlay birth (M0); editor move/new-window (M1–M2); user setting (M6). |
-| **Win32 interop** | Hotkeys + desktop COM (M0); WGC capture (M1); WGC + MF recording (M4). |
-| **Export/flatten correctness** | Image flatten + destructive redaction (M2); video encode + presets (M5). |
+| **Win32 interop** | Hotkeys + desktop COM (M0); GDI BitBlt capture (M1, M4); capture-exclusion for the HUD (M4); WGC frame-source is a later `IFrameSource` upgrade. |
+| **Export/flatten correctness** | Image flatten + destructive redaction (M2); video **live-encode → source** (M4) and **export re-encode / presets** (M5). |
 | **Testing discipline** | Budget + interop harness (M0); headless core tests throughout; clipboard/DPI/throughput matrices (M6). |
 
 ## Explicitly out of v1 (backlog)
