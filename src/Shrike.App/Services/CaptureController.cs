@@ -29,6 +29,7 @@ internal sealed class CaptureController
     private CaptureMenuWindow? _menu;
     private Recorder? _recorder;
     private RecordingHudWindow? _hud;
+    private RecordingBorderWindow? _border;
 
     public CaptureController(VirtualDesktopService desktops, RecentRing ring, Action? onOverlayShown = null)
     {
@@ -295,8 +296,10 @@ internal sealed class CaptureController
 
     // ---- recording (M4.3) ----
 
-    /// <summary>Begin recording the chosen region: locate ffmpeg, wire the pipeline, and show the HUD.</summary>
-    private void StartRecording(PixelBounds region)
+    /// <summary>Begin recording the chosen region: show the frame immediately, build the pipeline off the
+    /// UI thread (locating ffmpeg and spawning the encoder would otherwise stutter the UI), then reveal
+    /// the HUD once it's ready.</summary>
+    private async void StartRecording(PixelBounds region)
     {
         if (_recorder is not null)   // one recording at a time
         {
@@ -304,31 +307,26 @@ internal sealed class CaptureController
             return;
         }
 
-        if (Ffmpeg.Locate() is not { } ffmpeg)
-        {
-            ToastWindow.Show("Recording needs FFmpeg — install it (or set the SHRIKE_FFMPEG path).");
-            return;
-        }
-
-        GdiFrameSource source;
-        try { source = new GdiFrameSource(region); }
-        catch { return; } // region too small after even-rounding
+        // The boundary appears at once, so the user sees what's captured without waiting on ffmpeg.
+        var border = new RecordingBorderWindow(region);
+        _border = border;
+        border.Show();
 
         const int fps = 30;
-        var bitrate = BitrateFor(source.Width, source.Height, fps);
         var path = Path.Combine(Path.GetTempPath(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
 
-        Recorder recorder;
-        try
+        Recorder? recorder = null;
+        string? error = null;
+        try { recorder = await Task.Run(() => BuildRecorder(region, path, fps)); }
+        catch (Exception ex) { error = ex.Message; }
+
+        if (recorder is null)
         {
-            var encoder = new FfmpegMp4Encoder(ffmpeg, path, source.Width, source.Height, fps, bitrate);
-            recorder = new Recorder(source, encoder, path, fps);
-        }
-        catch (Exception ex)
-        {
-            source.Dispose();
-            ToastWindow.Show($"Couldn't start recording: {ex.Message}");
+            CloseBorder();
+            ToastWindow.Show(error is null
+                ? "Recording needs FFmpeg — install it (or set the SHRIKE_FFMPEG path)."
+                : $"Couldn't start recording: {error}");
             return;
         }
 
@@ -344,8 +342,35 @@ internal sealed class CaptureController
         hud.Activate();
     }
 
+    // Locate ffmpeg and wire the capture→encode pipeline. Runs on a background thread so the ffmpeg
+    // process spawn never blocks the UI. Returns null when ffmpeg is unavailable; throws for other
+    // setup failures (surfaced as a toast).
+    private static Recorder? BuildRecorder(PixelBounds region, string path, int fps)
+    {
+        if (Ffmpeg.Locate() is not { } ffmpeg) return null;
+        var source = new GdiFrameSource(region);
+        try
+        {
+            var bitrate = BitrateFor(source.Width, source.Height, fps);
+            var encoder = new FfmpegMp4Encoder(ffmpeg, path, source.Width, source.Height, fps, bitrate);
+            return new Recorder(source, encoder, path, fps);
+        }
+        catch
+        {
+            source.Dispose();
+            throw;
+        }
+    }
+
+    private void CloseBorder()
+    {
+        _border?.Close();
+        _border = null;
+    }
+
     private void OnRecordingFinished(string? savedPath)
     {
+        CloseBorder();
         var recorder = _recorder;
         _recorder = null;
         if (savedPath is null || !File.Exists(savedPath)) return;

@@ -37,6 +37,15 @@ public class FrameExtractorTests
             var h = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4));
             Assert.Equal(120, h);
             Assert.Equal(160, w);
+
+            // Filmstrip: one batched pass yields the requested number of thumbnails at the target height.
+            var thumbs = extractor.ExtractThumbnails(count: 6, durationMs: 4_000, maxHeight: 60);
+            Assert.Equal(6, thumbs.Count);
+            foreach (var t in thumbs)
+            {
+                Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, t.AsSpan(0, 4).ToArray());
+                Assert.Equal(60, BinaryPrimitives.ReadInt32BigEndian(t.AsSpan(20, 4)));
+            }
         }
         finally
         {

@@ -49,6 +49,11 @@ public partial class App : Application
             AppEnv.SingleInstance?.StartServer(action =>
                 Dispatcher.UIThread.Post(() => OnAction(action)));
 
+            // Pre-warm the ffmpeg lookup off the UI thread so the first recording doesn't pay the probe
+            // cost (spawning ffmpeg -version across candidates) right when the user hits Record.
+            if (OperatingSystem.IsWindows())
+                Task.Run(() => { try { Shrike.Core.Recording.Ffmpeg.Locate(); } catch { /* best effort */ } });
+
             AppEnv.Budget?.Mark(StartupMarks.TrayReady);
 
             if (AppEnv.MeasureMode)
