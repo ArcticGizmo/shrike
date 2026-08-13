@@ -45,6 +45,12 @@ public sealed record AppSettings
     /// <summary>Launch Shrike at login. Opt-in — off by default (a locked review decision).</summary>
     public bool Autostart { get; init; } = false;
 
+    /// <summary>Show the "what's new" changelog popup on the first launch after an update. On by default.</summary>
+    public bool ShowChangelogOnUpdate { get; init; } = true;
+
+    /// <summary>The app version that last ran here — drives which changelog entries are "new". Null = fresh install.</summary>
+    public string? LastSeenVersion { get; init; }
+
     public static AppSettings Default { get; } = new();
 
     /// <summary>Clamp any out-of-range values a hand-edited or corrupt file might carry.</summary>

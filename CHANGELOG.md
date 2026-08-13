@@ -1,21 +1,30 @@
 # Changelog
 
-All notable changes to Shrike are recorded here. Dates are ISO-8601.
+All notable changes to Shrike are recorded here, newest first. Dates are ISO-8601.
+
+---
 
 ## [Unreleased]
 
-### Added
-- **Screen recording** — record a region to a playable MP4, with a floating HUD (elapsed clock,
-  pause/resume, stop, discard) and a visible boundary frame around the captured area.
-- **Timeline editor** — trim a recording non-destructively (cut / keep-only / restore), smooth
-  preview playback, and export to footprint-tuned presets (Slack-small H.265, Balanced,
-  Most-compatible H.264, Source stream-copy, GIF, WebP) with a live size estimate. Save to disk or
-  copy the file straight into Slack.
-- **Settings** — rebindable capture + record hotkeys, desktop behaviour, recent-ring size, default
-  save folder and image format, and an opt-in launch-at-login toggle.
-- Screenshot capture, annotation toolbox, true destructive redaction, zoom, crop, and the
-  recent-captures ring (memory-only).
+---
 
-## [0.0.1]
+## [v0.1.0] - 2026-08-13
 
-- Initial skeleton: tray-resident app, global hotkey, snappy-load budget harness.
+- Screen recording — capture a region to MP4 with a floating control bar and a visible frame
+- Timeline editor — trim recordings and export small, Slack-sized clips (H.265, H.264, GIF, WebP)
+- Copy an image or an exported clip straight into Slack, or save to disk
+- Screenshot annotation — arrows, boxes, highlights, freehand, text, and movable step badges
+- True redaction that destroys the covered pixels on export (not a reversible blur)
+- Zoom and crop before exporting
+- Recent captures — re-copy or re-open your last few shots from the tray
+- Settings — rebindable hotkeys, default save folder and format, opt-in launch-at-login
+- What's-new changelog after an update, and an About window with an update check
+- Never switches you across virtual desktops
+
+---
+
+## [v0.0.1] - 2026-08-12
+
+- Initial skeleton: tray-resident app, global hotkey, and the snappy-load budget harness
+
+---

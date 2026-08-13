@@ -11,8 +11,10 @@ using Shrike.App.Services;
 using Shrike.App.Updates;
 using Shrike.App.Views;
 using Shrike.Core.Capture;
+using Shrike.Core.Changelog;
 using Shrike.Core.Interop;
 using Shrike.Core.Ipc;
+using Shrike.Core.Settings;
 using Shrike.Core.Startup;
 
 namespace Shrike.App;
@@ -28,6 +30,8 @@ public partial class App : Application
     private NativeMenuItem? _recentMenu;
     private SettingsWindow? _settingsWindow;
     private AboutWindow? _aboutWindow;
+    private ChangelogWindow? _changelogWindow;
+    private IReadOnlyList<ChangelogSection>? _pendingChangelog;
     private bool _overlayMarked;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
@@ -46,6 +50,12 @@ public partial class App : Application
                 _settings.ApplyAtStartup();
                 var s = _settings.Current;
                 _recentRing = new RecentRing(s.RingSize, s.RingByteCap);
+
+                // Work out the "what's new" entries against the last-seen version, then record that this
+                // version has now run (so the popup shows once per update).
+                _pendingChangelog = ResolvePendingChangelog(s);
+                if (s.LastSeenVersion != AppVersion.Current)
+                    _settings.Update(s with { LastSeenVersion = AppVersion.Current });
             }
 
             _capture = new CaptureController(_desktops, _recentRing, _settings, MarkOverlayShownOnce);
@@ -74,6 +84,9 @@ public partial class App : Application
 
             // Notify-only update check in the background (no-op on dev builds). A quiet toast if newer.
             CheckForUpdatesInBackground();
+
+            // If this is the first launch after an update, show what changed.
+            ShowPendingChangelogIfAny();
 
             AppEnv.Budget?.Mark(StartupMarks.TrayReady);
 
@@ -261,6 +274,34 @@ public partial class App : Application
             if (notice is not null)
                 Dispatcher.UIThread.Post(() => ToastWindow.Show(notice));
         });
+    }
+
+    // The changelog sections released since the version that last ran here — or null when there's nothing
+    // to show (suppressed, a fresh install with no history, same version, or no embedded changelog).
+    private static IReadOnlyList<ChangelogSection>? ResolvePendingChangelog(AppSettings settings)
+    {
+        if (!settings.ShowChangelogOnUpdate) return null;
+        if (string.IsNullOrWhiteSpace(settings.LastSeenVersion)) return null;   // fresh install — no history
+        if (settings.LastSeenVersion == AppVersion.Current) return null;        // same version — no update
+        var markdown = ChangelogView.LoadEmbedded();
+        if (markdown is null) return null;
+        var sections = ChangelogParser.UnseenSince(markdown, settings.LastSeenVersion, AppVersion.Current);
+        return sections.Count > 0 ? sections : null;
+    }
+
+    private void ShowPendingChangelogIfAny()
+    {
+        if (_pendingChangelog is not { Count: > 0 } sections) return;
+        // Post at background priority so the tray is up first, matching the update-check toast.
+        Dispatcher.UIThread.Post(() =>
+        {
+            var win = new ChangelogWindow("What's new in Shrike", $"Updated to v{AppVersion.Current}", sections,
+                onSuppress: () => { if (_settings is { } s) s.Update(s.Current with { ShowChangelogOnUpdate = false }); });
+            win.Closed += (_, _) => { if (ReferenceEquals(_changelogWindow, win)) _changelogWindow = null; };
+            _changelogWindow = win;
+            win.Show();
+            win.Activate();
+        }, DispatcherPriority.Background);
     }
 
     private void MarkOverlayShownOnce()

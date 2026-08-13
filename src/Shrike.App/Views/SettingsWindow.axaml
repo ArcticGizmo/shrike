@@ -66,7 +66,10 @@
                 <Button  Grid.Column="1" Classes="tool" Content="Browse…" Click="OnBrowse" Margin="8,0,0,0" />
             </Grid>
 
-            <CheckBox  Grid.Row="6" Grid.Column="1" Name="AutostartBox" Content="Launch Shrike at login" />
+            <StackPanel Grid.Row="6" Grid.Column="1" Spacing="8">
+                <CheckBox Name="AutostartBox" Content="Launch Shrike at login" />
+                <CheckBox Name="ChangelogBox" Content="Show what's new after updates" />
+            </StackPanel>
         </Grid>
 
         <TextBlock Name="ErrorText" Foreground="#EF4444" FontSize="12" IsVisible="False" TextWrapping="Wrap" />

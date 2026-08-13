@@ -26,7 +26,7 @@ public partial class SettingsWindow : Window
     private TextBox _captureBox = null!, _recordBox = null!, _saveDirBox = null!;
     private ComboBox _desktopBox = null!, _formatBox = null!;
     private NumericUpDown _ringSizeBox = null!;
-    private CheckBox _autostartBox = null!;
+    private CheckBox _autostartBox = null!, _changelogBox = null!;
     private TextBlock _errorText = null!;
 
     // Parameterless ctor for the XAML designer only.
@@ -44,6 +44,7 @@ public partial class SettingsWindow : Window
         _formatBox = this.FindControl<ComboBox>("FormatBox")!;
         _ringSizeBox = this.FindControl<NumericUpDown>("RingSizeBox")!;
         _autostartBox = this.FindControl<CheckBox>("AutostartBox")!;
+        _changelogBox = this.FindControl<CheckBox>("ChangelogBox")!;
         _errorText = this.FindControl<TextBlock>("ErrorText")!;
 
         _desktopBox.ItemsSource = new[] { "Bring the window to me", "Open a new window here" };
@@ -63,6 +64,7 @@ public partial class SettingsWindow : Window
         _formatBox.SelectedIndex = (int)s.DefaultImageFormat;   // Png=0, Jpeg=1, WebP=2
         _saveDirBox.Text = s.DefaultSaveDirectory ?? "";
         _autostartBox.IsChecked = s.Autostart;
+        _changelogBox.IsChecked = s.ShowChangelogOnUpdate;
     }
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)
@@ -93,6 +95,7 @@ public partial class SettingsWindow : Window
             DefaultImageFormat = (ImageFormatKind)Math.Max(0, _formatBox.SelectedIndex),
             DefaultSaveDirectory = dir,
             Autostart = _autostartBox.IsChecked == true,
+            ShowChangelogOnUpdate = _changelogBox.IsChecked == true,
         };
 
         _settings.Update(updated);
