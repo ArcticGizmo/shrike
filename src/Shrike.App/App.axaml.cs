@@ -75,6 +75,8 @@ public partial class App : Application
         monitor.Click += (_, _) => _capture?.CaptureMonitorUnderCursor();
         var full = new NativeMenuItem("All monitors");
         full.Click += (_, _) => _capture?.CaptureFullScreen();
+        var record = new NativeMenuItem("Record region");
+        record.Click += (_, _) => _capture?.BeginRegionRecording();
 
         var recent = new NativeMenuItem("Recent") { Menu = new NativeMenu() };
         _recentMenu = recent;
@@ -92,6 +94,7 @@ public partial class App : Application
         menu.Add(region);
         menu.Add(monitor);
         menu.Add(full);
+        menu.Add(record);
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(recent);
         menu.Add(settings);

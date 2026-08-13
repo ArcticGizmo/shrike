@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.RecordingHudWindow"
+        Title="Shrike Recording"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="Manual">
+
+    <Window.Styles>
+        <Style Selector="Button.hud">
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.hud:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3A2F1E" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+        <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+            <Setter Property="BorderBrush" Value="#EF4444" />
+        </Style>
+    </Window.Styles>
+
+    <Border Background="#F2140F0A" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="11"
+            Padding="12,8" BoxShadow="0 14 36 -14 #000000">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <Ellipse Name="RecDot" Width="11" Height="11" Fill="#EF4444" VerticalAlignment="Center" />
+            <TextBlock Name="Elapsed" Text="00:00" VerticalAlignment="Center"
+                       FontFamily="Consolas,monospace" FontSize="15" Foreground="#EDE6DA" MinWidth="46" />
+            <Border Width="1" Background="#322A1E" Margin="2,1" />
+            <Button Name="PauseButton" Classes="hud" Content="Pause" Click="OnPauseResume" />
+            <Button Name="StopButton" Classes="hud" Content="Stop" Click="OnStop" />
+            <Button Name="DiscardButton" Classes="hud danger" Content="Discard" Click="OnDiscard" />
+        </StackPanel>
+    </Border>
+</Window>

@@ -12,6 +12,7 @@ internal enum CaptureMenuChoice
     Region,
     Monitor,
     AllMonitors,
+    Record,
     Recent,
 }
 
@@ -80,7 +81,8 @@ public partial class CaptureMenuWindow : Window
             case Key.D1 or Key.NumPad1: Choose(CaptureMenuChoice.Region); break;
             case Key.D2 or Key.NumPad2: Choose(CaptureMenuChoice.Monitor); break;
             case Key.D3 or Key.NumPad3: Choose(CaptureMenuChoice.AllMonitors); break;
-            case Key.D4 or Key.NumPad4 when HasRecent: Choose(CaptureMenuChoice.Recent); break;
+            case Key.D4 or Key.NumPad4: Choose(CaptureMenuChoice.Record); break;
+            case Key.D5 or Key.NumPad5 when HasRecent: Choose(CaptureMenuChoice.Recent); break;
             case Key.Escape: Cancel(); break;
         }
     }
@@ -88,6 +90,7 @@ public partial class CaptureMenuWindow : Window
     private void OnRegion(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Region);
     private void OnMonitor(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Monitor);
     private void OnAllMonitors(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.AllMonitors);
+    private void OnRecord(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Record);
     private void OnRecent(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Recent);
 
     private void Choose(CaptureMenuChoice choice)

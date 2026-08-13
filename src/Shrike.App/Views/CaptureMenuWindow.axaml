@@ -59,17 +59,23 @@
                     <TextBlock Text="All monitors" />
                 </StackPanel>
             </Button>
+            <Button Name="RecordButton" Classes="mode" Click="OnRecord">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="key" Text="4" />
+                    <TextBlock Text="Record region" />
+                </StackPanel>
+            </Button>
 
             <Border Height="1" Background="#322A1E" Margin="4,3" />
 
             <Button Name="RecentButton" Classes="mode" Click="OnRecent">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Classes="key" Text="4" />
+                    <TextBlock Classes="key" Text="5" />
                     <TextBlock Name="RecentText" Text="Recent captures" />
                 </StackPanel>
             </Button>
 
-            <TextBlock Text="1–4 to pick  ·  Esc to cancel" FontSize="11" Foreground="#8A7C68"
+            <TextBlock Text="1–5 to pick  ·  Esc to cancel" FontSize="11" Foreground="#8A7C68"
                        Margin="6,4,0,2" />
         </StackPanel>
     </Border>

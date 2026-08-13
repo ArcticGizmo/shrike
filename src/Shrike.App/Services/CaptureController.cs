@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using Avalonia;
 using Avalonia.Threading;
@@ -5,6 +6,7 @@ using Shrike.App.Native;
 using Shrike.App.Views;
 using Shrike.Core.Capture;
 using Shrike.Core.Interop;
+using Shrike.Core.Recording;
 
 namespace Shrike.App.Services;
 
@@ -25,6 +27,8 @@ internal sealed class CaptureController
     private CapturedImage? _frozen;
     private EditorWindow? _editor;
     private CaptureMenuWindow? _menu;
+    private Recorder? _recorder;
+    private RecordingHudWindow? _hud;
 
     public CaptureController(VirtualDesktopService desktops, RecentRing ring, Action? onOverlayShown = null)
     {
@@ -89,6 +93,9 @@ internal sealed class CaptureController
             case CaptureMenuChoice.AllMonitors:
                 CaptureFromFrozen(frozen, ScreenCapture.VirtualScreenBounds());
                 break;
+            case CaptureMenuChoice.Record:
+                BeginRegionRecording(frozen);
+                break;
             case CaptureMenuChoice.Recent:
                 // Open the editor on the newest capture; the filmstrip surfaces the rest.
                 if (_ring.Items.Count > 0)
@@ -111,8 +118,19 @@ internal sealed class CaptureController
         });
     }
 
-    /// <summary>Show a region-selection overlay on each monitor (or focus the existing set).</summary>
+    /// <summary>Show a region-selection overlay on each monitor, then take a screenshot of the pick.</summary>
     public void BeginRegionCapture(CapturedImage? frozen = null)
+        => StartRegionSelection(frozen, OnRegionSelected);
+
+    /// <summary>Show a region-selection overlay on each monitor, then record the picked region.</summary>
+    public void BeginRegionRecording(CapturedImage? frozen = null)
+        => StartRegionSelection(frozen, StartRecording);
+
+    /// <summary>
+    /// Put a region-selection overlay on every monitor (or focus the existing set) and route the chosen
+    /// rectangle to <paramref name="onCompleted"/> — shared by screenshot and recording region picks.
+    /// </summary>
+    private void StartRegionSelection(CapturedImage? frozen, Action<PixelBounds> onCompleted)
     {
         if (_overlays.Count > 0)
         {
@@ -133,7 +151,7 @@ internal sealed class CaptureController
         session.Completed += region =>
         {
             CloseOverlays();
-            OnRegionSelected(region);
+            onCompleted(region);
         };
         session.Cancelled += CloseOverlays;
         _session = session;
@@ -274,6 +292,71 @@ internal sealed class CaptureController
 
         CaptureAndEdit(region);
     }
+
+    // ---- recording (M4.3) ----
+
+    /// <summary>Begin recording the chosen region: locate ffmpeg, wire the pipeline, and show the HUD.</summary>
+    private void StartRecording(PixelBounds region)
+    {
+        if (_recorder is not null)   // one recording at a time
+        {
+            _hud?.Activate();
+            return;
+        }
+
+        if (Ffmpeg.Locate() is not { } ffmpeg)
+        {
+            ToastWindow.Show("Recording needs FFmpeg — install it (or set the SHRIKE_FFMPEG path).");
+            return;
+        }
+
+        GdiFrameSource source;
+        try { source = new GdiFrameSource(region); }
+        catch { return; } // region too small after even-rounding
+
+        const int fps = 30;
+        var bitrate = BitrateFor(source.Width, source.Height, fps);
+        var path = Path.Combine(Path.GetTempPath(),
+            CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
+
+        Recorder recorder;
+        try
+        {
+            var encoder = new FfmpegMp4Encoder(ffmpeg, path, source.Width, source.Height, fps, bitrate);
+            recorder = new Recorder(source, encoder, path, fps);
+        }
+        catch (Exception ex)
+        {
+            source.Dispose();
+            ToastWindow.Show($"Couldn't start recording: {ex.Message}");
+            return;
+        }
+
+        _recorder = recorder;
+
+        var hud = new RecordingHudWindow(recorder, region);
+        hud.Finished += OnRecordingFinished;
+        hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
+        _hud = hud;
+
+        recorder.Start();
+        hud.Show();
+        hud.Activate();
+    }
+
+    private void OnRecordingFinished(string? savedPath)
+    {
+        _recorder = null;
+        if (savedPath is not null && File.Exists(savedPath) && OperatingSystem.IsWindows())
+        {
+            // Reveal the clip so it can be dragged straight into Slack/Explorer (the core use case).
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{savedPath}\"") { UseShellExecute = true });
+        }
+    }
+
+    // ~0.1 bits per pixel per frame, clamped to a sane band, as the default target bitrate.
+    private static int BitrateFor(int width, int height, int fps)
+        => (int)Math.Clamp((long)width * height * fps / 10, 1_000_000, 12_000_000);
 
     /// <summary>Re-open a capture already in the recent ring, without pushing a duplicate entry.</summary>
     public void OpenInEditor(CapturedImage image) => ShowInEditor(image, addToRing: false);
