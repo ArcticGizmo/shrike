@@ -1,10 +1,13 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Shrike.App.Controls;
 using Shrike.Core.Recording;
@@ -13,10 +16,10 @@ namespace Shrike.App.Views;
 
 /// <summary>
 /// The timeline editor: preview a recording, trim it (cut / keep-only / restore across the scrubber), and
-/// hand it to the export dialog. Preview frames come from <see cref="FrameExtractor"/> (the bundled ffmpeg),
-/// so there's no native video widget — scrubbing pulls the still at the cursor, and Play steps decoded
-/// frames on a timer. All editing is on the in-memory <see cref="Timeline"/>; the source file is untouched
-/// until export.
+/// hand it to the export dialog. There's no native video widget — scrubbing pulls a crisp still at the
+/// cursor via <see cref="FrameExtractor"/>, while Play streams frames from one persistent ffmpeg
+/// (<see cref="FramePlayer"/>) for smooth real-time preview. All editing is on the in-memory
+/// <see cref="Timeline"/>; the source file is untouched until export.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public partial class TimelineEditorWindow : Window
@@ -28,8 +31,10 @@ public partial class TimelineEditorWindow : Window
     private readonly CancellationTokenSource _cts = new();
     private readonly DispatcherTimer _playTimer;
 
+    private const int PlayHeightCap = 540;   // playback frames are softer/lighter; stills stay full-res
+
     private TimelineStrip _strip = null!;
-    private Image _preview = null!;
+    private PreviewSurface _preview = null!;
     private TextBlock _timeLabel = null!;
     private TextBlock _keptLabel = null!;
     private Button _playButton = null!;
@@ -40,7 +45,11 @@ public partial class TimelineEditorWindow : Window
     private long? _markOutMs;
     private bool _playing;
 
-    // Preview pump: coalesces rapid seek requests to one in-flight ffmpeg extraction.
+    // Streaming playback: one persistent ffmpeg feeds frames into this reused bitmap.
+    private FramePlayer? _player;
+    private WriteableBitmap? _playBitmap;
+
+    // Scrub preview pump: coalesces rapid seek requests to one in-flight ffmpeg extraction.
     private long _wantMs = -1;
     private bool _extracting;
     private Bitmap? _currentFrame;
@@ -57,7 +66,7 @@ public partial class TimelineEditorWindow : Window
         InitializeComponent();
 
         _strip = this.FindControl<TimelineStrip>("Strip")!;
-        _preview = this.FindControl<Image>("Preview")!;
+        _preview = this.FindControl<PreviewSurface>("Preview")!;
         _timeLabel = this.FindControl<TextBlock>("TimeLabel")!;
         _keptLabel = this.FindControl<TextBlock>("KeptLabel")!;
         _playButton = this.FindControl<Button>("PlayButton")!;
@@ -68,9 +77,10 @@ public partial class TimelineEditorWindow : Window
         _strip.Timeline = _timeline;
         _strip.Seeked += OnSeek;
         _strip.Scrubbing += OnScrub;
-        _timeline.Changed += () => { _strip.Refresh(); UpdateLabels(); };
+        // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
+        _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
 
-        Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); };
+        Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -112,7 +122,7 @@ public partial class TimelineEditorWindow : Window
                 try
                 {
                     var bmp = new Bitmap(new MemoryStream(png));
-                    _preview.Source = bmp;
+                    _preview.Show(bmp);
                     _currentFrame?.Dispose();
                     _currentFrame = bmp;
                 }
@@ -126,12 +136,16 @@ public partial class TimelineEditorWindow : Window
     private async Task LoadThumbnailsAsync(CancellationToken ct)
     {
         const int count = 14;
-        for (var i = 0; i < count && !ct.IsCancellationRequested; i++)
+        // One ffmpeg pass for the whole filmstrip — far faster than a spawn per thumbnail, and it leaves
+        // the CPU free for the preview/Play extraction instead of starving it.
+        var pngs = await Task.Run(() => _extractor.ExtractThumbnails(count, _source.DurationMs, 76), ct)
+            .ConfigureAwait(true);
+        if (ct.IsCancellationRequested) return;
+
+        for (var i = 0; i < pngs.Count; i++)
         {
-            var ms = (long)((i + 0.5) / count * _source.DurationMs);
-            var png = await Task.Run(() => _extractor.ExtractPng(ms, maxHeight: 76), ct).ConfigureAwait(true);
-            if (png is null || ct.IsCancellationRequested) continue;
-            try { _strip.AddThumbnail(ms, new Bitmap(new MemoryStream(png))); } catch { }
+            var ms = (long)((i + 0.5) / pngs.Count * _source.DurationMs);
+            try { _strip.AddThumbnail(ms, new Bitmap(new MemoryStream(pngs[i]))); } catch { }
         }
     }
 
@@ -139,7 +153,7 @@ public partial class TimelineEditorWindow : Window
 
     private void OnPlayPause(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_playing) StopPlayback();
+        if (_playing) StopPlayback(showStill: true);
         else StartPlayback();
     }
 
@@ -149,31 +163,79 @@ public partial class TimelineEditorWindow : Window
         // Resume from the current spot; if we're sitting in a cut (or at the end), start over.
         _currentEditedMs = _timeline.SourceToEditedMs(_playheadSourceMs) ?? _currentEditedMs;
         if (_currentEditedMs >= _timeline.KeptDurationMs) _currentEditedMs = 0;
+
+        var ranges = _timeline.KeptRangesFrom(_currentEditedMs);
+        if (ranges.Count == 0) { _currentEditedMs = 0; ranges = _timeline.KeptRangesFrom(0); }
+        if (ranges.Count == 0) return;
+
+        var player = new FramePlayer(_ffmpegPath, _source);
+        try { player.Start(ranges, Math.Min(_source.Height, PlayHeightCap), Math.Min(_source.Fps, 30)); }
+        catch { player.Dispose(); return; }
+        _player = player;
+
+        EnsurePlayBitmap(player.Width, player.Height);
+        _playTimer.Interval = TimeSpan.FromMilliseconds(1000.0 / player.Fps);
         _playing = true;
         _playButton.Content = "❚❚ Pause";
         _playTimer.Start();
     }
 
-    private void StopPlayback()
+    private void StopPlayback(bool showStill = false)
     {
-        if (!_playing) return;
+        if (!_playing && _player is null) return;
         _playing = false;
         _playButton.Content = "▶ Play";
         _playTimer.Stop();
+        _player?.Dispose();
+        _player = null;
+        if (showStill) RequestPreview(_playheadSourceMs);   // swap the soft play frame for a crisp still
     }
 
+    // One timer tick = consume one streamed frame, advancing the edited clock by exactly one frame.
     private void AdvancePlayback()
     {
-        _currentEditedMs += (long)_playTimer.Interval.TotalMilliseconds;
-        if (_currentEditedMs >= _timeline.KeptDurationMs)
+        var player = _player;
+        if (player is null) return;
+
+        var frame = player.TryTakeFrame();
+        if (frame is null)
         {
-            _currentEditedMs = _timeline.KeptDurationMs;
-            StopPlayback();
+            if (player.Ended) { _currentEditedMs = _timeline.KeptDurationMs; StopPlayback(showStill: true); }
+            return;   // buffer underrun — just wait for the next tick, stays in sync
         }
+
+        BlitFrame(frame);
+        _currentEditedMs = Math.Min(_currentEditedMs + (long)(1000.0 / player.Fps), _timeline.KeptDurationMs);
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
-        RequestPreview(_playheadSourceMs);
         UpdateLabels();
+    }
+
+    private void EnsurePlayBitmap(int w, int h)
+    {
+        if (_playBitmap is { } b && b.PixelSize.Width == w && b.PixelSize.Height == h) return;
+        _playBitmap?.Dispose();
+        _playBitmap = new WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
+    }
+
+    private void BlitFrame(byte[] bgra)
+    {
+        var bmp = _playBitmap;
+        if (bmp is null) return;
+        using (var fb = bmp.Lock())
+        {
+            var rowBytes = bmp.PixelSize.Width * 4;
+            if (fb.RowBytes == rowBytes)
+            {
+                Marshal.Copy(bgra, 0, fb.Address, Math.Min(bgra.Length, rowBytes * bmp.PixelSize.Height));
+            }
+            else
+            {
+                for (var row = 0; row < bmp.PixelSize.Height; row++)   // respect any stride padding
+                    Marshal.Copy(bgra, row * rowBytes, fb.Address + row * fb.RowBytes, rowBytes);
+            }
+        }
+        _preview.Show(bmp);
     }
 
     // ---- editing ----

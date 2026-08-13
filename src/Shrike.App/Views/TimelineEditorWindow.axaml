@@ -37,7 +37,7 @@
     <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="14">
         <!-- Preview -->
         <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
-            <Image Name="Preview" Stretch="Uniform" />
+            <controls:PreviewSurface Name="Preview" />
         </Border>
 
         <!-- Transport -->

@@ -143,6 +143,28 @@ public class TimelineTests
     }
 
     [Fact]
+    public void KeptRangesFrom_clips_the_first_span_and_drops_earlier_ones()
+    {
+        var t = Make();
+        t.Cut(3_000, 7_000);   // kept: [0,3000) then [7000,10000)
+
+        // From the very start: both kept spans, untouched.
+        Assert.Equal(new[] { new Segment(0, 3_000, true), new Segment(7_000, 10_000, true) },
+            t.KeptRangesFrom(0));
+
+        // 1s into the edited timeline: first span clipped to source 1000.
+        Assert.Equal(new[] { new Segment(1_000, 3_000, true), new Segment(7_000, 10_000, true) },
+            t.KeptRangesFrom(1_000));
+
+        // 4s in (past the 3s first span): only the second span, clipped 1s in → source 8000.
+        Assert.Equal(new[] { new Segment(8_000, 10_000, true) }, t.KeptRangesFrom(4_000));
+
+        // At/after the end: nothing left to play.
+        Assert.Empty(t.KeptRangesFrom(6_000));
+        Assert.Empty(t.KeptRangesFrom(99_999));
+    }
+
+    [Fact]
     public void Edits_clamp_to_the_source_bounds()
     {
         var t = Make();

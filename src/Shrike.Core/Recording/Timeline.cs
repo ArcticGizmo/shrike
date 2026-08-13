@@ -48,6 +48,30 @@ public sealed class Timeline
     /// <summary>Total kept (playable) time in milliseconds — the length of the edited result.</summary>
     public long KeptDurationMs => _segments.Where(s => s.Kept).Sum(s => s.DurationMs);
 
+    /// <summary>
+    /// The kept spans (source time) making up the edited result from <paramref name="editedMs"/> onward —
+    /// the first span is clipped to start exactly where playback should resume. Empty at/after the end.
+    /// Used to drive playback from an arbitrary position without re-decoding the trimmed-away parts.
+    /// </summary>
+    public IReadOnlyList<Segment> KeptRangesFrom(long editedMs)
+    {
+        if (editedMs < 0) editedMs = 0;
+        var result = new List<Segment>();
+        long acc = 0;
+        foreach (var s in _segments)
+        {
+            if (!s.Kept) continue;
+            var end = acc + s.DurationMs;
+            if (end > editedMs)
+            {
+                var start = editedMs > acc ? s.StartMs + (editedMs - acc) : s.StartMs;
+                result.Add(new Segment(start, s.EndMs, true));
+            }
+            acc = end;
+        }
+        return result;
+    }
+
     /// <summary>False once every span has been cut — export would produce nothing.</summary>
     public bool HasKeptContent => _segments.Any(s => s.Kept);
 
