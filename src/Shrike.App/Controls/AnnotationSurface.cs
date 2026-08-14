@@ -94,6 +94,17 @@ public sealed class AnnotationSurface : UserControl
     private static readonly Cursor TopRightCursor = new(StandardCursorType.TopRightCorner);
     private static readonly Cursor BottomLeftCursor = new(StandardCursorType.BottomLeftCorner);
     private static readonly Cursor BottomRightCursor = new(StandardCursorType.BottomRightCorner);
+    private static readonly Cursor RotateCursor = new(StandardCursorType.Hand);
+
+    // ---- annotation edit handles (resize / rotate a selected shape, or drag a line's endpoints) ----
+    /// <summary>Which handle of the selected annotation a drag is manipulating (None = not dragging one).</summary>
+    private enum EditGrip { None, Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight, Rotate, LineStart, LineEnd }
+    private EditGrip _editGrip = EditGrip.None;
+    private Annotation? _editOriginal;   // the selected annotation when the handle drag began
+    private Point _editDragStart;        // canvas point where the handle drag began
+    private const double EditHandleHit = 9;   // grab radius (canvas px)
+    private const double EditHandleSize = 8;   // drawn handle size (canvas px)
+    private const double RotateHandleGap = 22; // gap above the top edge to the rotate knob (canvas px)
 
     /// <summary>Export crop in image pixels, or null for the whole image. Non-destructive (applied on export).</summary>
     private RectD? _cropRect;
@@ -222,16 +233,93 @@ public sealed class AnnotationSurface : UserControl
             }
         }
 
-        DrawSelectionOutline();
+        DrawSelectionHandles();
         DrawCropMask();
     }
 
-    /// <summary>Dashed box around the selected annotation (drawn last, so it sits on top).</summary>
-    private void DrawSelectionOutline()
+    /// <summary>
+    /// Selection chrome for the selected annotation (drawn last, on top): an oriented outline with 8
+    /// resize handles (+ a rotate knob) for box shapes, two endpoint handles for a line, or a plain
+    /// dashed bounding box for move-only types (text/badge/freehand).
+    /// </summary>
+    private void DrawSelectionHandles()
     {
         if (_document is null || _selectedIndex < 0 || _selectedIndex >= _document.Items.Count) return;
+        var a = _document.Items[_selectedIndex];
 
-        var b = AnnotationGeometry.Bounds(_document.Items[_selectedIndex]);
+        if (!IsBoxShape(a) && a is not LineAnnotation) { DrawDashedBounds(a); return; }
+
+        var handleStroke = new SolidColorBrush(Color.FromArgb(0xCC, 0, 0, 0));
+
+        if (IsBoxShape(a))
+        {
+            var b = AnnotationGeometry.Bounds(a);
+            var cx = b.X + b.Width / 2;
+            var cy = b.Y + b.Height / 2;
+            var hx = b.Width / 2;
+            var hy = b.Height / 2;
+            var rad = a.Rotation * Math.PI / 180.0;
+            var cos = Math.Cos(rad);
+            var sin = Math.Sin(rad);
+            Point World(double lx, double ly) => new((cx + lx * cos - ly * sin) * Scale, (cy + lx * sin + ly * cos) * Scale);
+
+            var outline = new Polygon
+            {
+                Stroke = Brushes.White,
+                StrokeThickness = 1,
+                StrokeDashArray = new AvaloniaList<double> { 4, 3 },
+                Fill = Brushes.Transparent,
+                IsHitTestVisible = false,
+            };
+            outline.Points.Add(World(-hx, -hy));
+            outline.Points.Add(World(hx, -hy));
+            outline.Points.Add(World(hx, hy));
+            outline.Points.Add(World(-hx, hy));
+            _canvas.Children.Add(outline);
+
+            if (CanRotate(a))
+            {
+                var top = World(0, -hy);
+                var knob = World(0, -hy - RotateHandleGap / Scale);
+                _canvas.Children.Add(new Line
+                {
+                    StartPoint = top,
+                    EndPoint = knob,
+                    Stroke = Brushes.White,
+                    StrokeThickness = 1,
+                    IsHitTestVisible = false,
+                });
+                var d = EditHandleSize + 2;
+                var circle = new Ellipse { Width = d, Height = d, Fill = Brushes.White, Stroke = handleStroke, StrokeThickness = 1, IsHitTestVisible = false };
+                Canvas.SetLeft(circle, knob.X - d / 2);
+                Canvas.SetTop(circle, knob.Y - d / 2);
+                _canvas.Children.Add(circle);
+            }
+        }
+
+        // Square handles at every grip (corners/edges for boxes, endpoints for lines).
+        foreach (var (grip, hx, hy) in EditHandles(a))
+        {
+            if (grip == EditGrip.Rotate) continue; // the rotate knob is drawn as a circle above
+            var handle = new Rectangle
+            {
+                Width = EditHandleSize,
+                Height = EditHandleSize,
+                Fill = Brushes.White,
+                Stroke = handleStroke,
+                StrokeThickness = 1,
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(handle, hx - EditHandleSize / 2);
+            Canvas.SetTop(handle, hy - EditHandleSize / 2);
+            _canvas.Children.Add(handle);
+        }
+    }
+
+    /// <summary>Plain dashed bounding box for move-only annotations (no resize/rotate handles).</summary>
+    private void DrawDashedBounds(Annotation a)
+    {
+        var b = AnnotationGeometry.Bounds(a);
         const double pad = 4;
         var box = new Rectangle
         {
@@ -257,8 +345,23 @@ public sealed class AnnotationSurface : UserControl
 
         var canvasPoint = e.GetPosition(_canvas);
 
-        // Select tool: pick the annotation under the cursor and start a move if there is one.
-        if (Tool == AnnotationTool.None) { BeginSelectOrMove(canvasPoint, e); return; }
+        // Select tool: grabbing a handle of the selected annotation resizes/rotates it; otherwise pick
+        // the annotation under the cursor and start a move if there is one.
+        if (Tool == AnnotationTool.None)
+        {
+            var grip = HitEditGrip(canvasPoint);
+            if (grip != EditGrip.None)
+            {
+                _editGrip = grip;
+                _editOriginal = _document.Items[_selectedIndex];
+                _editDragStart = canvasPoint;
+                _moveCheckpointed = false;
+                e.Pointer.Capture(_canvas);
+                return;
+            }
+            BeginSelectOrMove(canvasPoint, e);
+            return;
+        }
 
         // Click-to-place tools don't drag.
         if (Tool == AnnotationTool.Text) { BeginTextEdit(canvasPoint); return; }
@@ -289,6 +392,8 @@ public sealed class AnnotationSurface : UserControl
     {
         if (_movingSelection) { DragSelection(e.GetPosition(_canvas)); return; }
 
+        if (_editGrip != EditGrip.None) { DragEditHandle(e.GetPosition(_canvas), e.KeyModifiers); return; }
+
         // Crop handle drag: resize the grabbed edge/corner or move the whole rect, live.
         if (_cropGrip != CropGrip.None)
         {
@@ -301,10 +406,15 @@ public sealed class AnnotationSurface : UserControl
             return;
         }
 
-        // Select tool, hovering: show the move cursor over a selectable annotation.
+        // Select tool, hovering: a handle of the selected annotation shows its resize/rotate cursor;
+        // otherwise the move cursor over any selectable annotation.
         if (!_dragging && Tool == AnnotationTool.None)
         {
-            Cursor = HitTestTopmost(ToImage(e.GetPosition(_canvas))) >= 0 ? MoveCursor : Cursor.Default;
+            var cp = e.GetPosition(_canvas);
+            var grip = HitEditGrip(cp);
+            Cursor = grip != EditGrip.None
+                ? EditCursor(grip)
+                : HitTestTopmost(ToImage(cp)) >= 0 ? MoveCursor : Cursor.Default;
             return;
         }
 
@@ -338,6 +448,14 @@ public sealed class AnnotationSurface : UserControl
             _moveOriginal = null;
             _moveCheckpointed = false;
             return;
+        }
+
+        if (_editGrip != EditGrip.None)
+        {
+            _editGrip = EditGrip.None;
+            _editOriginal = null;
+            _moveCheckpointed = false;
+            return; // the shape is already committed live via ReplaceLive
         }
 
         // Finish a crop handle drag (resize/move); the rect is already committed live.
@@ -407,6 +525,141 @@ public sealed class AnnotationSurface : UserControl
             if (AnnotationGeometry.HitTest(_document.Items[i], imagePoint, tol)) return i;
         return -1;
     }
+
+    // ---- edit handles (resize / rotate / line endpoints) ----
+
+    /// <summary>Box shapes (rect/ellipse/highlight/redaction) get 8 resize handles.</summary>
+    private static bool IsBoxShape(Annotation a)
+        => a is RectAnnotation or EllipseAnnotation or HighlightAnnotation or RedactionAnnotation;
+
+    /// <summary>Rotation is offered for rectangle/ellipse/highlight — not redaction (its scrub is axis-aligned).</summary>
+    private static bool CanRotate(Annotation a)
+        => a is RectAnnotation or EllipseAnnotation or HighlightAnnotation;
+
+    /// <summary>
+    /// The handles of an annotation in <b>canvas</b> coordinates, each tagged with the grip it drives:
+    /// oriented corners/edges (+ a rotate knob) for box shapes, the two endpoints for a line, none else.
+    /// </summary>
+    private IReadOnlyList<(EditGrip Grip, double X, double Y)> EditHandles(Annotation a)
+    {
+        var list = new List<(EditGrip, double, double)>();
+
+        if (a is LineAnnotation l)
+        {
+            list.Add((EditGrip.LineStart, l.X1 * Scale, l.Y1 * Scale));
+            list.Add((EditGrip.LineEnd, l.X2 * Scale, l.Y2 * Scale));
+            return list;
+        }
+
+        if (!IsBoxShape(a)) return list;
+
+        var b = AnnotationGeometry.Bounds(a);
+        var cx = b.X + b.Width / 2;
+        var cy = b.Y + b.Height / 2;
+        var hx = b.Width / 2;
+        var hy = b.Height / 2;
+        var rad = a.Rotation * Math.PI / 180.0;
+        var cos = Math.Cos(rad);
+        var sin = Math.Sin(rad);
+
+        // Local (unrotated) offset → canvas point, applying the shape's rotation about its centre.
+        (double X, double Y) World(double lx, double ly)
+            => ((cx + lx * cos - ly * sin) * Scale, (cy + lx * sin + ly * cos) * Scale);
+
+        (EditGrip Grip, double Lx, double Ly)[] spec =
+        [
+            (EditGrip.TopLeft, -hx, -hy), (EditGrip.Top, 0, -hy), (EditGrip.TopRight, hx, -hy),
+            (EditGrip.Right, hx, 0), (EditGrip.BottomRight, hx, hy), (EditGrip.Bottom, 0, hy),
+            (EditGrip.BottomLeft, -hx, hy), (EditGrip.Left, -hx, 0),
+        ];
+        foreach (var (grip, lx, ly) in spec)
+        {
+            var (wx, wy) = World(lx, ly);
+            list.Add((grip, wx, wy));
+        }
+
+        if (CanRotate(a))
+        {
+            var (wx, wy) = World(0, -hy - RotateHandleGap / Scale);
+            list.Add((EditGrip.Rotate, wx, wy));
+        }
+
+        return list;
+    }
+
+    /// <summary>Which handle of the currently selected annotation a canvas point grabs, or None.</summary>
+    private EditGrip HitEditGrip(Point p)
+    {
+        if (_document is null || _selectedIndex < 0 || _selectedIndex >= _document.Items.Count)
+            return EditGrip.None;
+
+        foreach (var (grip, hx, hy) in EditHandles(_document.Items[_selectedIndex]))
+            if (Math.Abs(p.X - hx) <= EditHandleHit && Math.Abs(p.Y - hy) <= EditHandleHit)
+                return grip;
+        return EditGrip.None;
+    }
+
+    /// <summary>Live resize/rotate the selected annotation, checkpointing undo once at the first real drag.</summary>
+    private void DragEditHandle(Point canvasPoint, KeyModifiers modifiers)
+    {
+        if (_document is null || _editOriginal is null) return;
+
+        if (!_moveCheckpointed)
+        {
+            if (Math.Abs(canvasPoint.X - _editDragStart.X) < 0.5 && Math.Abs(canvasPoint.Y - _editDragStart.Y) < 0.5)
+                return; // ignore jitter — a click, not a drag
+            _document.BeginInteractive();
+            _moveCheckpointed = true;
+        }
+
+        _document.ReplaceLive(_selectedIndex, ComputeEdit(_editOriginal, _editGrip, canvasPoint, modifiers));
+    }
+
+    /// <summary>Apply one handle drag to <paramref name="original"/>, returning the reshaped annotation.</summary>
+    private Annotation ComputeEdit(Annotation original, EditGrip grip, Point canvasPoint, KeyModifiers modifiers)
+    {
+        if (grip == EditGrip.Rotate)
+        {
+            // Angle from the shape centre to the pointer; the knob points "up", so offset by 90°.
+            var c = AnnotationGeometry.Center(original);
+            var deg = Math.Atan2(canvasPoint.Y / Scale - c.Y, canvasPoint.X / Scale - c.X) * 180.0 / Math.PI + 90.0;
+            if (modifiers.HasFlag(KeyModifiers.Shift)) deg = Math.Round(deg / 15.0) * 15.0; // snap to 15°
+            return AnnotationGeometry.Rotate(original, deg);
+        }
+
+        var dx = (canvasPoint.X - _editDragStart.X) / Scale;
+        var dy = (canvasPoint.Y - _editDragStart.Y) / Scale;
+
+        if (grip is EditGrip.LineStart or EditGrip.LineEnd && original is LineAnnotation line)
+            return AnnotationGeometry.MoveLineEndpoint(line, grip == EditGrip.LineStart, dx, dy);
+
+        return AnnotationGeometry.Resize(original, ToResizeGrip(grip), dx, dy);
+    }
+
+    private static ResizeGrip ToResizeGrip(EditGrip g) => g switch
+    {
+        EditGrip.Left => ResizeGrip.Left,
+        EditGrip.Right => ResizeGrip.Right,
+        EditGrip.Top => ResizeGrip.Top,
+        EditGrip.Bottom => ResizeGrip.Bottom,
+        EditGrip.TopLeft => ResizeGrip.TopLeft,
+        EditGrip.TopRight => ResizeGrip.TopRight,
+        EditGrip.BottomLeft => ResizeGrip.BottomLeft,
+        _ => ResizeGrip.BottomRight,
+    };
+
+    /// <summary>Cursor for a handle. Directional cursors follow the un-rotated axes (good enough visual cue).</summary>
+    private static Cursor EditCursor(EditGrip grip) => grip switch
+    {
+        EditGrip.Left or EditGrip.Right => SizeWECursor,
+        EditGrip.Top or EditGrip.Bottom => SizeNSCursor,
+        EditGrip.TopLeft => TopLeftCursor,
+        EditGrip.TopRight => TopRightCursor,
+        EditGrip.BottomLeft => BottomLeftCursor,
+        EditGrip.BottomRight => BottomRightCursor,
+        EditGrip.Rotate => RotateCursor,
+        _ => MoveCursor, // line endpoints
+    };
 
     /// <summary>Clear the current selection (e.g. on tool switch, undo/redo, or new capture).</summary>
     public void ClearSelection()
@@ -907,14 +1160,14 @@ public sealed class AnnotationSurface : UserControl
         switch (annotation)
         {
             case RectAnnotation r:
-                return PlaceBox(new Rectangle { Stroke = ParseBrush(r.Color), StrokeThickness = thickness },
-                    r.X * scale, r.Y * scale, r.Width * scale, r.Height * scale);
+                return Rotated(PlaceBox(new Rectangle { Stroke = ParseBrush(r.Color), StrokeThickness = thickness },
+                    r.X * scale, r.Y * scale, r.Width * scale, r.Height * scale), r.Rotation);
             case EllipseAnnotation el:
-                return PlaceBox(new Ellipse { Stroke = ParseBrush(el.Color), StrokeThickness = thickness },
-                    el.X * scale, el.Y * scale, el.Width * scale, el.Height * scale);
+                return Rotated(PlaceBox(new Ellipse { Stroke = ParseBrush(el.Color), StrokeThickness = thickness },
+                    el.X * scale, el.Y * scale, el.Width * scale, el.Height * scale), el.Rotation);
             case HighlightAnnotation hl:
-                return PlaceBox(new Rectangle { Fill = HighlightBrush(hl.Color) },
-                    hl.X * scale, hl.Y * scale, hl.Width * scale, hl.Height * scale);
+                return Rotated(PlaceBox(new Rectangle { Fill = HighlightBrush(hl.Color) },
+                    hl.X * scale, hl.Y * scale, hl.Width * scale, hl.Height * scale), hl.Rotation);
             case RedactionAnnotation rd:
                 return PlaceBox(new Rectangle { Fill = Brushes.Black },
                     rd.X * scale, rd.Y * scale, rd.Width * scale, rd.Height * scale);
@@ -974,6 +1227,17 @@ public sealed class AnnotationSurface : UserControl
         control.Height = h;
         Canvas.SetLeft(control, x);
         Canvas.SetTop(control, y);
+        return control;
+    }
+
+    /// <summary>Rotate a placed control about its own centre (0° is a no-op). Honoured by the export render.</summary>
+    private static Control Rotated(Control control, double degrees)
+    {
+        if (degrees != 0)
+        {
+            control.RenderTransformOrigin = RelativePoint.Center;
+            control.RenderTransform = new RotateTransform(degrees);
+        }
         return control;
     }
 

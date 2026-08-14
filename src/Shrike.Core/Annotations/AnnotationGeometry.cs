@@ -1,5 +1,8 @@
 namespace Shrike.Core.Annotations;
 
+/// <summary>Which edge/corner of a box shape a resize is driving.</summary>
+public enum ResizeGrip { Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight }
+
 /// <summary>
 /// Pure geometry for annotations — bounds, hit-testing and translation — kept UI-free so it's
 /// headless-testable and shared between the editor's rendering and its select/move tooling. All
@@ -26,9 +29,21 @@ public static class AnnotationGeometry
         _ => new RectD(0, 0, 0, 0),
     };
 
+    /// <summary>Centre of the unrotated bounding box, in image pixels (the rotation pivot).</summary>
+    public static PointD Center(Annotation a)
+    {
+        var b = Bounds(a);
+        return new PointD(b.X + b.Width / 2, b.Y + b.Height / 2);
+    }
+
     /// <summary>True if <paramref name="p"/> selects <paramref name="a"/> within a pixel tolerance.</summary>
     public static bool HitTest(Annotation a, PointD p, double tolerance)
     {
+        // Rotated shapes hit-test in their own upright frame: undo the rotation about the centre, then
+        // run the ordinary axis-aligned tests. Rotation == 0 is a no-op, so unrotated behaviour is exact.
+        if (a.Rotation != 0)
+            p = RotateAbout(p, Center(a), -a.Rotation);
+
         var tol = Math.Max(tolerance, a.StrokeWidth / 2);
         switch (a)
         {
@@ -60,6 +75,89 @@ public static class AnnotationGeometry
         StepBadgeAnnotation s => s with { X = s.X + dx, Y = s.Y + dy },
         _ => a,
     };
+
+    /// <summary>
+    /// Resize a box shape (rectangle/ellipse/highlight/redaction) by dragging one of its edges/corners
+    /// by a world-space delta, keeping the opposite edge/corner fixed. Works at any rotation: the delta
+    /// is mapped into the shape's local frame, the grabbed edges move there, and the new centre is mapped
+    /// back out — so at 0° it matches the crop tool exactly. Non-box shapes are returned unchanged.
+    /// </summary>
+    public static Annotation Resize(Annotation a, ResizeGrip grip, double dx, double dy)
+    {
+        if (a is not (RectAnnotation or EllipseAnnotation or HighlightAnnotation or RedactionAnnotation))
+            return a;
+
+        const double min = 4; // smallest half-sensible extent, in image px
+
+        var b = Bounds(a);
+        var cx = b.X + b.Width / 2;
+        var cy = b.Y + b.Height / 2;
+        var hx = b.Width / 2;
+        var hy = b.Height / 2;
+
+        var rad = a.Rotation * Math.PI / 180.0;
+        var cos = Math.Cos(rad);
+        var sin = Math.Sin(rad);
+
+        // World delta → local delta (local axes are ex=(cos,sin), ey=(-sin,cos)).
+        var dlx = dx * cos + dy * sin;
+        var dly = -dx * sin + dy * cos;
+
+        // Local rect edges about the centre; move only the grabbed ones, with a min-size floor.
+        double left = -hx, right = hx, top = -hy, bottom = hy;
+        var isLeft = grip is ResizeGrip.Left or ResizeGrip.TopLeft or ResizeGrip.BottomLeft;
+        var isRight = grip is ResizeGrip.Right or ResizeGrip.TopRight or ResizeGrip.BottomRight;
+        var isTop = grip is ResizeGrip.Top or ResizeGrip.TopLeft or ResizeGrip.TopRight;
+        var isBottom = grip is ResizeGrip.Bottom or ResizeGrip.BottomLeft or ResizeGrip.BottomRight;
+
+        if (isLeft) left = Math.Min(left + dlx, right - min);
+        if (isRight) right = Math.Max(right + dlx, left + min);
+        if (isTop) top = Math.Min(top + dly, bottom - min);
+        if (isBottom) bottom = Math.Max(bottom + dly, top + min);
+
+        var newHx = (right - left) / 2;
+        var newHy = (bottom - top) / 2;
+
+        // New centre = old centre + the new local-rect midpoint mapped back to world.
+        var ocx = (left + right) / 2;
+        var ocy = (top + bottom) / 2;
+        var ncx = cx + (cos * ocx - sin * ocy);
+        var ncy = cy + (sin * ocx + cos * ocy);
+
+        var nx = ncx - newHx;
+        var ny = ncy - newHy;
+        var nw = newHx * 2;
+        var nh = newHy * 2;
+
+        return a switch
+        {
+            RectAnnotation r => r with { X = nx, Y = ny, Width = nw, Height = nh },
+            EllipseAnnotation e => e with { X = nx, Y = ny, Width = nw, Height = nh },
+            HighlightAnnotation h => h with { X = nx, Y = ny, Width = nw, Height = nh },
+            RedactionAnnotation d => d with { X = nx, Y = ny, Width = nw, Height = nh },
+            _ => a,
+        };
+    }
+
+    /// <summary>Move one end of a line by a world-space delta, leaving the other end put.</summary>
+    public static LineAnnotation MoveLineEndpoint(LineAnnotation l, bool moveStart, double dx, double dy)
+        => moveStart
+            ? l with { X1 = l.X1 + dx, Y1 = l.Y1 + dy }
+            : l with { X2 = l.X2 + dx, Y2 = l.Y2 + dy };
+
+    /// <summary>Set the clockwise rotation (degrees) of a shape about its centre; style/geometry unchanged.</summary>
+    public static Annotation Rotate(Annotation a, double degrees) => a with { Rotation = degrees };
+
+    /// <summary>Rotate <paramref name="p"/> clockwise (degrees) about <paramref name="c"/>.</summary>
+    private static PointD RotateAbout(PointD p, PointD c, double degrees)
+    {
+        var rad = degrees * Math.PI / 180.0;
+        var cos = Math.Cos(rad);
+        var sin = Math.Sin(rad);
+        var dx = p.X - c.X;
+        var dy = p.Y - c.Y;
+        return new PointD(c.X + dx * cos - dy * sin, c.Y + dx * sin + dy * cos);
+    }
 
     private static RectD BadgeBounds(StepBadgeAnnotation s)
     {

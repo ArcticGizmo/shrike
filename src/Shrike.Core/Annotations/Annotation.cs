@@ -24,6 +24,10 @@ public abstract record Annotation
 
     /// <summary>Stroke width in image pixels.</summary>
     public double StrokeWidth { get; init; } = 3;
+
+    /// <summary>Clockwise rotation in degrees about the shape's bounding-box centre (0 = upright). Only
+    /// box shapes (rectangle/ellipse/highlight) ever set this; everything else leaves it at 0.</summary>
+    public double Rotation { get; init; }
 }
 
 public sealed record RectAnnotation(double X, double Y, double Width, double Height, bool Filled = false) : Annotation;

@@ -142,7 +142,7 @@ public partial class EditorWindow : Window
             _surface.Tool = tool;
             SetStatus(tool switch
             {
-                AnnotationTool.None => "Select",
+                AnnotationTool.None => "Select · drag to move · drag handles to resize · knob to rotate (Shift snaps 15°)",
                 AnnotationTool.Crop => "Drag to set the crop · drag the handles or inside to adjust · tiny drag outside to clear",
                 _ => $"Tool: {tool}",
             });
