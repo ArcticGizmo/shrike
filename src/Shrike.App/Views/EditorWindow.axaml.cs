@@ -30,6 +30,8 @@ public partial class EditorWindow : Window
 
     private RecentRing? _ring;
     private Action<CapturedImage>? _openInEditor;
+    private Action? _repeatLastCapture;
+    private Action? _showCaptureMenu;
 
     private AnnotationSurface? _surface;
     private TextBlock? _dimensions;
@@ -82,6 +84,16 @@ public partial class EditorWindow : Window
         RebuildRecentStrip();
     }
 
+    /// <summary>
+    /// Wire the "New capture" split button: <paramref name="repeatLast"/> repeats the last mode,
+    /// <paramref name="showMenu"/> opens the full chooser. Idempotent — set on every capture.
+    /// </summary>
+    public void ConfigureNewCapture(Action repeatLast, Action showMenu)
+    {
+        _repeatLastCapture = repeatLast;
+        _showCaptureMenu = showMenu;
+    }
+
     /// <summary>Load a new capture into the editor, resetting annotations + per-capture state.</summary>
     public void SetCapture(CapturedImage image)
     {
@@ -103,6 +115,21 @@ public partial class EditorWindow : Window
     {
         base.OnOpened(e);
         RefreshActiveStates(); // reflect the surface's tool/stroke/colour once the tree exists
+    }
+
+    // ---- new capture ----
+
+    // Both paths minimise the editor first so it isn't in the next shot; the controller waits for the
+    // minimise to settle, then captures. The editor is reused, so it reappears with the new capture
+    // (or stays minimised in the taskbar if the capture is cancelled).
+    private void OnNewCapture(object? sender, RoutedEventArgs e) => StartNewCapture(_repeatLastCapture);
+    private void OnNewCaptureMenu(object? sender, RoutedEventArgs e) => StartNewCapture(_showCaptureMenu);
+
+    private void StartNewCapture(Action? capture)
+    {
+        if (capture is null) return;
+        WindowState = WindowState.Minimized;
+        capture();
     }
 
     // ---- toolbar ----

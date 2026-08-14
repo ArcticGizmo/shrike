@@ -62,6 +62,16 @@
                 BorderBrush="#322A1E" BorderThickness="0,0,0,1">
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <StackPanel Orientation="Horizontal" Spacing="5">
+                <!-- New capture: main button repeats the last mode; caret opens the full chooser. -->
+                <StackPanel Orientation="Horizontal" Spacing="0">
+                    <Button Classes="action" Content="＋ New capture" Click="OnNewCapture"
+                            CornerRadius="7,0,0,7" ToolTip.Tip="Take another capture — repeats your last mode" />
+                    <Button Classes="action" Content="▾" Click="OnNewCaptureMenu" Padding="6,6"
+                            CornerRadius="0,7,7,0" Margin="1,0,0,0" ToolTip.Tip="Choose a capture mode" />
+                </StackPanel>
+
+                <Border Width="1" Background="#322A1E" Margin="4,2" />
+
                 <Button Classes="tool" Tag="None" Click="OnToolClick" ToolTip.Tip="Select">
                     <Path Stretch="Uniform" Width="15" Height="15" Fill="{Binding $parent[Button].Foreground}"
                           Data="M3,2 L3,17 L7.2,13 L10,18.5 L12.4,17.3 L9.6,12 L15,12 Z" />
