@@ -6,13 +6,6 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ## [Unreleased]
 
-- Recording no longer starts the moment you draw a region: adjust it with resize handles, then press Record
-- Record button runs a 3-2-1 countdown before capture begins
-- One recording bar from setup to stop — Record/Cancel become the live controls in place, with no second HUD popping in
-- The recording HUD can be dragged anywhere on screen
-- "Spotlight cursor" toggle paints a glow under the mouse, shown live on screen and in the recording, and can be armed before recording starts
-- Spotlight colour, opacity and size are adjustable from a settings menu on the HUD
-
 ---
 
 ## [v0.1.2] - 2026-08-14
@@ -23,6 +16,12 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 - New-capture button in the editor to quickly grab another shot
 - Single-key shortcuts for every drawing tool, shown on the icons
 - Region capture: clicking bare desktop grabs just that monitor, not all of them
+- Adjust the record region with handles before recording starts
+- 3-2-1 countdown before recording begins
+- Single recording bar from setup through to stop
+- Drag the recording bar anywhere on screen
+- Spotlight cursor — a glow under the mouse, on screen and in the recording
+- Adjustable spotlight colour, opacity and size
 
 ---
 
