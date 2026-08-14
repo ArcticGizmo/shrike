@@ -51,7 +51,7 @@
 - **Track model (`Shrike.Core`)**: `MouseTrack` — an ordered list of samples `(tMs, x, y)` plus button events `(tMs, button, down/up)`, in **virtual-screen physical pixels**. Serialisable to a compact JSON sidecar. Headless-testable; no UI or Win32 deps in the model itself.
 - **Recorder-clock alignment**: timestamps are stamped on the **recorder's own monotonic clock** (the same `Stopwatch` the `Recorder` paces from) and **exclude paused spans**, so a sample at `tMs` maps to the frame at `tMs`. Pause/resume must gate track logging exactly as it gates frames.
 - **Low-level hook (`Shrike.App/Native`)**: a `WH_MOUSE_LL` hook capturing `WM_MOUSEMOVE` + button down/up, timestamped and forwarded to the track. Armed on record-start, torn down on stop/discard. Cheap, non-blocking callback (enqueue + return).
-- **Wiring**: when the experimental mode is on, `CaptureController` (a) forces the real cursor **off** in the recording (reuse `CursorInRecording=false`), (b) starts the track recorder alongside the `Recorder`, and (c) hands the finished track to the `RecordingSource` (sidecar written next to the MP4).
+- **Wiring**: a per-recording **Smooth cursor** toggle in the recording HUD (beside Hide cursor / Spotlight, marked experimental) gates it. When on, `CaptureController` (a) forces the real cursor **off** in the recording (reuse `CursorInRecording=false`), (b) starts the track recorder alongside the `Recorder`, and (c) writes the finished track as a **`*.track.json` sidecar next to the MP4** and hands it to the `RecordingSource`.
 
 **Exit criteria**
 - Recording a region produces the MP4 **and** a track sidecar; the video contains no baked cursor.
@@ -96,7 +96,7 @@
 **Build**
 - **Cursor compositor (`Shrike.Core`)**: an `IFrameCompositor` that, per frame, samples the SC2 position and draws a **synthetic cursor** (bundled vector asset, correct hotspot) plus active **click ripples** (an expanding ring for ~350 ms at each logged click); optional press **punch** (brief scale-down) behind a constant, off by default for the MVP.
 - **Cursor asset**: a crisp bundled cursor (not the OS arrow), rendered at the export resolution.
-- **App wiring**: an **experimental "Smooth cursor"** setting (off by default) exposed minimally (settings or the timeline editor); when on, SC1 logs the track and export runs SC3+SC4.
+- **App wiring**: the **Smooth cursor** HUD toggle from SC1 gates capture; at export, SC3+SC4 run automatically whenever a track sidecar is present. No separate setting for the MVP.
 
 **Exit criteria**
 - Record with smooth-cursor mode → export → the output shows a **smoothed synthetic cursor** tracking the real path, with a **ripple on each click**, correctly positioned across the region/trim/downscale cases from SC2.
@@ -144,7 +144,7 @@ SC1 ──▶ SC2 ──▶ SC3 ──▶ SC4  (MVP)  ──▶ SC5 (zoom)
 | **Timing / pause alignment** between track and frames. | Stamp on the recorder's own paused-excluding clock (SC1); assert zero drift with a synthesised paused recording. |
 | **Generation loss / perf** of decode → re-encode. | Single decode→composite→encode from the HQ source (SC3); measure throughput; prefer a hardware encoder as export already does. |
 | **Low-level hook** overhead / secure-desktop / anti-cheat interference. | Enqueue-only callback; arm only during recording; degrade gracefully to "no track → normal export" if the hook can't run. |
-| **Cursor fidelity** — bundled vector vs. capturing the real cursor bitmap. | *Open.* Lean: a bundled vector cursor for a consistent, polished look; revisit capturing the live cursor if users want their own pointer. |
+| **Cursor fidelity** — bundled vector vs. capturing the real cursor bitmap. | **Resolved:** bundled vector cursor for the MVP (consistent, polished, sharp at any scale); capturing the live cursor incl. shape changes is backlog. |
 | **Where the tuning UI lives** and when. | Timeline editor, at SC5. MVP (SC4) ships with fixed sensible defaults and just an on/off. |
 | **Live preview** of smoothing during recording. | Out of scope — post-only. A latency-buffered live preview is a possible future, not MVP. |
 
@@ -152,8 +152,8 @@ SC1 ──▶ SC2 ──▶ SC3 ──▶ SC4  (MVP)  ──▶ SC5 (zoom)
 
 Live/real-time smoothed preview · cursor themes & per-user cursors · click **sound**/keystroke overlays · motion-blur on fast moves · smoothing applied to **screenshots** · exporting the track for external editors. Revisit after the MVP sees real demo use.
 
-## Pre-SC1 confirmations
+## Pre-SC1 confirmations (resolved 2026-08-14)
 
-1. **Experimental surfacing** — where the toggle lives for the MVP: a settings checkbox, a timeline-editor option, or both. *(Lean: a single experimental setting, off by default.)*
-2. **Sidecar vs. in-memory track** — persist the track next to the MP4 (survives app restart, re-exportable) or hold it only for the current session. *(Lean: sidecar, so a clip can be re-exported with different settings later.)*
-3. **Cursor asset** — confirm the bundled-vector-cursor direction (see risks).
+1. **Experimental surfacing** — ✅ **Per-recording HUD toggle.** A **Smooth cursor** toggle in the recording bar, alongside Hide cursor / Spotlight (marked experimental). It must be set at capture (the track is logged live), so the HUD is its natural home; smoothing then applies automatically at export. No separate settings flag for the MVP.
+2. **Sidecar vs. in-memory track** — ✅ **Sidecar.** A tiny `*.track.json` next to the MP4, so a clip survives an app restart and can be re-exported later with different smoothing/zoom settings — consistent with the non-destructive export model.
+3. **Cursor asset** — ✅ **Bundled vector cursor** for the MVP: one crisp, hotspot-correct pointer, sharp at any scale. Capturing the user's real cursor (incl. shape changes) stays on the backlog as a follow-up.
