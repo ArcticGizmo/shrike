@@ -10,7 +10,8 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 - Record button runs a 3-2-1 countdown before capture begins
 - One recording bar from setup to stop — Record/Cancel become the live controls in place, with no second HUD popping in
 - The recording HUD can be dragged anywhere on screen
-- "Enhance mouse" toggle on the HUD paints a glowing halo under the cursor so it's easy to follow in videos
+- "Spotlight cursor" toggle paints a glow under the mouse, shown live on screen and in the recording, and can be armed before recording starts
+- Spotlight colour, opacity and size are adjustable from a settings menu on the HUD
 
 ---
 

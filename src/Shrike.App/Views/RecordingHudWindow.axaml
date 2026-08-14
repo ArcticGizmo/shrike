@@ -49,6 +49,13 @@
             <Setter Property="Background" Value="#F5A524" />
             <Setter Property="Foreground" Value="#140F0A" />
         </Style>
+        <Style Selector="FlyoutPresenter">
+            <Setter Property="Background" Value="#140F0A" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="6" />
+        </Style>
     </Window.Styles>
 
     <Border Name="DragRoot" Background="#F2140F0A" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="11"
@@ -56,6 +63,32 @@
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
             <TextBlock Text="⠿" VerticalAlignment="Center" Foreground="#6B6152" FontSize="15"
                        ToolTip.Tip="Drag to move" />
+
+            <!-- Spotlight controls: available in both setup and recording. -->
+            <ToggleButton Name="SpotlightButton" Classes="hud" Content="Spotlight cursor" Click="OnToggleSpotlight"
+                          ToolTip.Tip="Glowing spotlight under the cursor — shown on screen and in the recording" />
+            <Button Name="SpotlightMenu" Classes="hud" Content="⚙" Padding="8,6" ToolTip.Tip="Spotlight colour, opacity &amp; size">
+                <Button.Flyout>
+                    <Flyout Placement="Top">
+                        <StackPanel Width="236" Spacing="10" Margin="4">
+                            <TextBlock Text="Spotlight colour" Foreground="#B8AE9C" FontSize="12" />
+                            <WrapPanel Name="Swatches" Orientation="Horizontal" />
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Text="Opacity" Foreground="#EDE6DA" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Name="OpacityValue" Grid.Column="1" Foreground="#B8AE9C" FontSize="12" VerticalAlignment="Center" />
+                            </Grid>
+                            <Slider Name="OpacitySlider" Minimum="0.1" Maximum="1" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="Size" Foreground="#EDE6DA" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Name="SizeValue" Grid.Column="1" Foreground="#B8AE9C" FontSize="12" VerticalAlignment="Center" />
+                            </Grid>
+                            <Slider Name="SizeSlider" Minimum="16" Maximum="120" />
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+
+            <Border Width="1" Background="#322A1E" Margin="2,1" />
 
             <!-- Setup state: adjust the region with handles, then record. -->
             <StackPanel Name="SetupPanel" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -72,8 +105,6 @@
                 <TextBlock Name="Elapsed" Text="00:00" VerticalAlignment="Center"
                            FontFamily="Consolas,monospace" FontSize="15" Foreground="#EDE6DA" MinWidth="46" />
                 <Border Width="1" Background="#322A1E" Margin="2,1" />
-                <ToggleButton Name="EnhanceButton" Classes="hud" Content="Mouse" Click="OnToggleEnhance"
-                              ToolTip.Tip="Enhance mouse — glow under the cursor" />
                 <Button Name="PauseButton" Classes="hud" Content="Pause" Click="OnPauseResume" />
                 <Button Name="StopButton" Classes="hud" Content="Stop" Click="OnStop" />
                 <Button Name="DiscardButton" Classes="hud danger" Content="Discard" Click="OnDiscard" />

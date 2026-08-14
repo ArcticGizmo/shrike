@@ -33,8 +33,8 @@ internal sealed class CaptureController
     private Recorder? _recorder;
     private RecordingHudWindow? _hud;
     private RecordingRegionWindow? _regionWindow;
-    private Task<(Recorder Recorder, CursorGlowFrameSource Glow)?>? _buildTask;
-    private bool _enhanceMouse;
+    private CursorSpotlightWindow? _spotlight;
+    private Task<Recorder?>? _buildTask;
 
     /// <summary>The last capture mode the user ran, so the editor's "New capture" button can repeat it.</summary>
     private CaptureMenuChoice _lastCaptureChoice = CaptureMenuChoice.Region;
@@ -331,13 +331,24 @@ internal sealed class CaptureController
         if (_regionWindow is not null) { _regionWindow.Activate(); return; }
         if (_recorder is not null) { _hud?.Activate(); return; }
 
+        var spotlightOn = _settings?.Current.SpotlightCursorEnabled ?? false;
+        var style = CurrentSpotlightStyle();
+
         var regionWindow = new RecordingRegionWindow(region, MonitorsOrFallback());
-        var hud = new RecordingHudWindow(region);
+        var hud = new RecordingHudWindow(region, spotlightOn, style);
+
+        // The spotlight is a real on-screen overlay (captured naturally), so it previews during setup and
+        // simply carries into the recording — one source of truth for "what's being recorded".
+        var spotlight = new CursorSpotlightWindow(style);
+        _spotlight = spotlight;
+        spotlight.SetActive(spotlightOn);
 
         // Setup wiring: the HUD's Record/Cancel drive the region window; its handle drags trail the HUD.
         hud.RecordRequested += OnRecordRequested;
         hud.CancelRequested += TeardownRecordingSetup;
         hud.Finished += OnRecordingFinished;
+        hud.SpotlightToggled += OnSpotlightToggled;
+        hud.SpotlightStyleChanged += OnSpotlightStyleChanged;
         hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
 
         regionWindow.RegionChanged += hud.FollowRegion;
@@ -351,6 +362,34 @@ internal sealed class CaptureController
         regionWindow.Show();
         hud.Show();
         hud.Activate();
+    }
+
+    private SpotlightStyle CurrentSpotlightStyle()
+    {
+        var s = _settings?.Current;
+        return new SpotlightStyle(
+            s?.SpotlightColor ?? "#FFD24A",
+            s?.SpotlightOpacity ?? 0.55,
+            s?.SpotlightRadius ?? 48);
+    }
+
+    private void OnSpotlightToggled(bool on)
+    {
+        _spotlight?.SetActive(on);
+        if (_settings is not null && _settings.Current.SpotlightCursorEnabled != on)
+            _settings.Update(_settings.Current with { SpotlightCursorEnabled = on });
+    }
+
+    private void OnSpotlightStyleChanged(SpotlightStyle style)
+    {
+        _spotlight?.UpdateStyle(style);
+        if (_settings is not null)
+            _settings.Update(_settings.Current with
+            {
+                SpotlightColor = style.Color,
+                SpotlightOpacity = style.Opacity,
+                SpotlightRadius = style.Radius,
+            });
     }
 
     /// <summary>Record pressed: the region is now final, so kick off the (slow) ffmpeg pipeline build in
@@ -371,9 +410,8 @@ internal sealed class CaptureController
         const int fps = 30;
         var path = Path.Combine(Path.GetTempPath(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
-        _enhanceMouse = _settings?.Current.EnhanceMouseInRecording ?? false;
 
-        _buildTask = Task.Run(() => BuildRecorder(region, path, fps, _enhanceMouse));
+        _buildTask = Task.Run(() => BuildRecorder(region, path, fps));
         _regionWindow.StartCountdown();
     }
 
@@ -385,12 +423,12 @@ internal sealed class CaptureController
         _buildTask = null;
         if (build is null || _regionWindow is null || _hud is null) { TeardownRecordingSetup(); return; }
 
-        (Recorder Recorder, CursorGlowFrameSource Glow)? built = null;
+        Recorder? recorder = null;
         string? error = null;
-        try { built = await build; }
+        try { recorder = await build; }
         catch (Exception ex) { error = ex.Message; }
 
-        if (built is not { } pipeline)
+        if (recorder is null)
         {
             ToastWindow.Show(error is null
                 ? "Recording needs FFmpeg — install it (or set the SHRIKE_FFMPEG path)."
@@ -399,11 +437,10 @@ internal sealed class CaptureController
             return;
         }
 
-        var recorder = pipeline.Recorder;
         _recorder = recorder;
 
         _regionWindow.EnterRecordingMode();
-        _hud.BeginRecording(recorder, pipeline.Glow, _enhanceMouse, OnEnhanceMouseChanged);
+        _hud.BeginRecording(recorder);
         recorder.Start();
     }
 
@@ -418,43 +455,44 @@ internal sealed class CaptureController
             _hud = null;
             _regionWindow?.Close();
             _regionWindow = null;
+            CloseSpotlight();
         });
     }
 
     // Locate ffmpeg and wire the capture→encode pipeline. Runs on a background thread so the ffmpeg
-    // process spawn never blocks the UI. Returns null when ffmpeg is unavailable; throws for other
-    // setup failures (surfaced as a toast). The GDI grab is wrapped in a cursor-glow decorator the HUD
-    // can toggle live.
-    private static (Recorder, CursorGlowFrameSource)? BuildRecorder(PixelBounds region, string path, int fps, bool enhanceMouse)
+    // process spawn never blocks the UI. Returns null when ffmpeg is unavailable; throws for other setup
+    // failures (surfaced as a toast). The cursor spotlight is a separate on-screen overlay captured
+    // naturally, so nothing about it lives in this pipeline.
+    private static Recorder? BuildRecorder(PixelBounds region, string path, int fps)
     {
         if (Ffmpeg.Locate() is not { } ffmpeg) return null;
-        var gdi = new GdiFrameSource(region);
-        var glow = new CursorGlowFrameSource(gdi, region, enhanceMouse);
+        var source = new GdiFrameSource(region);
         try
         {
-            var bitrate = BitrateFor(glow.Width, glow.Height, fps);
-            var encoder = new FfmpegMp4Encoder(ffmpeg, path, glow.Width, glow.Height, fps, bitrate);
-            return (new Recorder(glow, encoder, path, fps), glow);
+            var bitrate = BitrateFor(source.Width, source.Height, fps);
+            var encoder = new FfmpegMp4Encoder(ffmpeg, path, source.Width, source.Height, fps, bitrate);
+            return new Recorder(source, encoder, path, fps);
         }
         catch
         {
-            glow.Dispose();
+            source.Dispose();
             throw;
         }
     }
 
-    /// <summary>Remember the HUD's "enhance mouse" choice so the next recording defaults to it.</summary>
-    private void OnEnhanceMouseChanged(bool enabled)
+    private void CloseSpotlight()
     {
-        if (_settings is null || _settings.Current.EnhanceMouseInRecording == enabled) return;
-        _settings.Update(_settings.Current with { EnhanceMouseInRecording = enabled });
+        _spotlight?.Close();
+        _spotlight = null;
     }
 
     private void OnRecordingFinished(string? savedPath)
     {
-        // The HUD closes itself; drop the region frame (which doubled as the recording border) with it.
+        // The HUD closes itself; drop the region frame (which doubled as the recording border) and the
+        // spotlight overlay with it.
         _regionWindow?.Close();
         _regionWindow = null;
+        CloseSpotlight();
         var recorder = _recorder;
         _recorder = null;
         if (savedPath is null || !File.Exists(savedPath)) return;
