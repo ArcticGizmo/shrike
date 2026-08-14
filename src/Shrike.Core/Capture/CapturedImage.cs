@@ -59,4 +59,18 @@ public sealed class CapturedImage
 
         return new CapturedImage(r.Width, r.Height, outBuffer, r, CapturedAt);
     }
+
+    /// <summary>
+    /// Read the colour of a single pixel. <paramref name="x"/>/<paramref name="y"/> are in the same
+    /// physical-pixel space as <see cref="Source"/> (as reported by the overlay); the point is clamped
+    /// to the image so a sample right at the edge still returns the nearest pixel. Used by the pipette.
+    /// </summary>
+    public PixelColor SampleColor(int x, int y)
+    {
+        var px = Math.Clamp(x - Source.X, 0, Width - 1);
+        var py = Math.Clamp(y - Source.Y, 0, Height - 1);
+        var off = (py * Width + px) * 4;
+        // Buffer is BGRA, so red is at +2, green at +1, blue at +0.
+        return new PixelColor(Bgra[off + 2], Bgra[off + 1], Bgra[off]);
+    }
 }

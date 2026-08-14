@@ -28,6 +28,7 @@ internal sealed class CaptureController
     private readonly List<DimWindow> _dimmers = [];
     private RegionSelectionSession? _session;
     private CapturedImage? _frozen;
+    private bool _colorPickHandled;
     private EditorWindow? _editor;
     private CaptureMenuWindow? _menu;
     private Recorder? _recorder;
@@ -106,8 +107,9 @@ internal sealed class CaptureController
 
     private void RunChoice(CaptureMenuChoice choice, CapturedImage? frozen)
     {
-        // Remember the mode so the editor's quick "New capture" can repeat it (Recent isn't a capture).
-        if (choice is not CaptureMenuChoice.Recent)
+        // Remember the mode so the editor's quick "New capture" can repeat it. Recent just re-opens a
+        // shot, and Pipette produces a colour (not an image), so neither is a "capture" to repeat.
+        if (choice is not (CaptureMenuChoice.Recent or CaptureMenuChoice.Pipette))
             _lastCaptureChoice = choice;
 
         switch (choice)
@@ -123,6 +125,9 @@ internal sealed class CaptureController
                 break;
             case CaptureMenuChoice.Record:
                 BeginRegionRecording(frozen);
+                break;
+            case CaptureMenuChoice.Pipette:
+                BeginColorPick(frozen);
                 break;
             case CaptureMenuChoice.Recent:
                 // Open the editor on the newest capture; the filmstrip surfaces the rest.
@@ -192,6 +197,49 @@ internal sealed class CaptureController
         }
 
         _onOverlayShown?.Invoke();
+    }
+
+    /// <summary>
+    /// Put a colour-pipette overlay on every monitor: the loupe magnifies the frozen snapshot and shows
+    /// the live colour, and a click samples that pixel and pops the copyable HEX/RGB/HSL result panel.
+    /// </summary>
+    public void BeginColorPick(CapturedImage? frozen = null)
+    {
+        if (_overlays.Count > 0)
+        {
+            _overlays[0].Activate();
+            return;
+        }
+
+        var monitors = MonitorsOrFallback();
+        _frozen = frozen ?? TryCaptureFrozen();
+        _colorPickHandled = false;
+
+        // Esc on any overlay cancels the whole pick; a click on one emits the sampled colour.
+        var session = new RegionSelectionSession();
+        session.Cancelled += CloseOverlays;
+        _session = session;
+
+        foreach (var monitor in monitors)
+        {
+            var overlay = new OverlayWindow(session, monitor, _frozen, [], pipette: true);
+            overlay.ColorPicked += OnColorPicked;
+            _overlays.Add(overlay);
+            overlay.Show();
+        }
+
+        _onOverlayShown?.Invoke();
+    }
+
+    private void OnColorPicked(PixelColor color)
+    {
+        if (_colorPickHandled)
+            return; // a click on another monitor's overlay already handled this pick
+        _colorPickHandled = true;
+
+        CloseOverlays();
+        var (cx, cy) = CursorPosition.Get();
+        ColorResultWindow.Show(color, new PixelPoint(cx, cy));
     }
 
     private static CapturedImage? TryCaptureFrozen()

@@ -65,17 +65,23 @@
                     <TextBlock Text="Record region" />
                 </StackPanel>
             </Button>
+            <Button Name="PipetteButton" Classes="mode" Click="OnPickColour">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="key" Text="5" />
+                    <TextBlock Text="Pick colour" />
+                </StackPanel>
+            </Button>
 
             <Border Height="1" Background="#322A1E" Margin="4,3" />
 
             <Button Name="RecentButton" Classes="mode" Click="OnRecent">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Classes="key" Text="5" />
+                    <TextBlock Classes="key" Text="6" />
                     <TextBlock Name="RecentText" Text="Recent captures" />
                 </StackPanel>
             </Button>
 
-            <TextBlock Text="1–5 to pick  ·  Esc to cancel" FontSize="11" Foreground="#8A7C68"
+            <TextBlock Text="1–6 to pick  ·  Esc to cancel" FontSize="11" Foreground="#8A7C68"
                        Margin="6,4,0,2" />
         </StackPanel>
     </Border>

@@ -30,7 +30,9 @@ public partial class OverlayWindow : Window
     private readonly MonitorInfo _monitor;
     private readonly CapturedImage? _frozen; // frozen full-screen grab for the magnifier
     private readonly IReadOnlyList<PixelBounds> _windows; // for snap-highlight, topmost first
+    private readonly bool _pipette;          // colour-pick mode: a click samples a pixel, no region drag
     private readonly Action _onSessionChanged;
+    private bool _picked;                     // pipette: guard against a second click before teardown
 
     private Canvas? _root;
     private Path? _scrim;
@@ -43,6 +45,12 @@ public partial class OverlayWindow : Window
     private Border? _loupe;
     private Image? _loupeImage;
     private TextBlock? _loupeCoords;
+    private StackPanel? _loupeColorRow;
+    private Border? _loupeSwatch;
+    private TextBlock? _loupeColorText;
+
+    /// <summary>Pipette mode only: raised once with the sampled colour when the user clicks a pixel.</summary>
+    internal event Action<PixelColor>? ColorPicked;
 
     // Parameterless ctor for the XAML designer only.
     public OverlayWindow()
@@ -52,12 +60,13 @@ public partial class OverlayWindow : Window
 
     internal OverlayWindow(
         RegionSelectionSession session, MonitorInfo monitor, CapturedImage? frozen,
-        IReadOnlyList<PixelBounds> windows)
+        IReadOnlyList<PixelBounds> windows, bool pipette = false)
     {
         _session = session;
         _monitor = monitor;
         _frozen = frozen;
         _windows = windows;
+        _pipette = pipette;
         _onSessionChanged = Render;
 
         InitializeComponent();
@@ -73,6 +82,9 @@ public partial class OverlayWindow : Window
         _loupe = this.FindControl<Border>("Loupe");
         _loupeImage = this.FindControl<Image>("LoupeImage");
         _loupeCoords = this.FindControl<TextBlock>("LoupeCoords");
+        _loupeColorRow = this.FindControl<StackPanel>("LoupeColorRow");
+        _loupeSwatch = this.FindControl<Border>("LoupeSwatch");
+        _loupeColorText = this.FindControl<TextBlock>("LoupeColorText");
 
         if (_loupeImage is not null)
             RenderOptions.SetBitmapInterpolationMode(_loupeImage, BitmapInterpolationMode.None);
@@ -117,11 +129,23 @@ public partial class OverlayWindow : Window
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        var p = e.GetPosition(this);
+
+        if (_pipette)
+        {
+            // A click samples the pixel under the cursor and hands the colour back — no drag/region.
+            if (_frozen is not null && !_picked)
+            {
+                _picked = true;
+                ColorPicked?.Invoke(_frozen.SampleColor(PhysicalX(p.X), PhysicalY(p.Y)));
+            }
+            return;
+        }
+
         // Capture so this window keeps receiving moves even when the pointer crosses to another monitor.
         if (_root is not null)
             e.Pointer.Capture(_root);
 
-        var p = e.GetPosition(this);
         _session.Begin(PhysicalX(p.X), PhysicalY(p.Y));
     }
 
@@ -134,6 +158,10 @@ public partial class OverlayWindow : Window
         if (_hLine is not null) { Canvas.SetTop(_hLine, p.Y); _hLine.IsVisible = true; }
 
         UpdateLoupe(p);
+
+        // Pipette mode only tracks the reticle + loupe; there's no drag or window-snap highlight.
+        if (_pipette)
+            return;
 
         if (_session.IsDragging)
         {
@@ -171,13 +199,25 @@ public partial class OverlayWindow : Window
         _loupeImage.Source = BitmapConverter.ToBitmap(sample);
         if (_loupeCoords is not null) _loupeCoords.Text = $"{cx}, {cy}";
 
-        // Sit the loupe near the cursor, flipping away from the screen edges.
+        // Pipette: show the exact colour of the centre pixel as a swatch + hex, live under the reticle.
+        if (_pipette && _loupeColorRow is not null)
+        {
+            var color = _frozen.SampleColor(cx, cy);
+            if (_loupeSwatch is not null)
+                _loupeSwatch.Background = new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B));
+            if (_loupeColorText is not null) _loupeColorText.Text = color.Hex;
+            _loupeColorRow.IsVisible = true;
+        }
+
+        // Sit the loupe near the cursor, flipping away from the screen edges. The colour row makes the
+        // pipette loupe a little taller, so budget for that when deciding whether to flip.
+        var loupeHeight = _pipette ? LoupeHeight + 22 : LoupeHeight;
         var lx = local.X + 24;
         var ly = local.Y + 24;
         if (lx + LoupeWidth > Width) lx = local.X - LoupeWidth - 4;
-        if (ly + LoupeHeight > Height) ly = local.Y - LoupeHeight - 4;
+        if (ly + loupeHeight > Height) ly = local.Y - loupeHeight - 4;
         Canvas.SetLeft(_loupe, Math.Clamp(lx, 0, Math.Max(0, Width - LoupeWidth)));
-        Canvas.SetTop(_loupe, Math.Clamp(ly, 0, Math.Max(0, Height - LoupeHeight)));
+        Canvas.SetTop(_loupe, Math.Clamp(ly, 0, Math.Max(0, Height - loupeHeight)));
         _loupe.IsVisible = true;
     }
 
