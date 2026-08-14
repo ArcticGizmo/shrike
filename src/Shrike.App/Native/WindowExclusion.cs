@@ -18,6 +18,7 @@ internal static class WindowExclusion
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TRANSPARENT = 0x00000020;
     private const int WS_EX_LAYERED = 0x00080000;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
 
     /// <summary>Exclude <paramref name="hwnd"/> from screen capture. Returns true if the OS applied it.</summary>
     public static bool Hide(IntPtr hwnd)
@@ -36,6 +37,16 @@ internal static class WindowExclusion
         if (hwnd == IntPtr.Zero) return;
         var ex = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(ex | WS_EX_TRANSPARENT | WS_EX_LAYERED));
+    }
+
+    /// <summary>Stop <paramref name="hwnd"/> stealing activation or z-order when clicked: it still receives
+    /// the mouse (so its handles stay draggable) but never rises above — or takes focus from — other
+    /// windows. Used so dragging the region frame never buries the HUD floating over its scrim.</summary>
+    public static void MakeNonActivating(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        var ex = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(ex | WS_EX_NOACTIVATE));
     }
 
     [DllImport("user32.dll", SetLastError = true)]

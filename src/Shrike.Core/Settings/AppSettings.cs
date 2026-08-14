@@ -39,6 +39,18 @@ public sealed record AppSettings
     /// <summary>Draw the cursor into recordings.</summary>
     public bool CursorInRecording { get; init; } = true;
 
+    /// <summary>Show a glowing "spotlight" under the mouse (visible on screen and in the recording). Off by default.</summary>
+    public bool SpotlightCursorEnabled { get; init; } = false;
+
+    /// <summary>Spotlight glow colour, as a hex string.</summary>
+    public string SpotlightColor { get; init; } = "#FFD24A";
+
+    /// <summary>Spotlight opacity at its core, 0..1.</summary>
+    public double SpotlightOpacity { get; init; } = 0.30;
+
+    /// <summary>Spotlight radius in screen pixels.</summary>
+    public int SpotlightRadius { get; init; } = 30;
+
     /// <summary>Launch Shrike at login. Opt-in — off by default (a locked review decision).</summary>
     public bool Autostart { get; init; } = false;
 
@@ -55,5 +67,8 @@ public sealed record AppSettings
     {
         RingSize = Math.Clamp(RingSize, 1, 100),
         RingByteCap = Math.Clamp(RingByteCap, 16L * 1024 * 1024, 4096L * 1024 * 1024),
+        SpotlightOpacity = Math.Clamp(SpotlightOpacity, 0.1, 1.0),
+        SpotlightRadius = Math.Clamp(SpotlightRadius, 12, 160),
+        SpotlightColor = string.IsNullOrWhiteSpace(SpotlightColor) ? "#FFD24A" : SpotlightColor,
     };
 }

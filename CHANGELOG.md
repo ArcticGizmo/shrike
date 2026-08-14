@@ -16,6 +16,12 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 - New-capture button in the editor to quickly grab another shot
 - Single-key shortcuts for every drawing tool, shown on the icons
 - Region capture: clicking bare desktop grabs just that monitor, not all of them
+- Adjust the record region with handles before recording starts
+- 3-2-1 countdown before recording begins
+- Single recording bar from setup through to stop
+- Drag the recording bar anywhere on screen
+- Spotlight cursor — a glow under the mouse, on screen and in the recording
+- Adjustable spotlight colour, opacity and size
 
 ---
 
