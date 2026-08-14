@@ -30,6 +30,8 @@ public partial class EditorWindow : Window
 
     private RecentRing? _ring;
     private Action<CapturedImage>? _openInEditor;
+    private Action? _repeatLastCapture;
+    private Action? _showCaptureMenu;
 
     private AnnotationSurface? _surface;
     private TextBlock? _dimensions;
@@ -82,6 +84,16 @@ public partial class EditorWindow : Window
         RebuildRecentStrip();
     }
 
+    /// <summary>
+    /// Wire the "New capture" split button: <paramref name="repeatLast"/> repeats the last mode,
+    /// <paramref name="showMenu"/> opens the full chooser. Idempotent — set on every capture.
+    /// </summary>
+    public void ConfigureNewCapture(Action repeatLast, Action showMenu)
+    {
+        _repeatLastCapture = repeatLast;
+        _showCaptureMenu = showMenu;
+    }
+
     /// <summary>Load a new capture into the editor, resetting annotations + per-capture state.</summary>
     public void SetCapture(CapturedImage image)
     {
@@ -105,23 +117,59 @@ public partial class EditorWindow : Window
         RefreshActiveStates(); // reflect the surface's tool/stroke/colour once the tree exists
     }
 
+    // ---- new capture ----
+
+    // Both paths minimise the editor first so it isn't in the next shot; the controller waits for the
+    // minimise to settle, then captures. The editor is reused, so it reappears with the new capture
+    // (or stays minimised in the taskbar if the capture is cancelled).
+    private void OnNewCapture(object? sender, RoutedEventArgs e) => StartNewCapture(_repeatLastCapture);
+    private void OnNewCaptureMenu(object? sender, RoutedEventArgs e) => StartNewCapture(_showCaptureMenu);
+
+    private void StartNewCapture(Action? capture)
+    {
+        if (capture is null) return;
+        WindowState = WindowState.Minimized;
+        capture();
+    }
+
     // ---- toolbar ----
 
     private void OnToolClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string tag } && _surface is not null
-            && Enum.TryParse<AnnotationTool>(tag, out var tool))
-        {
-            _surface.Tool = tool;
-            SetStatus(tool switch
-            {
-                AnnotationTool.None => "Select",
-                AnnotationTool.Crop => "Drag to set the crop · drag the handles or inside to adjust · tiny drag outside to clear",
-                _ => $"Tool: {tool}",
-            });
-            RefreshActiveStates();
-        }
+        if (sender is Button { Tag: string tag } && Enum.TryParse<AnnotationTool>(tag, out var tool))
+            SelectTool(tool);
     }
+
+    /// <summary>Switch the active annotation tool and reflect it in the toolbar + status line.</summary>
+    private void SelectTool(AnnotationTool tool)
+    {
+        if (_surface is null) return;
+        _surface.Tool = tool;
+        SetStatus(tool switch
+        {
+            AnnotationTool.None => "Select · drag to move · drag handles to resize · knob to rotate (Shift snaps 15°)",
+            AnnotationTool.Crop => "Drag to set the crop · drag the handles or inside to adjust · tiny drag outside to clear",
+            _ => $"Tool: {tool}",
+        });
+        RefreshActiveStates();
+    }
+
+    /// <summary>Single-key shortcut for each drawing tool (GIMP-inspired mnemonics; shown on the icons).</summary>
+    private static AnnotationTool? ToolForKey(Key key) => key switch
+    {
+        Key.S => AnnotationTool.None,
+        Key.R => AnnotationTool.Rectangle,
+        Key.E => AnnotationTool.Ellipse,
+        Key.L => AnnotationTool.Line,
+        Key.A => AnnotationTool.Arrow,
+        Key.F => AnnotationTool.Freehand,
+        Key.H => AnnotationTool.Highlight,
+        Key.T => AnnotationTool.Text,
+        Key.N => AnnotationTool.StepBadge,
+        Key.B => AnnotationTool.Redaction,
+        Key.C => AnnotationTool.Crop,
+        _ => null,
+    };
 
     private void OnColorClick(object? sender, RoutedEventArgs e)
     {
@@ -191,6 +239,31 @@ public partial class EditorWindow : Window
     // Undo/redo can invalidate the selection's index, so drop it first.
     private void Undo() { _surface?.ClearSelection(); _document.Undo(); }
     private void Redo() { _surface?.ClearSelection(); _document.Redo(); }
+
+    // ---- clipboard (Ctrl+C / Ctrl+V / Ctrl+D) ----
+
+    /// <summary>Ctrl+C: copy the selected graphic if there is one; otherwise copy the whole image (the Copy button).</summary>
+    private void CopyToClipboard()
+    {
+        if (_surface?.CopySelection() == true)
+            SetStatus("Graphic copied — Ctrl+V to paste, Ctrl+D to duplicate");
+        else if (BuildExport() is { } image)
+            CopyImage(image);
+    }
+
+    private void PasteAnnotation()
+    {
+        if (_surface?.Paste() != true) return;
+        RefreshActiveStates(); // paste dropped us into the Select tool
+        SetStatus("Pasted — drag to reposition");
+    }
+
+    private void DuplicateAnnotation()
+    {
+        if (_surface?.DuplicateSelection() != true) return;
+        RefreshActiveStates();
+        SetStatus("Duplicated — drag to reposition");
+    }
 
     // ---- zoom ----
 
@@ -294,6 +367,11 @@ public partial class EditorWindow : Window
             if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Redo();
             else if (e.Key == Key.Z) Undo();
             else if (e.Key == Key.Y) Redo();
+            // Clipboard: Ctrl+C copies the selected graphic (else the whole image), Ctrl+V pastes it,
+            // Ctrl+D duplicates the selection in place. Paste/duplicate land offset and ready to drag.
+            else if (e.Key == Key.C) { CopyToClipboard(); e.Handled = true; }
+            else if (e.Key == Key.V) { PasteAnnotation(); e.Handled = true; }
+            else if (e.Key == Key.D) { DuplicateAnnotation(); e.Handled = true; }
             // Zoom: Ctrl++ / Ctrl+= (in), Ctrl+- (out), Ctrl+0 (fit), Ctrl+1 (100%).
             else if (e.Key is Key.OemPlus or Key.Add) { _surface?.ZoomIn(); e.Handled = true; }
             else if (e.Key is Key.OemMinus or Key.Subtract) { _surface?.ZoomOut(); e.Handled = true; }
@@ -301,6 +379,12 @@ public partial class EditorWindow : Window
             else if (e.Key is Key.D1 or Key.NumPad1) { _surface?.ZoomToActual(); e.Handled = true; }
         }
         else if (e.Key is Key.Delete or Key.Back) { _surface?.DeleteSelected(); e.Handled = true; }
+        // Single-key tool shortcuts (no Ctrl/Alt). Suppressed while typing a text label by the guard above.
+        else if (!e.KeyModifiers.HasFlag(KeyModifiers.Alt) && ToolForKey(e.Key) is { } tool)
+        {
+            SelectTool(tool);
+            e.Handled = true;
+        }
     }
 
     // ---- export ----

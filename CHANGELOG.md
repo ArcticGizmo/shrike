@@ -8,6 +8,17 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.1.2] - 2026-08-14
+
+- Resize and rotate shapes with handles, like the crop tool
+- Resize text labels by dragging their corners
+- Copy, paste and duplicate annotations (Ctrl+C / Ctrl+V / Ctrl+D)
+- New-capture button in the editor to quickly grab another shot
+- Single-key shortcuts for every drawing tool, shown on the icons
+- Region capture: clicking bare desktop grabs just that monitor, not all of them
+
+---
+
 ## [v0.1.1] - 2026-08-13
 
 - Drag handles to move or resize the editor's crop rectangle

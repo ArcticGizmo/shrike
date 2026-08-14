@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Threading;
 using Shrike.App.Native;
 using Shrike.App.Views;
@@ -32,6 +33,9 @@ internal sealed class CaptureController
     private Recorder? _recorder;
     private RecordingHudWindow? _hud;
     private RecordingBorderWindow? _border;
+
+    /// <summary>The last capture mode the user ran, so the editor's "New capture" button can repeat it.</summary>
+    private CaptureMenuChoice _lastCaptureChoice = CaptureMenuChoice.Region;
 
     public CaptureController(VirtualDesktopService desktops, RecentRing ring,
         SettingsService? settings = null, Action? onOverlayShown = null)
@@ -85,8 +89,25 @@ internal sealed class CaptureController
         menu.Activate();
     }
 
+    /// <summary>Editor "New capture": repeat the last mode straight away. The editor minimises itself
+    /// first (see <see cref="EditorWindow"/>), so we wait a beat for it to leave the screen before the
+    /// freeze, then run the mode live (null frozen → each mode grabs a fresh snapshot).</summary>
+    public void RepeatLastCapture()
+        => RunAfter(EditorHideSettle, () => RunChoice(_lastCaptureChoice, null));
+
+    /// <summary>Editor "New capture ▾": open the full chooser after the editor has minimised out of shot.</summary>
+    public void ShowCaptureMenuFromEditor()
+        => RunAfter(EditorHideSettle, ShowCaptureMenu);
+
+    /// <summary>Time to let the editor's minimise settle before we freeze the screen for a new capture.</summary>
+    private static readonly TimeSpan EditorHideSettle = TimeSpan.FromMilliseconds(200);
+
     private void RunChoice(CaptureMenuChoice choice, CapturedImage? frozen)
     {
+        // Remember the mode so the editor's quick "New capture" can repeat it (Recent isn't a capture).
+        if (choice is not CaptureMenuChoice.Recent)
+            _lastCaptureChoice = choice;
+
         switch (choice)
         {
             case CaptureMenuChoice.Region:
@@ -425,7 +446,12 @@ internal sealed class CaptureController
 
         // Wire the strip to the ring + re-open path (idempotent; the editor guards re-subscribe).
         editor.AttachRecentRing(_ring, OpenInEditor);
+        editor.ConfigureNewCapture(RepeatLastCapture, ShowCaptureMenuFromEditor);
         editor.SetCapture(image);
+
+        // A capture started from the editor minimises it out of shot; bring it back for the result.
+        if (editor.WindowState == WindowState.Minimized)
+            editor.WindowState = WindowState.Normal;
 
         // No desktop teleport: if the reused editor is parked on another desktop, bring it to the one
         // the user is looking at (the foreground window's desktop) rather than switching them there.
