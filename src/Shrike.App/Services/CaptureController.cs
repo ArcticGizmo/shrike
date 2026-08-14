@@ -369,8 +369,8 @@ internal sealed class CaptureController
         var s = _settings?.Current;
         return new SpotlightStyle(
             s?.SpotlightColor ?? "#FFD24A",
-            s?.SpotlightOpacity ?? 0.55,
-            s?.SpotlightRadius ?? 48);
+            s?.SpotlightOpacity ?? 0.30,
+            s?.SpotlightRadius ?? 30);
     }
 
     private void OnSpotlightToggled(bool on)

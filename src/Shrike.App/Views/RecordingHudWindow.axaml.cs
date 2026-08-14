@@ -75,7 +75,7 @@ public partial class RecordingHudWindow : Window
     internal event Action<SpotlightStyle>? SpotlightStyleChanged;
 
     // Parameterless ctor for the XAML designer only.
-    public RecordingHudWindow() : this(default, false, new SpotlightStyle("#FFD24A", 0.55, 48)) { }
+    public RecordingHudWindow() : this(default, false, new SpotlightStyle("#FFD24A", 0.30, 30)) { }
 
     internal RecordingHudWindow(PixelBounds region, bool spotlightOn, SpotlightStyle spotlightStyle)
     {

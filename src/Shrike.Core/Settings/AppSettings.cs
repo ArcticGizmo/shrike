@@ -46,10 +46,10 @@ public sealed record AppSettings
     public string SpotlightColor { get; init; } = "#FFD24A";
 
     /// <summary>Spotlight opacity at its core, 0..1.</summary>
-    public double SpotlightOpacity { get; init; } = 0.55;
+    public double SpotlightOpacity { get; init; } = 0.30;
 
     /// <summary>Spotlight radius in screen pixels.</summary>
-    public int SpotlightRadius { get; init; } = 48;
+    public int SpotlightRadius { get; init; } = 30;
 
     /// <summary>Launch Shrike at login. Opt-in — off by default (a locked review decision).</summary>
     public bool Autostart { get; init; } = false;

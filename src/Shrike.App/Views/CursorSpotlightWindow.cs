@@ -28,7 +28,7 @@ public sealed class CursorSpotlightWindow : Window
     private SpotlightStyle _style;
 
     // Parameterless ctor for the XAML designer only.
-    public CursorSpotlightWindow() : this(new SpotlightStyle("#FFD24A", 0.55, 48)) { }
+    public CursorSpotlightWindow() : this(new SpotlightStyle("#FFD24A", 0.30, 30)) { }
 
     internal CursorSpotlightWindow(SpotlightStyle style)
     {
