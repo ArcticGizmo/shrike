@@ -341,7 +341,6 @@ internal sealed class CaptureController
         // simply carries into the recording — one source of truth for "what's being recorded".
         var spotlight = new CursorSpotlightWindow(style);
         _spotlight = spotlight;
-        spotlight.SetActive(spotlightOn);
 
         // Setup wiring: the HUD's Record/Cancel drive the region window; its handle drags trail the HUD.
         hud.RecordRequested += OnRecordRequested;
@@ -360,8 +359,12 @@ internal sealed class CaptureController
         _hud = hud;
 
         regionWindow.Show();
-        hud.Show();
+        // Own the HUD to the region frame: Windows keeps an owned window above its owner in the z-order,
+        // so dragging/raising the frame can never bury the HUD behind its scrim.
+        hud.Show(regionWindow);
         hud.Activate();
+        // Show the spotlight last so its glow previews above the scrim.
+        spotlight.SetActive(spotlightOn);
     }
 
     private SpotlightStyle CurrentSpotlightStyle()
