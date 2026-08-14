@@ -122,6 +122,27 @@ public class AnnotationGeometryTests
     }
 
     [Fact]
+    public void ScaleText_grows_the_font_and_pins_the_opposite_corner()
+    {
+        // Bounds height = FontSize*1.3; dragging the bottom-right along the diagonal by one full
+        // diagonal doubles the font, with the top-left corner fixed.
+        var text = new TextAnnotation(10, 10, "Hi", 20);
+        var b = AnnotationGeometry.Bounds(text);
+        var scaled = (TextAnnotation)AnnotationGeometry.ScaleText(text, ResizeGrip.BottomRight, b.Width, b.Height);
+        Assert.Equal(40, scaled.FontSize, 6);
+        Assert.Equal(10, scaled.X, 6); // top-left anchor unchanged
+        Assert.Equal(10, scaled.Y, 6);
+    }
+
+    [Fact]
+    public void ScaleText_clamps_to_a_minimum_font()
+    {
+        var text = new TextAnnotation(0, 0, "Hi", 20);
+        var scaled = (TextAnnotation)AnnotationGeometry.ScaleText(text, ResizeGrip.BottomRight, -10000, -10000);
+        Assert.Equal(6, scaled.FontSize, 6);
+    }
+
+    [Fact]
     public void MoveLineEndpoint_moves_only_the_grabbed_end()
     {
         var line = new LineAnnotation(0, 0, 10, 10);

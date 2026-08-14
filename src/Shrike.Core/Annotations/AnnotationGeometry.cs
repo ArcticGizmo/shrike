@@ -139,6 +139,44 @@ public static class AnnotationGeometry
         };
     }
 
+    /// <summary>
+    /// Scale a text label by dragging one of its four corners, keeping the opposite corner fixed. Text
+    /// width follows the font, so this is a uniform font-size change (down to a small floor). The scale
+    /// is how far the drag extends along the anchor→corner diagonal.
+    /// </summary>
+    public static Annotation ScaleText(TextAnnotation t, ResizeGrip grip, double dx, double dy)
+    {
+        var b = Bounds(t);
+
+        // The dragged corner and its fixed opposite (anchor), in image pixels.
+        var (dragX, dragY, anchorX, anchorY) = grip switch
+        {
+            ResizeGrip.TopLeft => (b.X, b.Y, b.X + b.Width, b.Y + b.Height),
+            ResizeGrip.TopRight => (b.X + b.Width, b.Y, b.X, b.Y + b.Height),
+            ResizeGrip.BottomLeft => (b.X, b.Y + b.Height, b.X + b.Width, b.Y),
+            _ => (b.X + b.Width, b.Y + b.Height, b.X, b.Y), // BottomRight (and any non-corner grip)
+        };
+
+        var diagX = dragX - anchorX;
+        var diagY = dragY - anchorY;
+        var lenSq = diagX * diagX + diagY * diagY;
+        if (lenSq <= 0) return t;
+
+        var scale = 1 + (dx * diagX + dy * diagY) / lenSq;
+        var newFont = Math.Max(6, t.FontSize * scale);
+
+        var newH = newFont * 1.3;
+        var newW = EstimateTextWidth(t.Text, newFont);
+
+        // Keep the anchor corner put: shift the top-left when the dragged corner is on the left/top.
+        var isTop = grip is ResizeGrip.TopLeft or ResizeGrip.TopRight;
+        var isLeft = grip is ResizeGrip.TopLeft or ResizeGrip.BottomLeft;
+        var nx = isLeft ? anchorX - newW : anchorX;
+        var ny = isTop ? anchorY - newH : anchorY;
+
+        return t with { X = nx, Y = ny, FontSize = newFont };
+    }
+
     /// <summary>Move one end of a line by a world-space delta, leaving the other end put.</summary>
     public static LineAnnotation MoveLineEndpoint(LineAnnotation l, bool moveStart, double dx, double dy)
         => moveStart

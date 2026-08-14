@@ -247,11 +247,11 @@ public sealed class AnnotationSurface : UserControl
         if (_document is null || _selectedIndex < 0 || _selectedIndex >= _document.Items.Count) return;
         var a = _document.Items[_selectedIndex];
 
-        if (!IsBoxShape(a) && a is not LineAnnotation) { DrawDashedBounds(a); return; }
+        if (!IsBoxShape(a) && a is not LineAnnotation and not TextAnnotation) { DrawDashedBounds(a); return; }
 
         var handleStroke = new SolidColorBrush(Color.FromArgb(0xCC, 0, 0, 0));
 
-        if (IsBoxShape(a))
+        if (IsBoxShape(a) || a is TextAnnotation)
         {
             var b = AnnotationGeometry.Bounds(a);
             var cx = b.X + b.Width / 2;
@@ -551,6 +551,17 @@ public sealed class AnnotationSurface : UserControl
             return list;
         }
 
+        // Text scales from its corners only (width follows the font — no edge or rotate handles).
+        if (a is TextAnnotation)
+        {
+            var tb = AnnotationGeometry.Bounds(a);
+            list.Add((EditGrip.TopLeft, tb.X * Scale, tb.Y * Scale));
+            list.Add((EditGrip.TopRight, (tb.X + tb.Width) * Scale, tb.Y * Scale));
+            list.Add((EditGrip.BottomRight, (tb.X + tb.Width) * Scale, (tb.Y + tb.Height) * Scale));
+            list.Add((EditGrip.BottomLeft, tb.X * Scale, (tb.Y + tb.Height) * Scale));
+            return list;
+        }
+
         if (!IsBoxShape(a)) return list;
 
         var b = AnnotationGeometry.Bounds(a);
@@ -632,6 +643,9 @@ public sealed class AnnotationSurface : UserControl
 
         if (grip is EditGrip.LineStart or EditGrip.LineEnd && original is LineAnnotation line)
             return AnnotationGeometry.MoveLineEndpoint(line, grip == EditGrip.LineStart, dx, dy);
+
+        if (original is TextAnnotation text)
+            return AnnotationGeometry.ScaleText(text, ToResizeGrip(grip), dx, dy);
 
         return AnnotationGeometry.Resize(original, ToResizeGrip(grip), dx, dy);
     }
