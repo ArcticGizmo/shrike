@@ -102,8 +102,6 @@
 
             <!-- Setup state: adjust the region with handles, then record. -->
             <StackPanel Name="SetupPanel" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <TextBlock Name="SetupHint" Text="Drag handles to adjust" VerticalAlignment="Center"
-                           Foreground="#B8AE9C" FontSize="12" />
                 <Button Name="RecordButton" Classes="hud accent" Content="● Record" Click="OnRecord" />
                 <Button Name="CancelButton" Classes="hud" Content="Cancel" Click="OnCancel" />
             </StackPanel>
