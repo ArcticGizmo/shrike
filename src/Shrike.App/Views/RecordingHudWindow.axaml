@@ -73,7 +73,7 @@
 
             <!-- Spotlight controls: available in both setup and recording. -->
             <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
-                <ToggleButton Name="SpotlightButton" Classes="hud seg-left" Content="Spotlight cursor" Click="OnToggleSpotlight"
+                <ToggleButton Name="SpotlightButton" Classes="hud seg-left" Content="Spotlight" Click="OnToggleSpotlight"
                               ToolTip.Tip="Glowing spotlight under the cursor — shown on screen and in the recording" />
                 <Border Width="1" Background="#140F0A" />
                 <Button Name="SpotlightMenu" Classes="hud seg-right" Content="⚙" Padding="8,6" ToolTip.Tip="Spotlight colour, opacity &amp; size">

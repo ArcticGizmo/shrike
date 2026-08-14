@@ -97,8 +97,24 @@ public partial class RecordingHudWindow : Window
 
         InitSpotlightControls(spotlightOn);
 
+        // SizeToContent means the real size isn't known until layout runs; re-place when it settles (and
+        // again whenever the bar's width changes, e.g. swapping to the recording controls) unless the user
+        // has since dragged it somewhere themselves.
+        LayoutUpdated += (_, _) => AutoPlace();
+
         _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _tick.Tick += (_, _) => Refresh();
+    }
+
+    private (double W, double H) _placedForSize = (-1, -1);
+
+    private void AutoPlace()
+    {
+        if (_userMoved || Bounds.Width <= 0) return;
+        var size = (Bounds.Width, Bounds.Height);
+        if (size == _placedForSize) return;
+        _placedForSize = size;
+        PositionOutsideRegion();
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -328,7 +344,8 @@ public partial class RecordingHudWindow : Window
         if (_elapsed is not null) _elapsed.Text = label;
     }
 
-    /// <summary>Sit the bar just below the region (or above / at the screen edge if there's no room).</summary>
+    /// <summary>Auto-place the bar just below or above the selection; if it fits neither, park it at the
+    /// top of the screen.</summary>
     private void PositionOutsideRegion()
     {
         var centerX = _region.X + _region.Width / 2;
@@ -345,11 +362,11 @@ public partial class RecordingHudWindow : Window
 
         int y;
         if (_region.Bottom + margin + hpx <= area.Bottom)
-            y = _region.Bottom + margin;                       // below the region
+            y = _region.Bottom + margin;                       // just below the selection
         else if (_region.Y - margin - hpx >= area.Y)
-            y = _region.Y - margin - hpx;                      // above the region
+            y = _region.Y - margin - hpx;                      // just above the selection
         else
-            y = area.Bottom - hpx - margin;                    // last resort: screen bottom
+            y = area.Y + margin;                               // no room either side: top of screen
 
         Position = new PixelPoint(x, y);
     }
