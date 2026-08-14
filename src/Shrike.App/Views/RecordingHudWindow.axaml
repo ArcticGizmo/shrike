@@ -76,8 +76,13 @@
             <ToggleButton Name="HideCursorButton" Classes="hud" Content="Hide cursor" Click="OnToggleHideCursor"
                           ToolTip.Tip="Keep the mouse pointer out of the recording" />
 
+            <!-- Smooth-cursor toggle (experimental): logs the pointer path and draws a smoothed synthetic
+                 cursor in post. It hides the real cursor and supersedes the spotlight while on. -->
+            <ToggleButton Name="SmoothCursorButton" Classes="hud" Content="Smooth cursor ✦" Click="OnToggleSmoothCursor"
+                          ToolTip.Tip="Experimental — record the pointer and draw a smoothed cursor at export (hides the real cursor)" />
+
             <!-- Spotlight controls: available in both setup and recording. -->
-            <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+            <StackPanel Name="SpotlightGroup" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
                 <ToggleButton Name="SpotlightButton" Classes="hud seg-left" Content="Spotlight" Click="OnToggleSpotlight"
                               ToolTip.Tip="Glowing spotlight under the cursor — shown on screen and in the recording" />
                 <Border Width="1" Background="#140F0A" />

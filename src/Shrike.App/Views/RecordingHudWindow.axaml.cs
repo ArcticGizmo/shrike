@@ -49,6 +49,8 @@ public partial class RecordingHudWindow : Window
     private StackPanel? _setupPanel;
     private StackPanel? _recordingPanel;
     private ToggleButton? _hideCursorButton;
+    private ToggleButton? _smoothCursorButton;
+    private StackPanel? _spotlightGroup;
     private ToggleButton? _spotlightButton;
     private WrapPanel? _swatches;
     private Slider? _opacitySlider;
@@ -76,13 +78,17 @@ public partial class RecordingHudWindow : Window
     /// appear <b>in the recording</b> (i.e. the inverse of "hide"), matching <c>CursorInRecording</c>.</summary>
     public event Action<bool>? CursorInRecordingToggled;
 
+    /// <summary>Raised when the experimental "smooth cursor" toggle flips (on/off).</summary>
+    public event Action<bool>? SmoothCursorToggled;
+
     /// <summary>Raised when the spotlight colour / opacity / size changes.</summary>
     internal event Action<SpotlightStyle>? SpotlightStyleChanged;
 
     // Parameterless ctor for the XAML designer only.
-    public RecordingHudWindow() : this(default, false, new SpotlightStyle("#FFD24A", 0.30, 30), true) { }
+    public RecordingHudWindow() : this(default, false, new SpotlightStyle("#FFD24A", 0.30, 30), true, false) { }
 
-    internal RecordingHudWindow(PixelBounds region, bool spotlightOn, SpotlightStyle spotlightStyle, bool cursorInRecording)
+    internal RecordingHudWindow(PixelBounds region, bool spotlightOn, SpotlightStyle spotlightStyle,
+        bool cursorInRecording, bool smoothCursorOn)
     {
         _region = region;
         _spotlightStyle = spotlightStyle;
@@ -91,6 +97,8 @@ public partial class RecordingHudWindow : Window
         _setupPanel = this.FindControl<StackPanel>("SetupPanel");
         _recordingPanel = this.FindControl<StackPanel>("RecordingPanel");
         _hideCursorButton = this.FindControl<ToggleButton>("HideCursorButton");
+        _smoothCursorButton = this.FindControl<ToggleButton>("SmoothCursorButton");
+        _spotlightGroup = this.FindControl<StackPanel>("SpotlightGroup");
         _spotlightButton = this.FindControl<ToggleButton>("SpotlightButton");
         _swatches = this.FindControl<WrapPanel>("Swatches");
         _opacitySlider = this.FindControl<Slider>("OpacitySlider");
@@ -105,6 +113,8 @@ public partial class RecordingHudWindow : Window
 
         // "Hide cursor" is simply the inverse of CursorInRecording.
         if (_hideCursorButton is not null) _hideCursorButton.IsChecked = !cursorInRecording;
+        if (_smoothCursorButton is not null) _smoothCursorButton.IsChecked = smoothCursorOn;
+        UpdateSmoothState();
 
         // SizeToContent means the real size isn't known until layout runs; re-place when it settles (and
         // again whenever the bar's width changes, e.g. swapping to the recording controls) unless the user
@@ -230,6 +240,21 @@ public partial class RecordingHudWindow : Window
     // The cursor is painted into frames independently of the spotlight, so the two toggles are free.
     private void OnToggleHideCursor(object? sender, RoutedEventArgs e)
         => CursorInRecordingToggled?.Invoke(!(_hideCursorButton?.IsChecked ?? false)); // report "in recording" = !hide
+
+    private void OnToggleSmoothCursor(object? sender, RoutedEventArgs e)
+    {
+        UpdateSmoothState();
+        SmoothCursorToggled?.Invoke(_smoothCursorButton?.IsChecked ?? false);
+    }
+
+    /// <summary>While smooth-cursor is on it supersedes the real cursor and the spotlight (the cursor is
+    /// drawn in post over a clean plate), so grey those controls out to keep the HUD honest.</summary>
+    private void UpdateSmoothState()
+    {
+        var smooth = _smoothCursorButton?.IsChecked ?? false;
+        if (_hideCursorButton is not null) _hideCursorButton.IsEnabled = !smooth;
+        if (_spotlightGroup is not null) _spotlightGroup.IsEnabled = !smooth;
+    }
 
     private void OnSwatch(object? sender, RoutedEventArgs e)
     {

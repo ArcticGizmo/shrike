@@ -43,6 +43,21 @@ public sealed class Recorder : IDisposable
     /// <summary>Elapsed recorded time (excludes paused spans) — for the HUD clock.</summary>
     public TimeSpan Elapsed => TimeSpan.FromMilliseconds(_session.ElapsedMs(_clock.ElapsedMilliseconds));
 
+    /// <summary>
+    /// The current position on the recording timeline in milliseconds (pause-excluded), or null when not
+    /// actively recording (paused, stopped, or not started). The smooth-cursor track stamps each sample
+    /// with this so the track shares the video's timeline exactly — samples during a pause are dropped.
+    /// </summary>
+    public long? CaptureTimeMs()
+    {
+        lock (_gate)
+        {
+            return _session.State == RecordingState.Recording
+                ? _session.ElapsedMs(_clock.ElapsedMilliseconds)
+                : null;
+        }
+    }
+
     public void Start()
     {
         lock (_gate) _session.Start(0);

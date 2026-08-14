@@ -44,7 +44,7 @@
 
 ## Phase 1 — Record the motion
 
-### SC1 · Input-track capture
+### SC1 · Input-track capture ✅
 *The only irreversible half: if the track isn't logged during the take, it can't be reconstructed later.*
 
 **Build**
@@ -58,7 +58,9 @@
 - Track timestamps line up with frame times **including across a pause/resume** (verified: a synthesised record-with-pause leaves no time drift between track and frames).
 - `MouseTrack` model + (de)serialisation are covered by headless tests; hook lifecycle is boot-verified.
 
-**Risks/notes:** low-level hooks can be throttled if the callback is slow (keep it enqueue-only) and may interact with anti-cheat/secure-desktop contexts — degrade gracefully (no track → feature simply unavailable for that clip, normal export still works).
+**Risks/notes:** low-level hooks can be throttled if the callback is slow (keep it light) and may interact with anti-cheat/secure-desktop contexts — degrade gracefully (no track → feature simply unavailable for that clip, normal export still works).
+
+> **SC1 complete (2026-08-14).** `MouseTrack` + `MouseTrackRecorder` (Core; each event stamped via `Recorder.CaptureTimeMs`, which returns null while paused so paused spans drop out), a `WH_MOUSE_LL` `MouseHook` (App), and the experimental **Smooth cursor** HUD toggle wired through `CaptureController` — it forces a clean plate (real cursor off), turns the live spotlight off, logs the track, and writes a `*.track.json` sidecar next to the MP4. Tests: `MouseTrackTests` (JSON round-trip incl. empty + malformed, capture-clock stamping, pause-exclusion, region carry). The native hook path was verified with a message-pump probe (`moves`+`clicks` delivered); the interactive record→sidecar round-trip is ready to exercise live. Next: **SC2** (One-Euro smoothing + coordinate mapping), which consumes this sidecar.
 
 ---
 
