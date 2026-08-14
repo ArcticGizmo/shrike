@@ -23,6 +23,14 @@
             <Setter Property="Background" Value="#3A2F1E" />
             <Setter Property="BorderBrush" Value="#F5A524" />
         </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#140F0A" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#F7B44A" />
+        </Style>
         <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
             <Setter Property="BorderBrush" Value="#EF4444" />
         </Style>
@@ -48,15 +56,28 @@
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
             <TextBlock Text="⠿" VerticalAlignment="Center" Foreground="#6B6152" FontSize="15"
                        ToolTip.Tip="Drag to move" />
-            <Ellipse Name="RecDot" Width="11" Height="11" Fill="#EF4444" VerticalAlignment="Center" />
-            <TextBlock Name="Elapsed" Text="00:00" VerticalAlignment="Center"
-                       FontFamily="Consolas,monospace" FontSize="15" Foreground="#EDE6DA" MinWidth="46" />
-            <Border Width="1" Background="#322A1E" Margin="2,1" />
-            <ToggleButton Name="EnhanceButton" Classes="hud" Content="Mouse" Click="OnToggleEnhance"
-                          ToolTip.Tip="Enhance mouse — glow under the cursor" />
-            <Button Name="PauseButton" Classes="hud" Content="Pause" Click="OnPauseResume" />
-            <Button Name="StopButton" Classes="hud" Content="Stop" Click="OnStop" />
-            <Button Name="DiscardButton" Classes="hud danger" Content="Discard" Click="OnDiscard" />
+
+            <!-- Setup state: adjust the region with handles, then record. -->
+            <StackPanel Name="SetupPanel" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <TextBlock Name="SetupHint" Text="Drag handles to adjust" VerticalAlignment="Center"
+                           Foreground="#B8AE9C" FontSize="12" />
+                <Button Name="RecordButton" Classes="hud accent" Content="● Record" Click="OnRecord" />
+                <Button Name="CancelButton" Classes="hud" Content="Cancel" Click="OnCancel" />
+            </StackPanel>
+
+            <!-- Recording state: live clock + transport controls. -->
+            <StackPanel Name="RecordingPanel" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"
+                        IsVisible="False">
+                <Ellipse Name="RecDot" Width="11" Height="11" Fill="#EF4444" VerticalAlignment="Center" />
+                <TextBlock Name="Elapsed" Text="00:00" VerticalAlignment="Center"
+                           FontFamily="Consolas,monospace" FontSize="15" Foreground="#EDE6DA" MinWidth="46" />
+                <Border Width="1" Background="#322A1E" Margin="2,1" />
+                <ToggleButton Name="EnhanceButton" Classes="hud" Content="Mouse" Click="OnToggleEnhance"
+                              ToolTip.Tip="Enhance mouse — glow under the cursor" />
+                <Button Name="PauseButton" Classes="hud" Content="Pause" Click="OnPauseResume" />
+                <Button Name="StopButton" Classes="hud" Content="Stop" Click="OnStop" />
+                <Button Name="DiscardButton" Classes="hud danger" Content="Discard" Click="OnDiscard" />
+            </StackPanel>
         </StackPanel>
     </Border>
 </Window>

@@ -32,8 +32,9 @@ internal sealed class CaptureController
     private CaptureMenuWindow? _menu;
     private Recorder? _recorder;
     private RecordingHudWindow? _hud;
-    private RecordingBorderWindow? _border;
-    private RecordingSetupWindow? _setup;
+    private RecordingRegionWindow? _regionWindow;
+    private Task<(Recorder Recorder, CursorGlowFrameSource Glow)?>? _buildTask;
+    private bool _enhanceMouse;
 
     /// <summary>The last capture mode the user ran, so the editor's "New capture" button can repeat it.</summary>
     private CaptureMenuChoice _lastCaptureChoice = CaptureMenuChoice.Region;
@@ -322,68 +323,102 @@ internal sealed class CaptureController
 
     // ---- recording (M4.3) ----
 
-    /// <summary>After a region is picked, let the user fine-tune it with handles and press Record (with a
-    /// 3-2-1 countdown) before anything is captured. Confirmed → the actual recording starts.</summary>
+    /// <summary>After a region is picked, show the region frame (with resize handles) and a single HUD bar
+    /// carrying Record / Cancel. The same HUD becomes the live recording controls once capture begins, so
+    /// nothing pops in after the countdown.</summary>
     private void ShowRecordingSetup(PixelBounds region)
     {
-        if (_setup is not null) { _setup.Activate(); return; }
+        if (_regionWindow is not null) { _regionWindow.Activate(); return; }
         if (_recorder is not null) { _hud?.Activate(); return; }
 
-        var setup = new RecordingSetupWindow(region, MonitorsOrFallback());
-        setup.Confirmed += final => StartRecording(final);
-        setup.Closed += (_, _) => { if (ReferenceEquals(_setup, setup)) _setup = null; };
-        _setup = setup;
-        setup.Show();
-        setup.Activate();
+        var regionWindow = new RecordingRegionWindow(region, MonitorsOrFallback());
+        var hud = new RecordingHudWindow(region);
+
+        // Setup wiring: the HUD's Record/Cancel drive the region window; its handle drags trail the HUD.
+        hud.RecordRequested += OnRecordRequested;
+        hud.CancelRequested += TeardownRecordingSetup;
+        hud.Finished += OnRecordingFinished;
+        hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
+
+        regionWindow.RegionChanged += hud.FollowRegion;
+        regionWindow.Cancelled += TeardownRecordingSetup;
+        regionWindow.CountdownFinished += OnCountdownFinished;
+        regionWindow.Closed += (_, _) => { if (ReferenceEquals(_regionWindow, regionWindow)) _regionWindow = null; };
+
+        _regionWindow = regionWindow;
+        _hud = hud;
+
+        regionWindow.Show();
+        hud.Show();
+        hud.Activate();
     }
 
-    /// <summary>Begin recording the chosen region: show the frame immediately, build the pipeline off the
-    /// UI thread (locating ffmpeg and spawning the encoder would otherwise stutter the UI), then reveal
-    /// the HUD once it's ready.</summary>
-    private async void StartRecording(PixelBounds region)
+    /// <summary>Record pressed: the region is now final, so kick off the (slow) ffmpeg pipeline build in
+    /// the background while the 3-2-1 countdown runs, so capture can start the instant it hits zero.</summary>
+    private void OnRecordRequested()
     {
-        if (_recorder is not null)   // one recording at a time
+        if (_regionWindow is null || _recorder is not null) return;
+
+        // Fail fast if ffmpeg is missing rather than after a 3-second countdown.
+        if (Ffmpeg.Locate() is null)
         {
-            _hud?.Activate();
+            ToastWindow.Show("Recording needs FFmpeg — install it (or set the SHRIKE_FFMPEG path).");
+            TeardownRecordingSetup();
             return;
         }
 
-        // The boundary appears at once, so the user sees what's captured without waiting on ffmpeg.
-        var border = new RecordingBorderWindow(region);
-        _border = border;
-        border.Show();
-
+        var region = _regionWindow.Region;
         const int fps = 30;
         var path = Path.Combine(Path.GetTempPath(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
+        _enhanceMouse = _settings?.Current.EnhanceMouseInRecording ?? false;
 
-        var enhanceMouse = _settings?.Current.EnhanceMouseInRecording ?? false;
+        _buildTask = Task.Run(() => BuildRecorder(region, path, fps, _enhanceMouse));
+        _regionWindow.StartCountdown();
+    }
+
+    /// <summary>Countdown hit zero: finish building the pipeline, flip the frame to recording mode, and
+    /// swap the HUD to its live controls.</summary>
+    private async void OnCountdownFinished()
+    {
+        var build = _buildTask;
+        _buildTask = null;
+        if (build is null || _regionWindow is null || _hud is null) { TeardownRecordingSetup(); return; }
 
         (Recorder Recorder, CursorGlowFrameSource Glow)? built = null;
         string? error = null;
-        try { built = await Task.Run(() => BuildRecorder(region, path, fps, enhanceMouse)); }
+        try { built = await build; }
         catch (Exception ex) { error = ex.Message; }
 
         if (built is not { } pipeline)
         {
-            CloseBorder();
             ToastWindow.Show(error is null
                 ? "Recording needs FFmpeg — install it (or set the SHRIKE_FFMPEG path)."
                 : $"Couldn't start recording: {error}");
+            TeardownRecordingSetup();
             return;
         }
 
         var recorder = pipeline.Recorder;
         _recorder = recorder;
 
-        var hud = new RecordingHudWindow(recorder, region, pipeline.Glow, enhanceMouse, OnEnhanceMouseChanged);
-        hud.Finished += OnRecordingFinished;
-        hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
-        _hud = hud;
-
+        _regionWindow.EnterRecordingMode();
+        _hud.BeginRecording(recorder, pipeline.Glow, _enhanceMouse, OnEnhanceMouseChanged);
         recorder.Start();
-        hud.Show();
-        hud.Activate();
+    }
+
+    /// <summary>Tear down the setup surfaces without recording (Cancel, Esc, or a failed pipeline build).</summary>
+    private void TeardownRecordingSetup()
+    {
+        // Defer so we never close a window from inside its own event.
+        Dispatcher.UIThread.Post(() =>
+        {
+            _buildTask = null;
+            _hud?.Close();
+            _hud = null;
+            _regionWindow?.Close();
+            _regionWindow = null;
+        });
     }
 
     // Locate ffmpeg and wire the capture→encode pipeline. Runs on a background thread so the ffmpeg
@@ -415,15 +450,11 @@ internal sealed class CaptureController
         _settings.Update(_settings.Current with { EnhanceMouseInRecording = enabled });
     }
 
-    private void CloseBorder()
-    {
-        _border?.Close();
-        _border = null;
-    }
-
     private void OnRecordingFinished(string? savedPath)
     {
-        CloseBorder();
+        // The HUD closes itself; drop the region frame (which doubled as the recording border) with it.
+        _regionWindow?.Close();
+        _regionWindow = null;
         var recorder = _recorder;
         _recorder = null;
         if (savedPath is null || !File.Exists(savedPath)) return;

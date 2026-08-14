@@ -5,21 +5,24 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
+using Shrike.App.Native;
 using Shrike.Core.Capture;
 using Path = Avalonia.Controls.Shapes.Path;
 
 namespace Shrike.App.Views;
 
 /// <summary>
-/// The step between "you drew a region" and "recording starts". Covers the region's monitor with a dim
-/// scrim, cut out over the chosen rectangle, and lets the user nudge that rectangle with eight resize
-/// handles (or drag its interior to move it) until it's right. Nothing is captured yet. Pressing Record
-/// runs a 3-2-1 countdown and then raises <see cref="Confirmed"/> with the final region; Esc / Cancel
-/// raises <see cref="Cancelled"/>. Once the countdown begins the handles are gone — a recording, once
-/// armed, can't be re-cropped, matching the brief.
+/// The recording region frame, from setup through to the live recording. It covers the region's monitor
+/// with a dim scrim cut out over the chosen rectangle and, in the <b>setup</b> phase, lets the user nudge
+/// that rectangle with eight resize handles (or drag its interior). Nothing is captured yet. The HUD's
+/// Record button drives <see cref="StartCountdown"/>: a 3-2-1 count over the region, after which
+/// <see cref="CountdownFinished"/> fires. The controller then calls <see cref="EnterRecordingMode"/>,
+/// which strips the setup chrome and turns this into a plain amber frame — click-through and excluded
+/// from capture, exactly like the old standalone border — so it shows on screen but never in the file.
+/// Staying one window (rather than closing and opening a border) keeps the frame from flickering when
+/// recording begins.
 /// </summary>
-public sealed class RecordingSetupWindow : Window
+public sealed class RecordingRegionWindow : Window
 {
     private enum Grip { None, Move, Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight }
 
@@ -43,8 +46,8 @@ public sealed class RecordingSetupWindow : Window
         IsHitTestVisible = false,
     };
     private readonly Rectangle[] _handles;
-    private readonly Border _toolbar;
-    private readonly TextBlock _sizeText = new() { Foreground = new SolidColorBrush(Color.Parse("#B8AE9C")), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    private readonly Border _sizePill;
+    private readonly TextBlock _sizeText = new() { Foreground = new SolidColorBrush(Color.Parse("#EDE6DA")), FontSize = 12 };
     private readonly TextBlock _countdown = new()
     {
         Foreground = new SolidColorBrush(Color.Parse("#F5A524")),
@@ -59,23 +62,29 @@ public sealed class RecordingSetupWindow : Window
     private PixelBounds _dragOrigin;        // region when the current drag began
     private Point _dragStart;               // pointer (local DIP) where the drag began
     private bool _counting;
-    private bool _done;
+    private bool _recording;
     private DispatcherTimer? _timer;
 
-    /// <summary>Raised once with the final region (physical px) when the countdown completes.</summary>
-    public event Action<PixelBounds>? Confirmed;
+    /// <summary>The live region in physical pixels — the final value the recorder is built from.</summary>
+    public PixelBounds Region => _region;
 
-    /// <summary>Raised once if the user backs out before recording starts.</summary>
+    /// <summary>Raised whenever the user resizes/moves the region during setup.</summary>
+    public event Action<PixelBounds>? RegionChanged;
+
+    /// <summary>Raised when the 3-2-1 countdown completes and recording should begin.</summary>
+    public event Action? CountdownFinished;
+
+    /// <summary>Raised if the user presses Esc during setup.</summary>
     public event Action? Cancelled;
 
     // Parameterless ctor for the XAML designer only.
-    public RecordingSetupWindow()
+    public RecordingRegionWindow()
         : this(new PixelBounds(200, 200, 600, 400),
                [new MonitorInfo(new PixelBounds(0, 0, 1920, 1080), 1.0, true)])
     {
     }
 
-    internal RecordingSetupWindow(PixelBounds region, IReadOnlyList<MonitorInfo> monitors)
+    internal RecordingRegionWindow(PixelBounds region, IReadOnlyList<MonitorInfo> monitors)
     {
         _region = region.Normalized();
         _monitor = MonitorFor(_region, monitors);
@@ -101,59 +110,23 @@ public sealed class RecordingSetupWindow : Window
                 IsHitTestVisible = false,
             };
 
-        _toolbar = BuildToolbar();
-
-        _root.Children.Add(_scrim);
-        _root.Children.Add(_border);
-        foreach (var h in _handles) _root.Children.Add(h);
-        _root.Children.Add(_countdown);
-        _root.Children.Add(_toolbar);
-        Content = _root;
-
-        _toolbar.SizeChanged += (_, _) => PositionToolbar();
-    }
-
-    private Border BuildToolbar()
-    {
-        var record = new Button
-        {
-            Content = "● Record",
-            Foreground = new SolidColorBrush(Color.Parse("#140F0A")),
-            Background = new SolidColorBrush(Color.Parse("#F5A524")),
-            Padding = new Thickness(14, 7),
-            CornerRadius = new CornerRadius(7),
-            FontSize = 13,
-            FontWeight = FontWeight.SemiBold,
-        };
-        record.Click += (_, _) => BeginCountdown();
-
-        var cancel = new Button
-        {
-            Content = "Cancel",
-            Foreground = new SolidColorBrush(Color.Parse("#EDE6DA")),
-            Background = new SolidColorBrush(Color.Parse("#2A2318")),
-            Padding = new Thickness(12, 7),
-            CornerRadius = new CornerRadius(7),
-            FontSize = 13,
-        };
-        cancel.Click += (_, _) => CancelSetup();
-
-        return new Border
+        _sizePill = new Border
         {
             Background = new SolidColorBrush(Color.Parse("#F2140F0A")),
             BorderBrush = new SolidColorBrush(Color.Parse("#F5A524")),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(11),
-            Padding = new Thickness(12, 8),
-            BoxShadow = BoxShadows.Parse("0 14 36 -14 #000000"),
-            Child = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 10,
-                VerticalAlignment = VerticalAlignment.Center,
-                Children = { _sizeText, record, cancel },
-            },
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(7, 3),
+            IsHitTestVisible = false,
+            Child = _sizeText,
         };
+
+        _root.Children.Add(_scrim);
+        _root.Children.Add(_border);
+        foreach (var h in _handles) _root.Children.Add(h);
+        _root.Children.Add(_sizePill);
+        _root.Children.Add(_countdown);
+        Content = _root;
     }
 
     private static MonitorInfo MonitorFor(PixelBounds region, IReadOnlyList<MonitorInfo> monitors)
@@ -180,18 +153,15 @@ public sealed class RecordingSetupWindow : Window
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (_counting) return;
-        if (e.Key == Key.Escape) CancelSetup();
-        else if (e.Key is Key.Enter or Key.Return) BeginCountdown();
+        if (_counting || _recording) return;
+        if (e.Key == Key.Escape) Cancelled?.Invoke();
+        else if (e.Key is Key.Enter or Key.Return) StartCountdown();
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (_counting) return;
-
-        // Let the toolbar's buttons handle their own clicks.
-        if (e.Source is Visual v && v.GetVisualAncestors().Contains(_toolbar)) return;
+        if (_counting || _recording) return;
 
         var p = e.GetPosition(_root);
         _grip = HitGrip(p);
@@ -205,7 +175,7 @@ public sealed class RecordingSetupWindow : Window
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (_counting) return;
+        if (_counting || _recording) return;
 
         var p = e.GetPosition(_root);
         if (_grip == Grip.None)
@@ -218,6 +188,7 @@ public sealed class RecordingSetupWindow : Window
         var ddy = (int)Math.Round((p.Y - _dragStart.Y) * _scale);
         _region = Apply(_grip, _dragOrigin, ddx, ddy);
         Redraw();
+        RegionChanged?.Invoke(_region);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -255,7 +226,6 @@ public sealed class RecordingSetupWindow : Window
     private Grip HitGrip(Point p)
     {
         var r = ToLocal(_region);
-        // Corners first, then edges (corners win where they overlap).
         var (cx0, cy0, cx1, cy1) = (r.X, r.Y, r.Right, r.Bottom);
         var mx = (cx0 + cx1) / 2;
         var my = (cy0 + cy1) / 2;
@@ -285,11 +255,13 @@ public sealed class RecordingSetupWindow : Window
         _ => StandardCursorType.Arrow,
     });
 
-    // ---- countdown ----
+    // ---- countdown → recording ----
 
-    private void BeginCountdown()
+    /// <summary>Run the 3-2-1 countdown over the region, then raise <see cref="CountdownFinished"/>. The
+    /// region is frozen (handles gone) for the duration.</summary>
+    public void StartCountdown()
     {
-        if (_counting || _done) return;
+        if (_counting || _recording) return;
         _counting = true;
         _grip = Grip.None;
         Cursor = new Cursor(StandardCursorType.Arrow);
@@ -297,7 +269,7 @@ public sealed class RecordingSetupWindow : Window
         // Strip the setup chrome so the user sees the real screen they're about to record, with just the
         // amber frame and a big count over it.
         _scrim.IsVisible = false;
-        _toolbar.IsVisible = false;
+        _sizePill.IsVisible = false;
         foreach (var h in _handles) h.IsVisible = false;
 
         var remaining = 3;
@@ -309,7 +281,9 @@ public sealed class RecordingSetupWindow : Window
             if (remaining <= 0)
             {
                 _timer!.Stop();
-                Finish();
+                _counting = false;
+                _countdown.IsVisible = false;
+                CountdownFinished?.Invoke();
             }
             else
             {
@@ -317,6 +291,26 @@ public sealed class RecordingSetupWindow : Window
             }
         };
         _timer.Start();
+    }
+
+    /// <summary>Turn this into the passive recording frame: amber border only, click-through, and hidden
+    /// from capture so it shows on screen but never in the recording.</summary>
+    public void EnterRecordingMode()
+    {
+        _recording = true;
+        _counting = false;
+        _timer?.Stop();
+        _countdown.IsVisible = false;
+        _scrim.IsVisible = false;
+        _sizePill.IsVisible = false;
+        foreach (var h in _handles) h.IsVisible = false;
+
+        if (OperatingSystem.IsWindows())
+        {
+            var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            WindowExclusion.Hide(hwnd);            // keep the frame out of the recording
+            WindowExclusion.MakeClickThrough(hwnd); // let clicks fall through to the app underneath
+        }
     }
 
     private void ShowCount(int n)
@@ -328,24 +322,6 @@ public sealed class RecordingSetupWindow : Window
         var ds = _countdown.DesiredSize;
         Canvas.SetLeft(_countdown, r.X + (r.Width - ds.Width) / 2);
         Canvas.SetTop(_countdown, r.Y + (r.Height - ds.Height) / 2);
-    }
-
-    private void Finish()
-    {
-        if (_done) return;
-        _done = true;
-        var region = _region;
-        Close();
-        Confirmed?.Invoke(region);
-    }
-
-    private void CancelSetup()
-    {
-        if (_done) return;
-        _done = true;
-        _timer?.Stop();
-        Close();
-        Cancelled?.Invoke();
     }
 
     // ---- drawing ----
@@ -367,7 +343,9 @@ public sealed class RecordingSetupWindow : Window
         PlaceHandles(r);
 
         _sizeText.Text = $"{_region.Width} × {_region.Height}";
-        PositionToolbar();
+        _sizePill.Measure(Size.Infinity);
+        Canvas.SetLeft(_sizePill, Math.Clamp(r.X, 4, Math.Max(4, Width - _sizePill.DesiredSize.Width - 4)));
+        Canvas.SetTop(_sizePill, Math.Max(4, r.Y - _sizePill.DesiredSize.Height - 6));
     }
 
     private void PlaceHandles(Rect r)
@@ -385,25 +363,6 @@ public sealed class RecordingSetupWindow : Window
             Canvas.SetLeft(_handles[i], pts[i].X - HandleSize / 2);
             Canvas.SetTop(_handles[i], pts[i].Y - HandleSize / 2);
         }
-    }
-
-    private void PositionToolbar()
-    {
-        if (_counting) return;
-        var r = ToLocal(_region);
-        var tw = _toolbar.Bounds.Width;
-        var th = _toolbar.Bounds.Height;
-        const double gap = 12;
-
-        var x = Math.Clamp(r.X + (r.Width - tw) / 2, 4, Math.Max(4, Width - tw - 4));
-
-        double y;
-        if (r.Bottom + gap + th <= Height) y = r.Bottom + gap;   // below the region
-        else if (r.Y - gap - th >= 0) y = r.Y - gap - th;        // above it
-        else y = Math.Max(4, Height - th - 4);                   // last resort
-
-        Canvas.SetLeft(_toolbar, x);
-        Canvas.SetTop(_toolbar, y);
     }
 
     /// <summary>Map a physical-pixel rect into this monitor's local DIP coordinates.</summary>
