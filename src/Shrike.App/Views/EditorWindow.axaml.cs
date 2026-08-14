@@ -192,6 +192,31 @@ public partial class EditorWindow : Window
     private void Undo() { _surface?.ClearSelection(); _document.Undo(); }
     private void Redo() { _surface?.ClearSelection(); _document.Redo(); }
 
+    // ---- clipboard (Ctrl+C / Ctrl+V / Ctrl+D) ----
+
+    /// <summary>Ctrl+C: copy the selected graphic if there is one; otherwise copy the whole image (the Copy button).</summary>
+    private void CopyToClipboard()
+    {
+        if (_surface?.CopySelection() == true)
+            SetStatus("Graphic copied — Ctrl+V to paste, Ctrl+D to duplicate");
+        else if (BuildExport() is { } image)
+            CopyImage(image);
+    }
+
+    private void PasteAnnotation()
+    {
+        if (_surface?.Paste() != true) return;
+        RefreshActiveStates(); // paste dropped us into the Select tool
+        SetStatus("Pasted — drag to reposition");
+    }
+
+    private void DuplicateAnnotation()
+    {
+        if (_surface?.DuplicateSelection() != true) return;
+        RefreshActiveStates();
+        SetStatus("Duplicated — drag to reposition");
+    }
+
     // ---- zoom ----
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => _surface?.ZoomIn();
@@ -294,6 +319,11 @@ public partial class EditorWindow : Window
             if (e.Key == Key.Z && e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Redo();
             else if (e.Key == Key.Z) Undo();
             else if (e.Key == Key.Y) Redo();
+            // Clipboard: Ctrl+C copies the selected graphic (else the whole image), Ctrl+V pastes it,
+            // Ctrl+D duplicates the selection in place. Paste/duplicate land offset and ready to drag.
+            else if (e.Key == Key.C) { CopyToClipboard(); e.Handled = true; }
+            else if (e.Key == Key.V) { PasteAnnotation(); e.Handled = true; }
+            else if (e.Key == Key.D) { DuplicateAnnotation(); e.Handled = true; }
             // Zoom: Ctrl++ / Ctrl+= (in), Ctrl+- (out), Ctrl+0 (fit), Ctrl+1 (100%).
             else if (e.Key is Key.OemPlus or Key.Add) { _surface?.ZoomIn(); e.Handled = true; }
             else if (e.Key is Key.OemMinus or Key.Subtract) { _surface?.ZoomOut(); e.Handled = true; }

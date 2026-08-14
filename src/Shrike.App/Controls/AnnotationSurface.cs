@@ -69,6 +69,18 @@ public sealed class AnnotationSurface : UserControl
     /// <summary>Font size for new text labels, in image pixels.</summary>
     private const double TextFontSize = 24;
 
+    // ---- clipboard (copy / paste / duplicate of a single annotation) ----
+    /// <summary>The copied annotation, shared across captures and editor windows so a graphic copied in
+    /// one can be pasted into another. Annotations are immutable records, so holding a reference is safe.</summary>
+    private static Annotation? _clipboard;
+
+    /// <summary>How many times the current clipboard has been pasted, so repeated pastes cascade instead of
+    /// stacking exactly on top of each other. Reset whenever a fresh copy is taken.</summary>
+    private static int _pasteCount;
+
+    /// <summary>Offset (image px) nudged onto each paste/duplicate so the copy is visibly distinct from its source.</summary>
+    private const double PasteOffset = 16;
+
     // ---- select / move state (Select tool) ----
     private int _selectedIndex = -1;
     private bool _movingSelection;
@@ -410,6 +422,53 @@ public sealed class AnnotationSurface : UserControl
         if (_document is null || _selectedIndex < 0 || _selectedIndex >= _document.Items.Count) return;
         _document.RemoveAt(_selectedIndex); // Changed → Rerender
         _selectedIndex = -1;
+    }
+
+    // ---- clipboard: copy / paste / duplicate ----
+
+    /// <summary>True when an annotation is selected (drives copy/duplicate availability).</summary>
+    public bool HasSelection => _document is not null && _selectedIndex >= 0 && _selectedIndex < _document.Items.Count;
+
+    /// <summary>Copy the selected annotation to the shared clipboard. Returns false if nothing is selected.</summary>
+    public bool CopySelection()
+    {
+        if (!HasSelection) return false;
+        _clipboard = _document!.Items[_selectedIndex];
+        _pasteCount = 0; // a fresh copy restarts the paste cascade
+        return true;
+    }
+
+    /// <summary>Paste the clipboard annotation — offset (cascading on repeat) and selected. Returns false if the clipboard is empty.</summary>
+    public bool Paste()
+    {
+        if (_clipboard is null || _document is null) return false;
+        var offset = PasteOffset * ++_pasteCount;
+        AddAndSelect(AnnotationGeometry.Translate(_clipboard, offset, offset));
+        return true;
+    }
+
+    /// <summary>Duplicate the selected annotation in place (offset + selected). Returns false if nothing is selected.</summary>
+    public bool DuplicateSelection()
+    {
+        if (!HasSelection) return false;
+        AddAndSelect(AnnotationGeometry.Translate(_document!.Items[_selectedIndex], PasteOffset, PasteOffset));
+        return true;
+    }
+
+    /// <summary>Append an annotation, land in Select mode, and select the copy — shared by paste and duplicate.</summary>
+    private void AddAndSelect(Annotation annotation)
+    {
+        if (_document is null) return;
+
+        // Drop into Select mode so the new copy can be dragged into place. Set the field directly: the
+        // Tool setter would clear the very selection we're about to make.
+        CommitTextEdit();
+        _tool = AnnotationTool.None;
+        Cursor = Cursor.Default;
+
+        _document.Add(annotation);                  // Changed → Rerender (still on the old selection)
+        _selectedIndex = _document.Items.Count - 1;  // the copy we just appended is last
+        Rerender();                                  // repaint with the new selection outline
     }
 
     // ---- crop (non-destructive; applied on export) ----
