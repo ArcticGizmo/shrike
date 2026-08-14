@@ -136,19 +136,40 @@ public partial class EditorWindow : Window
 
     private void OnToolClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string tag } && _surface is not null
-            && Enum.TryParse<AnnotationTool>(tag, out var tool))
-        {
-            _surface.Tool = tool;
-            SetStatus(tool switch
-            {
-                AnnotationTool.None => "Select · drag to move · drag handles to resize · knob to rotate (Shift snaps 15°)",
-                AnnotationTool.Crop => "Drag to set the crop · drag the handles or inside to adjust · tiny drag outside to clear",
-                _ => $"Tool: {tool}",
-            });
-            RefreshActiveStates();
-        }
+        if (sender is Button { Tag: string tag } && Enum.TryParse<AnnotationTool>(tag, out var tool))
+            SelectTool(tool);
     }
+
+    /// <summary>Switch the active annotation tool and reflect it in the toolbar + status line.</summary>
+    private void SelectTool(AnnotationTool tool)
+    {
+        if (_surface is null) return;
+        _surface.Tool = tool;
+        SetStatus(tool switch
+        {
+            AnnotationTool.None => "Select · drag to move · drag handles to resize · knob to rotate (Shift snaps 15°)",
+            AnnotationTool.Crop => "Drag to set the crop · drag the handles or inside to adjust · tiny drag outside to clear",
+            _ => $"Tool: {tool}",
+        });
+        RefreshActiveStates();
+    }
+
+    /// <summary>Single-key shortcut for each drawing tool (GIMP-inspired mnemonics; shown on the icons).</summary>
+    private static AnnotationTool? ToolForKey(Key key) => key switch
+    {
+        Key.S => AnnotationTool.None,
+        Key.R => AnnotationTool.Rectangle,
+        Key.E => AnnotationTool.Ellipse,
+        Key.L => AnnotationTool.Line,
+        Key.A => AnnotationTool.Arrow,
+        Key.F => AnnotationTool.Freehand,
+        Key.H => AnnotationTool.Highlight,
+        Key.T => AnnotationTool.Text,
+        Key.N => AnnotationTool.StepBadge,
+        Key.B => AnnotationTool.Redaction,
+        Key.C => AnnotationTool.Crop,
+        _ => null,
+    };
 
     private void OnColorClick(object? sender, RoutedEventArgs e)
     {
@@ -358,6 +379,12 @@ public partial class EditorWindow : Window
             else if (e.Key is Key.D1 or Key.NumPad1) { _surface?.ZoomToActual(); e.Handled = true; }
         }
         else if (e.Key is Key.Delete or Key.Back) { _surface?.DeleteSelected(); e.Handled = true; }
+        // Single-key tool shortcuts (no Ctrl/Alt). Suppressed while typing a text label by the guard above.
+        else if (!e.KeyModifiers.HasFlag(KeyModifiers.Alt) && ToolForKey(e.Key) is { } tool)
+        {
+            SelectTool(tool);
+            e.Handled = true;
+        }
     }
 
     // ---- export ----
