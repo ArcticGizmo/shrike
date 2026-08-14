@@ -141,8 +141,10 @@ public partial class OverlayWindow : Window
         }
         else
         {
-            // Hovering: highlight the window under the cursor for click-to-capture.
-            _session.SetSnapCandidate(TopLevelWindows.TopmostAt(_windows, PhysicalX(p.X), PhysicalY(p.Y)));
+            // Hovering: highlight the window under the cursor for click-to-capture. Over bare desktop
+            // (no window) fall back to this monitor, so a click grabs just this screen rather than all.
+            var window = TopLevelWindows.TopmostAt(_windows, PhysicalX(p.X), PhysicalY(p.Y));
+            _session.SetSnapCandidate(window ?? _monitor.Bounds);
         }
     }
 

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text;
 using Shrike.Core.Capture;
 
 namespace Shrike.App.Native;
@@ -37,6 +38,13 @@ internal static class TopLevelWindows
             if (DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0)
                 return true;
 
+            // Skip the desktop shell itself. Progman/WorkerW span the whole virtual desktop, so snapping
+            // to them would turn a bare-desktop click into an all-monitors grab. Dropping them lets such a
+            // click fall through to per-monitor capture (see OverlayWindow's monitor fallback).
+            var cls = ClassNameOf(hwnd);
+            if (cls is "Progman" or "WorkerW")
+                return true;
+
             if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT r, Marshal.SizeOf<RECT>()) != 0
                 && !GetWindowRect(hwnd, out r))
             {
@@ -70,6 +78,13 @@ internal static class TopLevelWindows
         return null;
     }
 
+    private static string ClassNameOf(IntPtr hwnd)
+    {
+        var sb = new StringBuilder(64);
+        var len = GetClassName(hwnd, sb, sb.Capacity);
+        return len > 0 ? sb.ToString() : string.Empty;
+    }
+
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -92,6 +107,9 @@ internal static class TopLevelWindows
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out RECT value, int size);
