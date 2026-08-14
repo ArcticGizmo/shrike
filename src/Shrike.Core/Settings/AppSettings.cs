@@ -39,6 +39,9 @@ public sealed record AppSettings
     /// <summary>Draw the cursor into recordings.</summary>
     public bool CursorInRecording { get; init; } = true;
 
+    /// <summary>Paint a glowing halo under the mouse in recordings (the HUD's "enhance mouse" toggle). Off by default.</summary>
+    public bool EnhanceMouseInRecording { get; init; } = false;
+
     /// <summary>Launch Shrike at login. Opt-in — off by default (a locked review decision).</summary>
     public bool Autostart { get; init; } = false;
 

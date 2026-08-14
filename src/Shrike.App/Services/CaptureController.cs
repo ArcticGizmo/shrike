@@ -33,6 +33,7 @@ internal sealed class CaptureController
     private Recorder? _recorder;
     private RecordingHudWindow? _hud;
     private RecordingBorderWindow? _border;
+    private RecordingSetupWindow? _setup;
 
     /// <summary>The last capture mode the user ran, so the editor's "New capture" button can repeat it.</summary>
     private CaptureMenuChoice _lastCaptureChoice = CaptureMenuChoice.Region;
@@ -148,9 +149,9 @@ internal sealed class CaptureController
     public void BeginRegionCapture(CapturedImage? frozen = null)
         => StartRegionSelection(frozen, OnRegionSelected);
 
-    /// <summary>Show a region-selection overlay on each monitor, then record the picked region.</summary>
+    /// <summary>Show a region-selection overlay on each monitor, then open the recording setup step.</summary>
     public void BeginRegionRecording(CapturedImage? frozen = null)
-        => StartRegionSelection(frozen, StartRecording);
+        => StartRegionSelection(frozen, ShowRecordingSetup);
 
     /// <summary>
     /// Put a region-selection overlay on every monitor (or focus the existing set) and route the chosen
@@ -321,6 +322,21 @@ internal sealed class CaptureController
 
     // ---- recording (M4.3) ----
 
+    /// <summary>After a region is picked, let the user fine-tune it with handles and press Record (with a
+    /// 3-2-1 countdown) before anything is captured. Confirmed → the actual recording starts.</summary>
+    private void ShowRecordingSetup(PixelBounds region)
+    {
+        if (_setup is not null) { _setup.Activate(); return; }
+        if (_recorder is not null) { _hud?.Activate(); return; }
+
+        var setup = new RecordingSetupWindow(region, MonitorsOrFallback());
+        setup.Confirmed += final => StartRecording(final);
+        setup.Closed += (_, _) => { if (ReferenceEquals(_setup, setup)) _setup = null; };
+        _setup = setup;
+        setup.Show();
+        setup.Activate();
+    }
+
     /// <summary>Begin recording the chosen region: show the frame immediately, build the pipeline off the
     /// UI thread (locating ffmpeg and spawning the encoder would otherwise stutter the UI), then reveal
     /// the HUD once it's ready.</summary>
@@ -341,12 +357,14 @@ internal sealed class CaptureController
         var path = Path.Combine(Path.GetTempPath(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
 
-        Recorder? recorder = null;
+        var enhanceMouse = _settings?.Current.EnhanceMouseInRecording ?? false;
+
+        (Recorder Recorder, CursorGlowFrameSource Glow)? built = null;
         string? error = null;
-        try { recorder = await Task.Run(() => BuildRecorder(region, path, fps)); }
+        try { built = await Task.Run(() => BuildRecorder(region, path, fps, enhanceMouse)); }
         catch (Exception ex) { error = ex.Message; }
 
-        if (recorder is null)
+        if (built is not { } pipeline)
         {
             CloseBorder();
             ToastWindow.Show(error is null
@@ -355,9 +373,10 @@ internal sealed class CaptureController
             return;
         }
 
+        var recorder = pipeline.Recorder;
         _recorder = recorder;
 
-        var hud = new RecordingHudWindow(recorder, region);
+        var hud = new RecordingHudWindow(recorder, region, pipeline.Glow, enhanceMouse, OnEnhanceMouseChanged);
         hud.Finished += OnRecordingFinished;
         hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
         _hud = hud;
@@ -369,22 +388,31 @@ internal sealed class CaptureController
 
     // Locate ffmpeg and wire the capture→encode pipeline. Runs on a background thread so the ffmpeg
     // process spawn never blocks the UI. Returns null when ffmpeg is unavailable; throws for other
-    // setup failures (surfaced as a toast).
-    private static Recorder? BuildRecorder(PixelBounds region, string path, int fps)
+    // setup failures (surfaced as a toast). The GDI grab is wrapped in a cursor-glow decorator the HUD
+    // can toggle live.
+    private static (Recorder, CursorGlowFrameSource)? BuildRecorder(PixelBounds region, string path, int fps, bool enhanceMouse)
     {
         if (Ffmpeg.Locate() is not { } ffmpeg) return null;
-        var source = new GdiFrameSource(region);
+        var gdi = new GdiFrameSource(region);
+        var glow = new CursorGlowFrameSource(gdi, region, enhanceMouse);
         try
         {
-            var bitrate = BitrateFor(source.Width, source.Height, fps);
-            var encoder = new FfmpegMp4Encoder(ffmpeg, path, source.Width, source.Height, fps, bitrate);
-            return new Recorder(source, encoder, path, fps);
+            var bitrate = BitrateFor(glow.Width, glow.Height, fps);
+            var encoder = new FfmpegMp4Encoder(ffmpeg, path, glow.Width, glow.Height, fps, bitrate);
+            return (new Recorder(glow, encoder, path, fps), glow);
         }
         catch
         {
-            source.Dispose();
+            glow.Dispose();
             throw;
         }
+    }
+
+    /// <summary>Remember the HUD's "enhance mouse" choice so the next recording defaults to it.</summary>
+    private void OnEnhanceMouseChanged(bool enabled)
+    {
+        if (_settings is null || _settings.Current.EnhanceMouseInRecording == enabled) return;
+        _settings.Update(_settings.Current with { EnhanceMouseInRecording = enabled });
     }
 
     private void CloseBorder()

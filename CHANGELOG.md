@@ -6,6 +6,11 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ## [Unreleased]
 
+- Recording no longer starts the moment you draw a region: adjust it with resize handles, then press Record
+- Record button runs a 3-2-1 countdown before capture begins
+- The recording HUD can be dragged anywhere on screen
+- "Enhance mouse" toggle on the HUD paints a glowing halo under the cursor so it's easy to follow in videos
+
 ---
 
 ## [v0.1.2] - 2026-08-14

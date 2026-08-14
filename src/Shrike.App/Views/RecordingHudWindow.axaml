@@ -26,15 +26,34 @@
         <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
             <Setter Property="BorderBrush" Value="#EF4444" />
         </Style>
+        <Style Selector="ToggleButton.hud">
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="ToggleButton.hud:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3A2F1E" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+        <Style Selector="ToggleButton.hud:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#140F0A" />
+        </Style>
     </Window.Styles>
 
-    <Border Background="#F2140F0A" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="11"
+    <Border Name="DragRoot" Background="#F2140F0A" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="11"
             Padding="12,8" BoxShadow="0 14 36 -14 #000000">
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <TextBlock Text="⠿" VerticalAlignment="Center" Foreground="#6B6152" FontSize="15"
+                       ToolTip.Tip="Drag to move" />
             <Ellipse Name="RecDot" Width="11" Height="11" Fill="#EF4444" VerticalAlignment="Center" />
             <TextBlock Name="Elapsed" Text="00:00" VerticalAlignment="Center"
                        FontFamily="Consolas,monospace" FontSize="15" Foreground="#EDE6DA" MinWidth="46" />
             <Border Width="1" Background="#322A1E" Margin="2,1" />
+            <ToggleButton Name="EnhanceButton" Classes="hud" Content="Mouse" Click="OnToggleEnhance"
+                          ToolTip.Tip="Enhance mouse — glow under the cursor" />
             <Button Name="PauseButton" Classes="hud" Content="Pause" Click="OnPauseResume" />
             <Button Name="StopButton" Classes="hud" Content="Stop" Click="OnStop" />
             <Button Name="DiscardButton" Classes="hud danger" Content="Discard" Click="OnDiscard" />

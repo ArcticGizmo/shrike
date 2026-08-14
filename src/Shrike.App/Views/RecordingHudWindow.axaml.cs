@@ -1,11 +1,14 @@
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Shrike.App.Native;
 using Shrike.Core.Capture;
 using Shrike.Core.Recording;
@@ -22,10 +25,13 @@ public partial class RecordingHudWindow : Window
 {
     private readonly Recorder _recorder;
     private readonly PixelBounds _region;
+    private readonly CursorGlowFrameSource? _glow;
+    private readonly Action<bool>? _onEnhanceChanged;
     private readonly DispatcherTimer _tick;
 
     private TextBlock? _elapsed;
     private Button? _pauseButton;
+    private ToggleButton? _enhanceButton;
     private Ellipse? _recDot;
     private bool _closing;
 
@@ -33,17 +39,24 @@ public partial class RecordingHudWindow : Window
     public event Action<string?>? Finished;
 
     // Parameterless ctor for the XAML designer only.
-    public RecordingHudWindow() : this(null!, default) { }
+    public RecordingHudWindow() : this(null!, default, null, false, null) { }
 
-    internal RecordingHudWindow(Recorder recorder, PixelBounds region)
+    internal RecordingHudWindow(Recorder recorder, PixelBounds region,
+        CursorGlowFrameSource? glow, bool enhanceMouse, Action<bool>? onEnhanceChanged)
     {
         _recorder = recorder;
         _region = region;
+        _glow = glow;
+        _onEnhanceChanged = onEnhanceChanged;
         InitializeComponent();
 
         _elapsed = this.FindControl<TextBlock>("Elapsed");
         _pauseButton = this.FindControl<Button>("PauseButton");
+        _enhanceButton = this.FindControl<ToggleButton>("EnhanceButton");
         _recDot = this.FindControl<Ellipse>("RecDot");
+
+        if (_enhanceButton is not null)
+            _enhanceButton.IsChecked = enhanceMouse;
 
         _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _tick.Tick += (_, _) => Refresh();
@@ -79,6 +92,23 @@ public partial class RecordingHudWindow : Window
         // Blink the dot only while actively recording; steady/dim while paused.
         if (_recDot is not null)
             _recDot.Opacity = paused ? 0.35 : (DateTime.Now.Millisecond < 500 ? 1.0 : 0.4);
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        // Drag the HUD anywhere except off a button — so the clock/dot/grip area moves the window.
+        if (e.Source is Visual v && v.GetSelfAndVisualAncestors().Any(a => a is Button or ToggleButton))
+            return;
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            BeginMoveDrag(e);
+    }
+
+    private void OnToggleEnhance(object? sender, RoutedEventArgs e)
+    {
+        var on = _enhanceButton?.IsChecked ?? false;
+        if (_glow is not null) _glow.Enabled = on;
+        _onEnhanceChanged?.Invoke(on);
     }
 
     private void OnPauseResume(object? sender, RoutedEventArgs e)
