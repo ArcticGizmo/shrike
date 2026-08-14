@@ -396,7 +396,7 @@ internal sealed class CaptureController
     /// the background while the 3-2-1 countdown runs, so capture can start the instant it hits zero.</summary>
     private void OnRecordRequested()
     {
-        if (_regionWindow is null || _recorder is not null) return;
+        if (_regionWindow is null || _recorder is not null || _buildTask is not null) return;
 
         // Fail fast if ffmpeg is missing rather than after a 3-second countdown.
         if (Ffmpeg.Locate() is null)

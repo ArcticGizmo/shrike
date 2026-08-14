@@ -96,6 +96,7 @@ public sealed class RecordingRegionWindow : Window
         Topmost = true;
         ShowInTaskbar = false;
         CanResize = false;
+        ShowActivated = false;   // the HUD keeps focus; the frame only takes the mouse (see OnOpened)
         WindowStartupLocation = WindowStartupLocation.Manual;
 
         _handles = new Rectangle[8];
@@ -146,8 +147,11 @@ public sealed class RecordingRegionWindow : Window
         Width = _monitor.Bounds.Width / _scale;
         Height = _monitor.Bounds.Height / _scale;
         Redraw();
-        Activate();
-        Focus();
+
+        // Take the mouse (for handle drags) but never activation — so clicking the frame never raises it
+        // above the HUD that floats over its scrim. The HUD owns keyboard shortcuts instead.
+        if (OperatingSystem.IsWindows())
+            WindowExclusion.MakeNonActivating(TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

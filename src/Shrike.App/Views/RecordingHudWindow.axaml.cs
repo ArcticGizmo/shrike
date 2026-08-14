@@ -266,9 +266,20 @@ public partial class RecordingHudWindow : Window
 
     // ---- setup / recording actions ----
 
-    private void OnRecord(object? sender, RoutedEventArgs e)
+    protected override void OnKeyDown(KeyEventArgs e)
     {
+        base.OnKeyDown(e);
+        // The region frame is non-activating, so the HUD owns the setup shortcuts.
         if (_state != HudState.Setup) return;
+        if (e.Key == Key.Escape) { e.Handled = true; CancelRequested?.Invoke(); }
+        else if (e.Key is Key.Enter or Key.Return) { e.Handled = true; TryStartRecord(); }
+    }
+
+    private void OnRecord(object? sender, RoutedEventArgs e) => TryStartRecord();
+
+    private void TryStartRecord()
+    {
+        if (_state != HudState.Setup || _setupPanel is { IsEnabled: false }) return;
         // Lock the setup controls; the region is now final and the countdown owns the screen.
         if (_setupPanel is not null) _setupPanel.IsEnabled = false;
         RecordRequested?.Invoke();
