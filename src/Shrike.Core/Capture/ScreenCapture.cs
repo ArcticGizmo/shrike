@@ -29,8 +29,15 @@ public static class ScreenCapture
         GetSystemMetrics(SM_CXVIRTUALSCREEN),
         GetSystemMetrics(SM_CYVIRTUALSCREEN));
 
-    /// <summary>Capture a rectangle (physical pixels). Throws if the region is empty or GDI fails.</summary>
-    public static CapturedImage Capture(PixelBounds region)
+    /// <summary>
+    /// Capture a rectangle (physical pixels). Throws if the region is empty or GDI fails.
+    /// The <c>BitBlt</c> uses <c>CAPTUREBLT</c> so layered windows (tooltips, Shrike's own spotlight
+    /// glow) are included — but on modern Windows the mouse cursor is a hardware overlay that
+    /// <c>BitBlt</c> never sees, with or without that flag. So when <paramref name="drawCursor"/> is set
+    /// we composite the live cursor into the frame ourselves (<see cref="DrawCursorInto"/>); recordings
+    /// pass the user's preference, stills leave it off.
+    /// </summary>
+    public static CapturedImage Capture(PixelBounds region, bool drawCursor = false)
     {
         var r = region.Normalized();
         if (r.IsEmpty)
@@ -54,6 +61,11 @@ public static class ScreenCapture
 
             if (!BitBlt(memDc, 0, 0, r.Width, r.Height, screenDc, r.X, r.Y, SRCCOPY | CAPTUREBLT))
                 throw new InvalidOperationException($"BitBlt failed (0x{Marshal.GetLastWin32Error():X8}).");
+
+            // The cursor isn't in the BitBlt (hardware overlay), so paint it on when asked, before we
+            // read the pixels out. DrawIconEx clips to the DC, so an off-region cursor is a no-op.
+            if (drawCursor)
+                DrawCursorInto(memDc, r);
 
             var bgra = new byte[r.Width * r.Height * 4];
             var header = new BITMAPINFOHEADER
@@ -82,6 +94,60 @@ public static class ScreenCapture
             if (memDc != IntPtr.Zero) DeleteDC(memDc);
             ReleaseDC(IntPtr.Zero, screenDc);
         }
+    }
+
+    /// <summary>
+    /// Paint the live mouse cursor into <paramref name="memDc"/> at its screen position, mapped into the
+    /// region's local pixels and offset by the cursor's hotspot so the tip lands where the pointer is.
+    /// Skipped when the cursor is hidden/suppressed. The <c>GetIconInfo</c> bitmaps are freed each call.
+    /// </summary>
+    private static void DrawCursorInto(IntPtr memDc, PixelBounds region)
+    {
+        var ci = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
+        if (!GetCursorInfo(ref ci) || ci.flags != CURSOR_SHOWING || ci.hCursor == IntPtr.Zero)
+            return;
+
+        int xHot = 0, yHot = 0;
+        if (GetIconInfo(ci.hCursor, out var info))
+        {
+            xHot = (int)info.xHotspot;
+            yHot = (int)info.yHotspot;
+            // GetIconInfo hands back two owned bitmaps; free them so we don't leak GDI objects per frame.
+            if (info.hbmMask != IntPtr.Zero) DeleteObject(info.hbmMask);
+            if (info.hbmColor != IntPtr.Zero) DeleteObject(info.hbmColor);
+        }
+
+        DrawIconEx(memDc, ci.ptScreenPos.X - region.X - xHot, ci.ptScreenPos.Y - region.Y - yHot,
+            ci.hCursor, 0, 0, 0, IntPtr.Zero, DI_NORMAL);
+    }
+
+    private const int CURSOR_SHOWING = 0x00000001;
+    private const uint DI_NORMAL = 0x0003;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CURSORINFO
+    {
+        public int cbSize;
+        public int flags;
+        public IntPtr hCursor;
+        public POINT ptScreenPos;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ICONINFO
+    {
+        public bool fIcon;
+        public uint xHotspot;
+        public uint yHotspot;
+        public IntPtr hbmMask;
+        public IntPtr hbmColor;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -134,4 +200,17 @@ public static class ScreenCapture
     [DllImport("gdi32.dll")]
     private static extern int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint cLines,
         [Out] byte[] lpvBits, ref BITMAPINFOHEADER lpbmi, uint usage);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorInfo(ref CURSORINFO pci);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetIconInfo(IntPtr hIcon, out ICONINFO piconinfo);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DrawIconEx(IntPtr hdc, int xLeft, int yTop, IntPtr hIcon,
+        int cxWidth, int cyWidth, uint istepIfAniCur, IntPtr hbrFlickerFreeDraw, uint diFlags);
 }

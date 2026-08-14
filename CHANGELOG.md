@@ -8,6 +8,13 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.1.3] - 2026-08-14
+
+- Colour pipette — sample any on-screen pixel and copy its HEX, RGB or HSL
+- Show or hide the mouse cursor in recordings
+
+---
+
 ## [v0.1.2] - 2026-08-14
 
 - Resize and rotate shapes with handles, like the crop tool

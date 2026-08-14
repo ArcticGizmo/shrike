@@ -379,11 +379,14 @@ internal sealed class CaptureController
         if (_regionWindow is not null) { _regionWindow.Activate(); return; }
         if (_recorder is not null) { _hud?.Activate(); return; }
 
+        var cursorOn = _settings?.Current.CursorInRecording ?? true;
+        // The cursor is painted into frames on its own; the spotlight is a real overlay. They're
+        // independent, so both can be on at once.
         var spotlightOn = _settings?.Current.SpotlightCursorEnabled ?? false;
         var style = CurrentSpotlightStyle();
 
         var regionWindow = new RecordingRegionWindow(region, MonitorsOrFallback());
-        var hud = new RecordingHudWindow(region, spotlightOn, style);
+        var hud = new RecordingHudWindow(region, spotlightOn, style, cursorOn);
 
         // The spotlight is a real on-screen overlay (captured naturally), so it previews during setup and
         // simply carries into the recording — one source of truth for "what's being recorded".
@@ -396,6 +399,7 @@ internal sealed class CaptureController
         hud.Finished += OnRecordingFinished;
         hud.SpotlightToggled += OnSpotlightToggled;
         hud.SpotlightStyleChanged += OnSpotlightStyleChanged;
+        hud.CursorInRecordingToggled += OnCursorInRecordingToggled;
         hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
 
         regionWindow.RegionChanged += hud.FollowRegion;
@@ -431,6 +435,12 @@ internal sealed class CaptureController
             _settings.Update(_settings.Current with { SpotlightCursorEnabled = on });
     }
 
+    private void OnCursorInRecordingToggled(bool inRecording)
+    {
+        if (_settings is not null && _settings.Current.CursorInRecording != inRecording)
+            _settings.Update(_settings.Current with { CursorInRecording = inRecording });
+    }
+
     private void OnSpotlightStyleChanged(SpotlightStyle style)
     {
         _spotlight?.UpdateStyle(style);
@@ -459,10 +469,11 @@ internal sealed class CaptureController
 
         var region = _regionWindow.Region;
         const int fps = 30;
+        var captureCursor = _settings?.Current.CursorInRecording ?? true;
         var path = Path.Combine(Path.GetTempPath(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
 
-        _buildTask = Task.Run(() => BuildRecorder(region, path, fps));
+        _buildTask = Task.Run(() => BuildRecorder(region, path, fps, captureCursor));
         _regionWindow.StartCountdown();
     }
 
@@ -514,10 +525,10 @@ internal sealed class CaptureController
     // process spawn never blocks the UI. Returns null when ffmpeg is unavailable; throws for other setup
     // failures (surfaced as a toast). The cursor spotlight is a separate on-screen overlay captured
     // naturally, so nothing about it lives in this pipeline.
-    private static Recorder? BuildRecorder(PixelBounds region, string path, int fps)
+    private static Recorder? BuildRecorder(PixelBounds region, string path, int fps, bool captureCursor)
     {
         if (Ffmpeg.Locate() is not { } ffmpeg) return null;
-        var source = new GdiFrameSource(region);
+        var source = new GdiFrameSource(region, captureCursor);
         try
         {
             var bitrate = BitrateFor(source.Width, source.Height, fps);

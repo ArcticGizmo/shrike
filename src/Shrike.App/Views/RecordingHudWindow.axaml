@@ -71,6 +71,11 @@
             <TextBlock Text="⠿" VerticalAlignment="Center" Foreground="#6B6152" FontSize="15"
                        ToolTip.Tip="Drag to move" />
 
+            <!-- Hide-cursor toggle: keeps the pointer out of the recording (the cursor is painted into
+                 frames, so this is independent of the spotlight). -->
+            <ToggleButton Name="HideCursorButton" Classes="hud" Content="Hide cursor" Click="OnToggleHideCursor"
+                          ToolTip.Tip="Keep the mouse pointer out of the recording" />
+
             <!-- Spotlight controls: available in both setup and recording. -->
             <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
                 <ToggleButton Name="SpotlightButton" Classes="hud seg-left" Content="Spotlight" Click="OnToggleSpotlight"
