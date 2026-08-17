@@ -307,8 +307,8 @@ public partial class TimelineEditorWindow : Window
     private void StartPlayback()
     {
         if (_timeline.KeptDurationMs <= 0) return;
-        // Resume from the current spot; if we're sitting in a cut (or at the end), start over.
-        _currentEditedMs = _timeline.SourceToEditedMs(_playheadSourceMs) ?? _currentEditedMs;
+        // Resume from the current edited position (kept authoritative by scrub + playback). Once we've
+        // reached the end, Play restarts from the top rather than resuming on the final frame.
         if (_currentEditedMs >= _timeline.KeptDurationMs) _currentEditedMs = 0;
 
         var ranges = _timeline.KeptRangesFrom(_currentEditedMs);

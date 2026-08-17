@@ -6,7 +6,7 @@ namespace Shrike.Core.Recording;
 /// <see cref="Beta"/> controls how much it loosens with speed. See <see cref="OneEuroFilter"/>.</summary>
 public sealed record CursorSmoothing(double MinCutoff, double Beta, double DCutoff = 1.0)
 {
-    public static CursorSmoothing Default { get; } = new(MinCutoff: 1.0, Beta: 0.02);
+    public static CursorSmoothing Default { get; } = new(MinCutoff: 0.8, Beta: 0.35);
 }
 
 /// <summary>Maps a captured pointer position into the exported frame's pixel space.</summary>
