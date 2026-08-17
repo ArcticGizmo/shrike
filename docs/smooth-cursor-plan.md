@@ -68,7 +68,7 @@
 
 ## Phase 2 — Smooth cursor MVP
 
-### SC2 · Smoothing + coordinate mapping (headless core)
+### SC2 · Smoothing + coordinate mapping (headless core) ✅
 *The correctness-sensitive heart — pure, tested, no pixels yet.*
 
 **Build**
@@ -80,6 +80,8 @@
 - Given a synthetic jittery track, the filter yields a smoothed, frame-aligned position series; smoothing strength behaves monotonically.
 - Mapping is verified against representative cases: region offset, odd→even trim, 2× downscale, and a non-zero-origin / scaled monitor — each asserts the smoothed point lands on the expected export pixel.
 - All headless; no dependency on the compositing pipeline.
+
+> **SC2 complete (2026-08-17).** `OneEuroFilter` (adaptive 1€ low-pass, one per axis), `CursorMapping.ToExport` (virtual-screen physical px → region-local → export px), and `SmoothCursor.Project` — map → smooth in source time → resample onto the edited frame grid via the `Timeline`, so a cut makes the cursor jump (never glides across removed content); clicks project to edited frames and drop inside cuts. Output is a `SmoothedCursorTrack` (one `CursorSample` per output frame + `CursorClickMark`s) that SC4 will draw. Tests: `OneEuroFilterTests` (pass-through, jitter reduction, monotonic strength) + `SmoothCursorTests` (four mapping cases, frame-count, empty track, cut-jump, end-clamp, click projection/drop). Next: **SC3** (the decode → composite → re-encode pipeline, proven with a no-op compositor), which will consume this per-frame track.
 
 ### SC3 · Compositing pipeline (the Option-B rails)
 *The foundational render pass, proven with a no-op compositor before any cursor is drawn.*
