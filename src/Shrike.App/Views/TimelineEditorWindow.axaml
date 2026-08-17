@@ -65,7 +65,12 @@
                     <Slider Name="BetaSlider" Width="130" Minimum="0" Maximum="0.5" VerticalAlignment="Center" />
                     <TextBlock Name="BetaValue" Classes="hint" Width="42" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
                 </StackPanel>
-                <TextBlock Text="lower cutoff = smoother" Classes="hint" FontStyle="Italic" VerticalAlignment="Center" />
+                <CheckBox Name="ZoomToggle" Content="Zoom" VerticalAlignment="Center" Foreground="#B8AE9C" />
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="Max" Classes="hint" VerticalAlignment="Center" />
+                    <Slider Name="ZoomSlider" Width="104" Minimum="1" Maximum="2.5" VerticalAlignment="Center" />
+                    <TextBlock Name="ZoomValue" Classes="hint" Width="34" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
+                </StackPanel>
                 <Button Name="SmoothingReset" Classes="tool" Content="Reset" />
             </StackPanel>
         </Border>

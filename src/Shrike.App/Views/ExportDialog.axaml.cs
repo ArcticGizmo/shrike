@@ -197,6 +197,17 @@ public partial class ExportDialog : Window
     }
 
 #if DEBUG
+    private CursorSmoothing _smoothing = CursorSmoothing.Default;
+    private ZoomConfig _zoom = ZoomConfig.Default;
+
+    /// <summary>Debug: carry the editor's tuned smoothing + zoom into the export so what you saw in the
+    /// preview is what gets rendered.</summary>
+    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, ZoomConfig zoom)
+    {
+        _smoothing = smoothing;
+        _zoom = zoom;
+    }
+
     private bool TryCompositeCursorExport(ExportProfile profile, string outputPath,
         IProgress<double> progress, CancellationToken ct, out Task task)
     {
@@ -213,10 +224,11 @@ public partial class ExportDialog : Window
         // Target dims/fps come from the chosen preset; project the cursor into that space.
         var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware: null, outputPath);
         int w = cmd.TargetWidth, h = cmd.TargetHeight, fps = cmd.TargetFps;
-        var smoothed = SmoothCursor.Project(track, _timeline, fps, w, h, CursorSmoothing.Default);
+        var smoothed = SmoothCursor.Project(track, _timeline, fps, w, h, _smoothing);
         if (smoothed.IsEmpty) return false;
 
-        var compositor = new CursorCompositor(smoothed);
+        var zoomCurve = AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, fps, _zoom);
+        var compositor = new CursorCompositor(smoothed, style: null, zoomCurve);
         var bitrate = (int)Math.Clamp((long)w * h * fps / 10, 1_000_000, 12_000_000);
         var pipeline = new FrameCompositePipeline(_ffmpegPath);
         task = Task.Run(() => pipeline.Run(_source, _timeline.KeptRanges, w, h, fps, bitrate, outputPath, compositor, progress, ct), ct);

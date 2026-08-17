@@ -61,10 +61,15 @@ public partial class TimelineEditorWindow : Window
     private MouseTrack? _smoothTrack;
     private SmoothedCursorTrack? _smoothed;
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
+    private ZoomConfig _zoom = ZoomConfig.Default;
+    private double[]? _zoomCurve;
     private Slider? _minCutoffSlider;
     private Slider? _betaSlider;
     private TextBlock? _minCutoffValue;
     private TextBlock? _betaValue;
+    private CheckBox? _zoomToggle;
+    private Slider? _zoomSlider;
+    private TextBlock? _zoomValue;
 #endif
 
     // Parameterless ctor for the XAML designer only.
@@ -171,15 +176,29 @@ public partial class TimelineEditorWindow : Window
             return;
         }
         _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height, _smoothing);
+        _zoomCurve = AutoZoom.ZoomCurve(_smoothed.Clicks, _smoothed.Frames.Count, _smoothed.Fps, _zoom);
         UpdateCursorOverlay();
     }
 
     private void UpdateCursorOverlay()
     {
-        if (_smoothed is null || _smoothed.IsEmpty) { _preview.SetCursor(null); return; }
+        if (_smoothed is null || _smoothed.IsEmpty) { _preview.SetCursor(null); _preview.SetViewport(null); return; }
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
         var s = _smoothed.Frames[i];
-        _preview.SetCursor(new Point(s.X / _source.Width, s.Y / _source.Height));
+
+        var z = _zoomCurve is { } zc && i < zc.Length ? zc[i] : 1.0;
+        if (z > 1.0001)
+        {
+            // Crop the preview to the zoom viewport and place the cursor within that crop (0..1).
+            var vp = AutoZoom.Viewport(z, s.X, s.Y, _source.Width, _source.Height);
+            _preview.SetViewport(new Rect(vp.X / _source.Width, vp.Y / _source.Height, vp.Width / _source.Width, vp.Height / _source.Height));
+            _preview.SetCursor(new Point((s.X - vp.X) / vp.Width, (s.Y - vp.Y) / vp.Height));
+        }
+        else
+        {
+            _preview.SetViewport(null);
+            _preview.SetCursor(new Point(s.X / _source.Width, s.Y / _source.Height));
+        }
     }
 
     private void SetupSmoothingPanel()
@@ -205,6 +224,22 @@ public partial class TimelineEditorWindow : Window
                 if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
             };
         }
+        _zoomToggle = this.FindControl<CheckBox>("ZoomToggle");
+        _zoomSlider = this.FindControl<Slider>("ZoomSlider");
+        _zoomValue = this.FindControl<TextBlock>("ZoomValue");
+        if (_zoomToggle is not null)
+        {
+            _zoomToggle.IsChecked = _zoom.Enabled;
+            _zoomToggle.IsCheckedChanged += (_, _) => OnZoomChanged();
+        }
+        if (_zoomSlider is not null)
+        {
+            _zoomSlider.Value = _zoom.MaxZoom;
+            _zoomSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomChanged();
+            };
+        }
         if (this.FindControl<Button>("SmoothingReset") is { } reset)
             reset.Click += (_, _) => ResetSmoothing();
 
@@ -220,11 +255,23 @@ public partial class TimelineEditorWindow : Window
         ReprojectSmoothTrack();
     }
 
+    private void OnZoomChanged()
+    {
+        var enabled = _zoomToggle?.IsChecked ?? false;
+        var max = Math.Max(1.0, _zoomSlider?.Value ?? _zoom.MaxZoom);
+        _zoom = _zoom with { Enabled = enabled, MaxZoom = max };
+        UpdateSmoothingLabels();
+        ReprojectSmoothTrack();
+    }
+
     private void ResetSmoothing()
     {
         _smoothing = CursorSmoothing.Default;
-        if (_minCutoffSlider is not null) _minCutoffSlider.Value = _smoothing.MinCutoff; // fires OnSmoothingChanged
+        _zoom = ZoomConfig.Default;
+        if (_minCutoffSlider is not null) _minCutoffSlider.Value = _smoothing.MinCutoff;
         if (_betaSlider is not null) _betaSlider.Value = _smoothing.Beta;
+        if (_zoomToggle is not null) _zoomToggle.IsChecked = _zoom.Enabled;
+        if (_zoomSlider is not null) _zoomSlider.Value = _zoom.MaxZoom;
         UpdateSmoothingLabels();
         ReprojectSmoothTrack();
     }
@@ -234,6 +281,7 @@ public partial class TimelineEditorWindow : Window
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         if (_minCutoffValue is not null) _minCutoffValue.Text = _smoothing.MinCutoff.ToString("0.0#", inv);
         if (_betaValue is not null) _betaValue.Text = _smoothing.Beta.ToString("0.00#", inv);
+        if (_zoomValue is not null) _zoomValue.Text = _zoom.MaxZoom.ToString("0.0#", inv) + "×";
     }
 #endif
 
@@ -446,6 +494,9 @@ public partial class TimelineEditorWindow : Window
         StopPlayback();
         if (!_timeline.HasKeptContent) return;
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
+#if DEBUG
+        dlg.ConfigureSmoothCursor(_smoothing, _zoom); // carry the tuned preview settings into the export
+#endif
         await dlg.ShowDialog(this);
     }
 

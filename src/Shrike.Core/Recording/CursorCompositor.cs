@@ -13,11 +13,12 @@ public sealed record CursorStyle(
 }
 
 /// <summary>
-/// The SC4 payoff: an <see cref="IFrameCompositor"/> that draws the smoothed synthetic cursor — and an
-/// expanding ripple on each click — onto export frames, from a <see cref="SmoothedCursorTrack"/> (positions
-/// already in export pixels). Pure software raster (no UI deps, headless-testable): an anti-aliased arrow
-/// sprite is baked once and alpha-blended each frame (dark outline under a light fill); ripples are drawn as
-/// soft rings anchored where the click happened.
+/// The SC4/SC5 payoff: an <see cref="IFrameCompositor"/> that draws the smoothed synthetic cursor — and an
+/// expanding ripple on each click — onto export frames, and (SC5) applies auto-zoom by cropping+scaling each
+/// frame to a per-frame <see cref="ZoomViewport"/>. Positions come from a <see cref="SmoothedCursorTrack"/>
+/// (already in export pixels) and are mapped through the viewport, so the cursor stays glued to the pointer
+/// while the framing zooms; the cursor and ripples keep a constant on-screen size. Pure software raster (no
+/// UI deps, headless-testable): an anti-aliased arrow sprite is baked once, and zoom uses a bilinear resample.
 /// </summary>
 public sealed class CursorCompositor : IFrameCompositor
 {
@@ -27,7 +28,6 @@ public sealed class CursorCompositor : IFrameCompositor
         (0, 0), (0, 17), (4.4, 12.6), (7.4, 19.4), (10.2, 18.1), (7.2, 11.4), (13, 11),
     ];
 
-    // BGR components of the palette.
     private static readonly (byte B, byte G, byte R) Fill = (0xEC, 0xF6, 0xFB);   // near-white
     private static readonly (byte B, byte G, byte R) Outline = (0x0D, 0x11, 0x14); // near-black
     private static readonly (byte B, byte G, byte R) Ripple = (0x24, 0xA5, 0xF5);  // amber
@@ -37,13 +37,16 @@ public sealed class CursorCompositor : IFrameCompositor
 
     private readonly SmoothedCursorTrack _track;
     private readonly CursorStyle _style;
-    private readonly byte[] _mask;   // arrow coverage, 0..255
+    private readonly double[]? _zoom;   // per-frame zoom factor (≥1), or null for no zoom
+    private readonly byte[] _mask;      // arrow coverage, 0..255
     private readonly int _mw, _mh;
+    private byte[]? _temp;              // scratch for the zoom resample (reused across frames)
 
-    public CursorCompositor(SmoothedCursorTrack track, CursorStyle? style = null)
+    public CursorCompositor(SmoothedCursorTrack track, CursorStyle? style = null, double[]? zoomCurve = null)
     {
         _track = track;
         _style = style ?? CursorStyle.Default;
+        _zoom = zoomCurve;
         _mask = BakeArrow(_style.Height, out _mw, out _mh);
     }
 
@@ -53,7 +56,14 @@ public sealed class CursorCompositor : IFrameCompositor
         var frames = _track.Frames;
         var pos = frames[Math.Clamp(frameIndex, 0, frames.Count - 1)];
 
-        // Ripples first (they sit under the cursor), anchored where the click landed.
+        // Auto-zoom: crop to the viewport (centred on the cursor) and scale back up.
+        var z = _zoom is { } zc && frameIndex >= 0 && frameIndex < zc.Length ? zc[frameIndex] : 1.0;
+        var vp = z > 1.0001
+            ? AutoZoom.Viewport(z, pos.X, pos.Y, width, height)
+            : new ZoomViewport(0, 0, width, height);
+        if (z > 1.0001) Resample(bgra, width, height, vp);
+
+        // Ripples first (under the cursor), anchored where the click landed — mapped through the viewport.
         var rippleFrames = Math.Max(1, (int)Math.Round(_style.RippleSeconds * _track.Fps));
         foreach (var click in _track.Clicks)
         {
@@ -61,17 +71,23 @@ public sealed class CursorCompositor : IFrameCompositor
             if (age < 0 || age >= rippleFrames) continue;
             var p = age / (double)rippleFrames;
             var c = frames[Math.Clamp(click.FrameIndex, 0, frames.Count - 1)];
+            var (rx, ry) = Map(c.X, c.Y, vp, width, height);
             var radius = _style.RippleStartRadius + p * (_style.RippleEndRadius - _style.RippleStartRadius);
-            DrawRing(bgra, width, height, c.X, c.Y, radius, _style.RippleThickness, Ripple, (1 - p) * _style.RipplePeakAlpha);
+            DrawRing(bgra, width, height, rx, ry, radius, _style.RippleThickness, Ripple, (1 - p) * _style.RipplePeakAlpha);
         }
 
         // Cursor: a dark outline (mask blitted at 1px offsets) then the light fill on top.
-        var ax = (int)Math.Round(pos.X);
-        var ay = (int)Math.Round(pos.Y);
+        var (mxp, myp) = Map(pos.X, pos.Y, vp, width, height);
+        var ax = (int)Math.Round(mxp);
+        var ay = (int)Math.Round(myp);
         foreach (var (dx, dy) in OutlineOffsets)
             Blit(bgra, width, height, ax + dx, ay + dy, Outline, 1.0);
         Blit(bgra, width, height, ax, ay, Fill, 1.0);
     }
+
+    // Map a full-frame export point into on-screen (post-zoom) coordinates. Identity when vp is the full frame.
+    private static (double X, double Y) Map(double px, double py, ZoomViewport vp, int w, int h)
+        => ((px - vp.X) * (w / vp.Width), (py - vp.Y) * (h / vp.Height));
 
     // ---- raster helpers ----
 
@@ -106,6 +122,46 @@ public sealed class CursorCompositor : IFrameCompositor
                 var d = Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
                 var cov = 1 - Math.Min(1, Math.Abs(d - radius) / thickness);
                 if (cov > 0) Blend(bgra, (y * w + x) * 4, c, cov * alpha);
+            }
+        }
+    }
+
+    // Crop `bgra` to `vp` and bilinear-scale it back to width×height, in place (via a reused scratch copy).
+    private void Resample(byte[] bgra, int w, int h, ZoomViewport vp)
+    {
+        var need = w * h * 4;
+        if (_temp is null || _temp.Length != need) _temp = new byte[need];
+        Array.Copy(bgra, _temp, need);
+
+        var sxStep = vp.Width / w;
+        var syStep = vp.Height / h;
+        for (var oy = 0; oy < h; oy++)
+        {
+            var srcY = vp.Y + (oy + 0.5) * syStep - 0.5;
+            var y0 = (int)Math.Floor(srcY);
+            var fy = srcY - y0;
+            var y0c = Math.Clamp(y0, 0, h - 1);
+            var y1c = Math.Clamp(y0 + 1, 0, h - 1);
+            for (var ox = 0; ox < w; ox++)
+            {
+                var srcX = vp.X + (ox + 0.5) * sxStep - 0.5;
+                var x0 = (int)Math.Floor(srcX);
+                var fx = srcX - x0;
+                var x0c = Math.Clamp(x0, 0, w - 1);
+                var x1c = Math.Clamp(x0 + 1, 0, w - 1);
+
+                var i00 = (y0c * w + x0c) * 4;
+                var i01 = (y0c * w + x1c) * 4;
+                var i10 = (y1c * w + x0c) * 4;
+                var i11 = (y1c * w + x1c) * 4;
+                var d = (oy * w + ox) * 4;
+                for (var ch = 0; ch < 3; ch++)
+                {
+                    var top = _temp[i00 + ch] * (1 - fx) + _temp[i01 + ch] * fx;
+                    var bot = _temp[i10 + ch] * (1 - fx) + _temp[i11 + ch] * fx;
+                    bgra[d + ch] = (byte)(top * (1 - fy) + bot * fy + 0.5);
+                }
+                bgra[d + 3] = 255;
             }
         }
     }

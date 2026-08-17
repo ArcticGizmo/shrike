@@ -121,7 +121,7 @@
 
 ## Phase 3 — Auto-zoom
 
-### SC5 · Adaptive auto-zoom (+ tuning surfaces)
+### SC5 · Adaptive auto-zoom (+ tuning surfaces) ✅
 *The reason Option B was chosen — eased zoom/pan toward click activity, computed per frame.*
 
 **Build**
@@ -133,6 +133,10 @@
 - Framing eases toward click clusters and back out; motion is smooth and the cursor stays correctly placed **and scaled** throughout.
 - Zoom curves are tunable and reproducible; a given track + settings always yields the same framing.
 - Zoom parameters covered by headless tests (cluster → keyframes → per-frame rect); the visual result is demo-verified.
+
+> **SC5 complete (2026-08-17).** `AutoZoom` turns click marks into an eased per-frame zoom curve (each click holds a zoom-in; overlapping holds merge; on/off steps box-smoothed into ramps) and a cursor-centred `ZoomViewport`. `CursorCompositor` became zoom-aware — it crops to the viewport and bilinear-resamples each frame, mapping the cursor + ripples through it (so the cursor stays glued to the pointer while the framing follows, at a constant on-screen size). Wired into export (the composite path builds the curve from the clicks) and previewed live: `PreviewSurface.SetViewport` crops the preview via the DrawImage source rect, and the tuning panel gained **Zoom on/off + max-zoom**; the editor's tuned smoothing **and** zoom now carry into the export (`ExportDialog.ConfigureSmoothCursor`), so the preview and the file match. Tests: `AutoZoomTests` (no-clicks/disabled → no zoom; click → eased peak ≤ max then back to 1; viewport identity/centre/clamp) + a `CursorCompositor` zoom case (frame resampled, cursor re-centred). Still **Debug-only** (see the SC4 un-gate criteria).
+
+> **Plan complete (SC1–SC5).** Record → smoothed synthetic cursor → click ripples → auto-zoom, all through one managed decode→compose→encode pass, tunable and previewed live. Remaining before Release: the SC4 un-gate follow-ups (full export-preset parity through the cursor pass; a release-facing tuning/size UI).
 
 ---
 
