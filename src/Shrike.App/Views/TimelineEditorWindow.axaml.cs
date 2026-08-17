@@ -81,9 +81,38 @@ public partial class TimelineEditorWindow : Window
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
 
         Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
+
+#if DEBUG
+        // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
+        if (this.FindControl<Button>("RevealButton") is { } reveal)
+        {
+            reveal.IsVisible = true;
+            reveal.Click += (_, _) => RevealSourceFiles();
+        }
+#endif
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+#if DEBUG
+    /// <summary>Debug-only: open Explorer with this recording selected, so its <c>.track.json</c> sidecar is
+    /// visible right beside it (falls back to opening the working folder if the file has since gone).</summary>
+    private void RevealSourceFiles()
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(_source.Path)) return;
+        try
+        {
+            var arg = File.Exists(_source.Path)
+                ? $"/select,\"{_source.Path}\""
+                : $"\"{Shrike.Core.AppStorage.RecordingsDirectory()}\"";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", arg)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch { /* best effort — dev convenience only */ }
+    }
+#endif
 
     protected override void OnOpened(EventArgs e)
     {

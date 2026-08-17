@@ -59,6 +59,9 @@
             <Button Grid.Column="3" Classes="tool" Content="Keep only" Click="OnKeepOnly"  Margin="0,0,6,0" />
             <Button Grid.Column="4" Classes="tool" Content="Restore"   Click="OnRestoreAt" Margin="0,0,6,0" />
             <Button Grid.Column="5" Classes="tool" Content="Reset"     Click="OnResetAll"  Margin="0,0,6,0" />
+            <!-- Debug-only: shown + wired in code-behind (#if DEBUG). Reveals this recording + its .track.json. -->
+            <Button Grid.Column="6" Name="RevealButton" Classes="tool" Content="Reveal files (debug)"
+                    HorizontalAlignment="Left" IsVisible="False" />
             <Button Grid.Column="7" Classes="tool accent" Content="Export…" Click="OnExport" />
         </Grid>
     </Grid>
