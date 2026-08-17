@@ -182,9 +182,47 @@ public partial class ExportDialog : Window
     private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
         IProgress<double> progress, CancellationToken ct)
     {
+#if DEBUG
+        // Experimental: if this clip carries a smooth-cursor track and we're producing an MP4, render the
+        // synthetic cursor into the frames via the composite pipeline (interim H.264) instead of a plain
+        // transcode. Everything else falls through to the normal export.
+        if (TryCompositeCursorExport(profile, outputPath, progress, ct, out var composite))
+        {
+            await composite;
+            return;
+        }
+#endif
         var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
         await new VideoExporter(_ffmpegPath).ExportAsync(cmd, _timeline.KeptDurationMs, progress, ct);
     }
+
+#if DEBUG
+    private bool TryCompositeCursorExport(ExportProfile profile, string outputPath,
+        IProgress<double> progress, CancellationToken ct, out Task task)
+    {
+        task = Task.CompletedTask;
+        if (profile.Codec is not (ExportCodec.H264 or ExportCodec.H265)) return false;
+
+        var sidecar = Shrike.Core.AppStorage.SidecarFor(_source.Path);
+        if (!File.Exists(sidecar)) return false;
+
+        MouseTrack track;
+        try { track = MouseTrack.Load(sidecar); }
+        catch { return false; }
+
+        // Target dims/fps come from the chosen preset; project the cursor into that space.
+        var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware: null, outputPath);
+        int w = cmd.TargetWidth, h = cmd.TargetHeight, fps = cmd.TargetFps;
+        var smoothed = SmoothCursor.Project(track, _timeline, fps, w, h, CursorSmoothing.Default);
+        if (smoothed.IsEmpty) return false;
+
+        var compositor = new CursorCompositor(smoothed);
+        var bitrate = (int)Math.Clamp((long)w * h * fps / 10, 1_000_000, 12_000_000);
+        var pipeline = new FrameCompositePipeline(_ffmpegPath);
+        task = Task.Run(() => pipeline.Run(_source, _timeline.KeptRanges, w, h, fps, bitrate, outputPath, compositor, progress, ct), ct);
+        return true;
+    }
+#endif
 
     private void Finish(string outputPath, bool copyToClipboard)
     {

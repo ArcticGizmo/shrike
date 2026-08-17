@@ -100,7 +100,7 @@
 
 > **SC3 complete (2026-08-17).** `IFrameCompositor` (+ `IdentityCompositor`) and `FrameCompositePipeline`: a decode ffmpeg applies the kept ranges (trim + concat) and scales to the output size → raw BGRA frames → `IFrameCompositor.Compose` (draw in place) → `FfmpegMp4Encoder` → MP4, in a single decode→compose→encode. Per-frame `IProgress`, cancellable (both ffmpegs torn down + partial output deleted), decode stderr drained to avoid a pipe deadlock. Tests (`FrameCompositePipelineTests`, real ffmpeg, skip if absent): identity round-trip matches duration + frame count and the compositor sees every frame; a mid-cut renders to the kept length. The **live export path is deliberately untouched** (so "flag off = unchanged" holds); wiring this pass into the editor's export — and honouring the full export preset (H.265 / hardware / GIF-WebP) rather than the interim H.264 encode — lands with **SC4**, which drops in the cursor compositor. Next: **SC4** — draw the synthetic cursor + click ripple = the shippable MVP.
 
-### SC4 · Draw the cursor + click feedback  ·  **MVP**
+### SC4 · Draw the cursor + click feedback  ·  **MVP** ✅
 *The payoff: the smoothed synthetic cursor and a click you can see.*
 
 **Build**
@@ -113,7 +113,9 @@
 - Feature is fully behind the experimental flag; with it off, nothing changes.
 - Cursor rendering + ripple timing covered where headless-testable (position → pixel; ripple lifetime); the end-to-end record→export is boot/demo-verified.
 
-> **SC4 complete → smooth-cursor MVP is shippable (experimental).** Everything below is additive on the same pipeline.
+> **SC4 complete (2026-08-17).** `CursorCompositor` (`IFrameCompositor`) draws the smoothed synthetic cursor + click ripples onto export frames from the SC2 `SmoothedCursorTrack` — pure software raster (bakes an anti-aliased arrow sprite once; dark outline under a light fill; soft amber rings anchored at each click, fading over ~0.35 s). Wired into `ExportDialog`: when a clip carries a track and the preset is H.264/H.265, export renders via `FrameCompositePipeline` + `CursorCompositor` (interim H.264). Tests: `CursorCompositorTests` (drawn at position, empty-track no-op, click adds a ripple, ripple gone after its lifetime); the decode→compose→encode round-trip is covered by `FrameCompositePipelineTests`; the record→export UI path is boot/demo-verified.
+>
+> **Gating — still Debug-only.** The whole feature (HUD toggle, preview overlay + tuning, composite export) is behind `#if DEBUG` for now, so Release is untouched. WYSIWYG holds in Debug: the preview overlay and the exported cursor are the same projection. **Un-gate criteria (follow-ups):** honour the full export preset through the cursor pass (H.265 / hardware / GIF-WebP — currently interim H.264 only), share the editor's tuned smoothing with export (export currently uses `CursorSmoothing.Default`), and add a release tuning/size control. Everything below is additive on the same pipeline.
 
 ---
 
