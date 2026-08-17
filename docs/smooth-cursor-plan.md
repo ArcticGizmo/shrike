@@ -85,7 +85,7 @@
 >
 > **Preview overlay + tuning (debug).** To *see* the smoothing before the export pipeline exists, the timeline editor overlays the projected cursor on the preview during Play/scrub (`PreviewSurface.SetCursor`, positioned in the Uniform-fit rect; re-projected on edits so it respects cuts). A debug tuning panel (min-cutoff + beta sliders with live readouts + Reset) re-projects live so the defaults can be dialled in by eye — whatever feels right becomes `CursorSmoothing.Default`. Debug-only for now — showing it in preview but not in the export would break WYSIWYG, so it's un-gated once **SC4** draws the cursor into exported frames too. Next: **SC3** (the decode → composite → re-encode pipeline, proven with a no-op compositor), which will consume this per-frame track.
 
-### SC3 · Compositing pipeline (the Option-B rails)
+### SC3 · Compositing pipeline (the Option-B rails) ✅
 *The foundational render pass, proven with a no-op compositor before any cursor is drawn.*
 
 **Build**
@@ -97,6 +97,8 @@
 - A recording round-trips decode → identity → encode with matching duration/frame count and no visible degradation; progress + cancel work.
 - With the flag **off**, export output is byte-for-byte the current path (no regression).
 - Throughput is acceptable on a representative clip (measured, not asserted-tight yet).
+
+> **SC3 complete (2026-08-17).** `IFrameCompositor` (+ `IdentityCompositor`) and `FrameCompositePipeline`: a decode ffmpeg applies the kept ranges (trim + concat) and scales to the output size → raw BGRA frames → `IFrameCompositor.Compose` (draw in place) → `FfmpegMp4Encoder` → MP4, in a single decode→compose→encode. Per-frame `IProgress`, cancellable (both ffmpegs torn down + partial output deleted), decode stderr drained to avoid a pipe deadlock. Tests (`FrameCompositePipelineTests`, real ffmpeg, skip if absent): identity round-trip matches duration + frame count and the compositor sees every frame; a mid-cut renders to the kept length. The **live export path is deliberately untouched** (so "flag off = unchanged" holds); wiring this pass into the editor's export — and honouring the full export preset (H.265 / hardware / GIF-WebP) rather than the interim H.264 encode — lands with **SC4**, which drops in the cursor compositor. Next: **SC4** — draw the synthetic cursor + click ripple = the shippable MVP.
 
 ### SC4 · Draw the cursor + click feedback  ·  **MVP**
 *The payoff: the smoothed synthetic cursor and a click you can see.*
