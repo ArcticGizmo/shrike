@@ -13,11 +13,23 @@ namespace Shrike.App.Controls;
 public sealed class PreviewSurface : Control
 {
     private IImage? _image;
+    private Point? _cursor; // optional overlay cursor, normalised [0..1] within the displayed frame
 
     /// <summary>Set (or refresh) the frame to display and repaint immediately.</summary>
     public void Show(IImage image)
     {
         _image = image;
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Overlay a synthetic cursor at a normalised position (0..1 across the frame), or clear it with null.
+    /// Given in frame-relative coordinates so it scales with the Uniform-fit rect regardless of the frame's
+    /// pixel resolution (playback frames are downscaled). Used to preview the smoothed cursor.
+    /// </summary>
+    public void SetCursor(Point? normalized)
+    {
+        _cursor = normalized;
         InvalidateVisual();
     }
 
@@ -36,5 +48,34 @@ public sealed class PreviewSurface : Control
         var h = src.Height * scale;
         var rect = new Rect((dst.Width - w) / 2, (dst.Height - h) / 2, w, h);
         ctx.DrawImage(img, new Rect(src), rect);
+
+        if (_cursor is { } c)
+            DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height));
+    }
+
+    private static readonly IBrush CursorFill = new SolidColorBrush(Color.FromRgb(0xFB, 0xF6, 0xEC));
+    private static readonly IPen CursorPen = new Pen(new SolidColorBrush(Color.FromRgb(0x14, 0x11, 0x0D)), 1.4);
+    private static readonly Geometry CursorArrow = BuildArrow();
+
+    // A small arrow whose tip (hotspot) sits at (0,0), so translating to the point lands the tip there.
+    private static Geometry BuildArrow()
+    {
+        var g = new StreamGeometry();
+        using var c = g.Open();
+        c.BeginFigure(new Point(0, 0), isFilled: true);
+        c.LineTo(new Point(0, 17));
+        c.LineTo(new Point(4.4, 12.6));
+        c.LineTo(new Point(7.4, 19.4));
+        c.LineTo(new Point(10.2, 18.1));
+        c.LineTo(new Point(7.2, 11.4));
+        c.LineTo(new Point(13, 11));
+        c.EndFigure(isClosed: true);
+        return g;
+    }
+
+    private static void DrawCursor(DrawingContext ctx, Point at)
+    {
+        using (ctx.PushTransform(Matrix.CreateTranslation(at.X, at.Y)))
+            ctx.DrawGeometry(CursorFill, CursorPen, CursorArrow);
     }
 }

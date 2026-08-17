@@ -54,6 +54,14 @@ public partial class TimelineEditorWindow : Window
     private bool _extracting;
     private Bitmap? _currentFrame;
 
+#if DEBUG
+    // Preview overlay of the smoothed synthetic cursor — lets us watch SC2 working on Play/scrub before the
+    // export pipeline (SC3/SC4) exists. Debug-only: showing it in preview but not in the export would break
+    // WYSIWYG, so it's un-gated only once SC4 draws the cursor into exported frames too.
+    private MouseTrack? _smoothTrack;
+    private SmoothedCursorTrack? _smoothed;
+#endif
+
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
 
@@ -79,6 +87,10 @@ public partial class TimelineEditorWindow : Window
         _strip.Scrubbing += OnScrub;
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
+#if DEBUG
+        // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
+        _timeline.Changed += ReprojectSmoothTrack;
+#endif
 
         Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
@@ -120,7 +132,45 @@ public partial class TimelineEditorWindow : Window
         UpdateLabels();
         RequestPreview(0);
         _ = LoadThumbnailsAsync(_cts.Token);
+#if DEBUG
+        LoadSmoothTrack();
+#endif
     }
+
+#if DEBUG
+    // ---- smooth-cursor preview overlay (experimental; SC2 validation) ----
+
+    private void LoadSmoothTrack()
+    {
+        try
+        {
+            var path = Shrike.Core.AppStorage.SidecarFor(_source.Path);
+            _smoothTrack = File.Exists(path) ? MouseTrack.Load(path) : null;
+        }
+        catch { _smoothTrack = null; }
+        ReprojectSmoothTrack();
+    }
+
+    private void ReprojectSmoothTrack()
+    {
+        if (_smoothTrack is null || _source.Width <= 0 || _source.Height <= 0)
+        {
+            _smoothed = null;
+            _preview.SetCursor(null);
+            return;
+        }
+        _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height);
+        UpdateCursorOverlay();
+    }
+
+    private void UpdateCursorOverlay()
+    {
+        if (_smoothed is null || _smoothed.IsEmpty) { _preview.SetCursor(null); return; }
+        var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
+        var s = _smoothed.Frames[i];
+        _preview.SetCursor(new Point(s.X / _source.Width, s.Y / _source.Height));
+    }
+#endif
 
     // ---- scrubbing / preview ----
 
@@ -131,6 +181,9 @@ public partial class TimelineEditorWindow : Window
         _currentEditedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
         RequestPreview(sourceMs);
         UpdateLabels();
+#if DEBUG
+        UpdateCursorOverlay();
+#endif
     }
 
     private void OnSeek(long sourceMs) => OnScrub(sourceMs);
@@ -238,6 +291,9 @@ public partial class TimelineEditorWindow : Window
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
         UpdateLabels();
+#if DEBUG
+        UpdateCursorOverlay();
+#endif
     }
 
     private void EnsurePlayBitmap(int w, int h)
