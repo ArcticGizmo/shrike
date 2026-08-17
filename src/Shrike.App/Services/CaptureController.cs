@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Shrike.App.Native;
 using Shrike.App.Views;
+using Shrike.Core;
 using Shrike.Core.Capture;
 using Shrike.Core.Interop;
 using Shrike.Core.Recording;
@@ -493,7 +494,9 @@ internal sealed class CaptureController
         const int fps = 30;
         // Smooth cursor needs a clean plate, so it forces the real cursor off regardless of the setting.
         var captureCursor = !_smoothCursor && (_settings?.Current.CursorInRecording ?? true);
-        var path = Path.Combine(Path.GetTempPath(),
+        // A stable per-profile working folder (not %TEMP%, which the OS can purge) so the source MP4 and
+        // its *.track.json sidecar survive to be edited / re-exported.
+        var path = Path.Combine(AppStorage.RecordingsDirectory(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
 
         _buildTask = Task.Run(() => BuildRecorder(region, path, fps, captureCursor));

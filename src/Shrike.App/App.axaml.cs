@@ -128,6 +128,12 @@ public partial class App : Application
         var about = new NativeMenuItem("About Shrike…");
         about.Click += (_, _) => OpenAbout();
 
+#if DEBUG
+        // Dev affordance: jump straight to the recordings working folder to inspect MP4s + track sidecars.
+        var openWorkingDir = new NativeMenuItem("Open working folder (debug)");
+        openWorkingDir.Click += (_, _) => OpenWorkingFolder();
+#endif
+
         var quit = new NativeMenuItem("Quit Shrike");
         quit.Click += (_, _) => desktop.Shutdown();
 
@@ -142,6 +148,9 @@ public partial class App : Application
         menu.Add(recent);
         menu.Add(settings);
         menu.Add(about);
+#if DEBUG
+        menu.Add(openWorkingDir);
+#endif
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(quit);
 
@@ -262,6 +271,23 @@ public partial class App : Application
         win.Show();
         win.Activate();
     }
+
+#if DEBUG
+    /// <summary>Debug-only: open the recordings working folder in Explorer (created if absent).</summary>
+    private static void OpenWorkingFolder()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            var dir = AppStorage.RecordingsDirectory();
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dir}\"")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch { /* best effort — dev convenience only */ }
+    }
+#endif
 
     private static void CheckForUpdatesInBackground()
     {

@@ -61,6 +61,8 @@
 **Risks/notes:** low-level hooks can be throttled if the callback is slow (keep it light) and may interact with anti-cheat/secure-desktop contexts — degrade gracefully (no track → feature simply unavailable for that clip, normal export still works).
 
 > **SC1 complete (2026-08-14).** `MouseTrack` + `MouseTrackRecorder` (Core; each event stamped via `Recorder.CaptureTimeMs`, which returns null while paused so paused spans drop out), a `WH_MOUSE_LL` `MouseHook` (App), and the experimental **Smooth cursor** HUD toggle wired through `CaptureController` — it forces a clean plate (real cursor off), turns the live spotlight off, logs the track, and writes a `*.track.json` sidecar next to the MP4. Tests: `MouseTrackTests` (JSON round-trip incl. empty + malformed, capture-clock stamping, pause-exclusion, region carry). The native hook path was verified with a message-pump probe (`moves`+`clicks` delivered); the interactive record→sidecar round-trip is ready to exercise live. Next: **SC2** (One-Euro smoothing + coordinate mapping), which consumes this sidecar.
+>
+> **Storage (2026-08-17).** Recordings + their sidecars moved off `%TEMP%` (which the OS can purge) to a stable per-profile working folder, `%LOCALAPPDATA%\Shrike\recordings` (dev = `Shrike (Dev)`), via the new `AppStorage` helper — so a clip survives to be edited / re-exported. A **Debug-only** tray item, *Open working folder (debug)*, opens it for inspection. *(Follow-up: these accumulate; a size/age cap is worth adding later.)*
 
 ---
 
