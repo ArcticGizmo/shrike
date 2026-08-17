@@ -24,4 +24,9 @@ public static class AppStorage
         System.IO.Directory.CreateDirectory(dir);
         return dir;
     }
+
+    /// <summary>The track sidecar path for a recording (<c>name.mp4</c> → <c>name.track.json</c>). One place
+    /// owns this convention so the writer and the retention sweep never disagree.</summary>
+    public static string SidecarFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".track.json");
 }

@@ -613,12 +613,24 @@ internal sealed class CaptureController
         if (track is null || savedPath is null || !File.Exists(savedPath)) return;
         try
         {
-            track.Build().Save(Path.ChangeExtension(savedPath, ".track.json"));
+            track.Build().Save(AppStorage.SidecarFor(savedPath));
         }
         catch
         {
             // best effort — a missing track just means no smoothing is available for this clip
         }
+    }
+
+    /// <summary>Keep the recordings working folder bounded — run off the UI thread after a recording lands.
+    /// The just-saved clip is the newest, so it's always kept (and may be open in the editor).</summary>
+    private static void SweepRecordingsInBackground()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        Task.Run(() =>
+        {
+            try { RecordingsRetention.Sweep(AppStorage.RecordingsDirectory(), RecordingRetention.Default, DateTimeOffset.UtcNow); }
+            catch { /* best effort */ }
+        });
     }
 
     private void DisposeMouseHook()
@@ -639,6 +651,9 @@ internal sealed class CaptureController
 
         // Finalise the smooth-cursor track (if any) as a sidecar next to the MP4 before we hand off.
         WriteMouseTrackSidecar(savedPath);
+
+        // Reclaim old working recordings now that this one has landed (newest is always kept).
+        SweepRecordingsInBackground();
 
         if (savedPath is null || !File.Exists(savedPath)) return;
 

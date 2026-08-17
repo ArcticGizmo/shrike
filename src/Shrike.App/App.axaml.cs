@@ -82,6 +82,20 @@ public partial class App : Application
             if (OperatingSystem.IsWindows())
                 Task.Run(() => { try { Shrike.Core.Recording.Ffmpeg.Locate(); } catch { /* best effort */ } });
 
+            // Reclaim old working recordings left over from past sessions (bounded folder, off the UI thread).
+            if (OperatingSystem.IsWindows())
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        Shrike.Core.Recording.RecordingsRetention.Sweep(
+                            AppStorage.RecordingsDirectory(),
+                            Shrike.Core.Recording.RecordingRetention.Default,
+                            DateTimeOffset.UtcNow);
+                    }
+                    catch { /* best effort */ }
+                });
+
             // Notify-only update check in the background (no-op on dev builds). A quiet toast if newer.
             CheckForUpdatesInBackground();
 
