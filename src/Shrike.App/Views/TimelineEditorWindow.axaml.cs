@@ -60,6 +60,11 @@ public partial class TimelineEditorWindow : Window
     // WYSIWYG, so it's un-gated only once SC4 draws the cursor into exported frames too.
     private MouseTrack? _smoothTrack;
     private SmoothedCursorTrack? _smoothed;
+    private CursorSmoothing _smoothing = CursorSmoothing.Default;
+    private Slider? _minCutoffSlider;
+    private Slider? _betaSlider;
+    private TextBlock? _minCutoffValue;
+    private TextBlock? _betaValue;
 #endif
 
     // Parameterless ctor for the XAML designer only.
@@ -90,6 +95,7 @@ public partial class TimelineEditorWindow : Window
 #if DEBUG
         // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
         _timeline.Changed += ReprojectSmoothTrack;
+        SetupSmoothingPanel();
 #endif
 
         Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
@@ -148,6 +154,11 @@ public partial class TimelineEditorWindow : Window
             _smoothTrack = File.Exists(path) ? MouseTrack.Load(path) : null;
         }
         catch { _smoothTrack = null; }
+
+        // The tuning panel only makes sense for a clip that actually carries a track.
+        if (this.FindControl<Border>("SmoothingPanel") is { } panel)
+            panel.IsVisible = _smoothTrack is not null;
+
         ReprojectSmoothTrack();
     }
 
@@ -159,7 +170,7 @@ public partial class TimelineEditorWindow : Window
             _preview.SetCursor(null);
             return;
         }
-        _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height);
+        _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height, _smoothing);
         UpdateCursorOverlay();
     }
 
@@ -169,6 +180,60 @@ public partial class TimelineEditorWindow : Window
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
         var s = _smoothed.Frames[i];
         _preview.SetCursor(new Point(s.X / _source.Width, s.Y / _source.Height));
+    }
+
+    private void SetupSmoothingPanel()
+    {
+        _minCutoffSlider = this.FindControl<Slider>("MinCutoffSlider");
+        _betaSlider = this.FindControl<Slider>("BetaSlider");
+        _minCutoffValue = this.FindControl<TextBlock>("MinCutoffValue");
+        _betaValue = this.FindControl<TextBlock>("BetaValue");
+
+        if (_minCutoffSlider is not null)
+        {
+            _minCutoffSlider.Value = _smoothing.MinCutoff;
+            _minCutoffSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
+            };
+        }
+        if (_betaSlider is not null)
+        {
+            _betaSlider.Value = _smoothing.Beta;
+            _betaSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
+            };
+        }
+        if (this.FindControl<Button>("SmoothingReset") is { } reset)
+            reset.Click += (_, _) => ResetSmoothing();
+
+        UpdateSmoothingLabels();
+    }
+
+    private void OnSmoothingChanged()
+    {
+        var minCutoff = Math.Max(0.1, _minCutoffSlider?.Value ?? _smoothing.MinCutoff);
+        var beta = Math.Max(0.0, _betaSlider?.Value ?? _smoothing.Beta);
+        _smoothing = new CursorSmoothing(minCutoff, beta);
+        UpdateSmoothingLabels();
+        ReprojectSmoothTrack();
+    }
+
+    private void ResetSmoothing()
+    {
+        _smoothing = CursorSmoothing.Default;
+        if (_minCutoffSlider is not null) _minCutoffSlider.Value = _smoothing.MinCutoff; // fires OnSmoothingChanged
+        if (_betaSlider is not null) _betaSlider.Value = _smoothing.Beta;
+        UpdateSmoothingLabels();
+        ReprojectSmoothTrack();
+    }
+
+    private void UpdateSmoothingLabels()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (_minCutoffValue is not null) _minCutoffValue.Text = _smoothing.MinCutoff.ToString("0.0#", inv);
+        if (_betaValue is not null) _betaValue.Text = _smoothing.Beta.ToString("0.00#", inv);
     }
 #endif
 

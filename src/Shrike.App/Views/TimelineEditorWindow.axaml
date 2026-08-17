@@ -34,7 +34,7 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="14">
+    <Grid RowDefinitions="*,Auto,Auto,Auto,Auto" Margin="14">
         <!-- Preview -->
         <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
             <controls:PreviewSurface Name="Preview" />
@@ -48,11 +48,33 @@
             <TextBlock Grid.Column="3" Name="KeptLabel" Classes="hint" VerticalAlignment="Center" />
         </Grid>
 
+        <!-- Smooth-cursor tuning (debug-only; shown + wired from code-behind when a track is present). -->
+        <Border Grid.Row="2" Name="SmoothingPanel" IsVisible="False"
+                Background="#1C1710" BorderBrush="#322A1E" BorderThickness="1" CornerRadius="7"
+                Padding="10,7" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                <TextBlock Text="✦ Smoothing" Foreground="#F5A524" FontFamily="Consolas,monospace"
+                           FontSize="12" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="Min cutoff" Classes="hint" VerticalAlignment="Center" />
+                    <Slider Name="MinCutoffSlider" Width="130" Minimum="0.1" Maximum="10" VerticalAlignment="Center" />
+                    <TextBlock Name="MinCutoffValue" Classes="hint" Width="36" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="Beta" Classes="hint" VerticalAlignment="Center" />
+                    <Slider Name="BetaSlider" Width="130" Minimum="0" Maximum="0.5" VerticalAlignment="Center" />
+                    <TextBlock Name="BetaValue" Classes="hint" Width="42" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Text="lower cutoff = smoother" Classes="hint" FontStyle="Italic" VerticalAlignment="Center" />
+                <Button Name="SmoothingReset" Classes="tool" Content="Reset" />
+            </StackPanel>
+        </Border>
+
         <!-- Scrubber -->
-        <controls:TimelineStrip Grid.Row="2" Name="Strip" Margin="0,0,0,10" />
+        <controls:TimelineStrip Grid.Row="3" Name="Strip" Margin="0,0,0,10" />
 
         <!-- Toolbar -->
-        <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
             <Button Grid.Column="0" Classes="tool" Content="Mark In"   Click="OnMarkIn"    Margin="0,0,6,0" />
             <Button Grid.Column="1" Classes="tool" Content="Mark Out"  Click="OnMarkOut"   Margin="0,0,6,0" />
             <Button Grid.Column="2" Classes="tool" Content="Cut"       Click="OnCut"       Margin="0,0,6,0" />
