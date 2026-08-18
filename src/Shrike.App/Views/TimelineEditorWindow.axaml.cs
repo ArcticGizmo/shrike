@@ -58,8 +58,9 @@ public partial class TimelineEditorWindow : Window
     private MouseTrack? _smoothTrack;
     private SmoothedCursorTrack? _smoothed;
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
-    private ZoomConfig _zoom = ZoomConfig.Default;
-    private double[]? _zoomCurve;
+    private ZoomConfig _zoom = ZoomConfig.Default;              // auto-zoom fallback when nothing is authored
+    private ZoomTrack _authoredZoom = ZoomTrack.Empty;          // user-placed zoom events (the edit document)
+    private ZoomViewport[]? _zoomViewports;                     // resolved per-frame framing (authored or auto)
     private double _cursorSize = 1.0;
     private bool _cursorRipple = true;
     private Slider? _smoothnessSlider;
@@ -101,7 +102,7 @@ public partial class TimelineEditorWindow : Window
         SeedTuningFromSettings();
         SetupSmoothingPanel();
 
-        Closed += (_, _) => { PersistTuning(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
+        Closed += (_, _) => { PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -155,6 +156,11 @@ public partial class TimelineEditorWindow : Window
         }
         catch { _smoothTrack = null; }
 
+        // The authored edit document (zoom events); empty means auto-zoom applies as the default.
+        _authoredZoom = Shrike.Core.AppStorage.EditDocFor(_source.Path) is { } editPath
+            ? ClipEdit.Load(editPath).Zoom
+            : ZoomTrack.Empty;
+
         // The tuning panel only makes sense for a clip that actually carries a track.
         if (this.FindControl<Border>("SmoothingPanel") is { } panel)
             panel.IsVisible = _smoothTrack is not null;
@@ -171,8 +177,18 @@ public partial class TimelineEditorWindow : Window
             return;
         }
         _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height, _smoothing);
-        _zoomCurve = AutoZoom.ZoomCurve(_smoothed.Clicks, _smoothed.Frames.Count, _smoothed.Fps, _zoom);
+        _zoomViewports = ResolveZoomViewports(_smoothed);
         UpdateCursorOverlay();
+    }
+
+    /// <summary>The per-frame zoom framing: the authored zoom track when the user has placed events, otherwise
+    /// the click-driven auto-zoom (the toggle/Max in the panel). Same shape either way — one viewport per frame.</summary>
+    private ZoomViewport[] ResolveZoomViewports(SmoothedCursorTrack smoothed)
+    {
+        if (!_authoredZoom.IsEmpty)
+            return _authoredZoom.Resolve(smoothed.Frames.Count, smoothed.Fps, _source.Width, _source.Height);
+        var curve = AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, smoothed.Fps, _zoom);
+        return AutoZoom.Viewports(smoothed.Frames, curve, _source.Width, _source.Height);
     }
 
     private void UpdateCursorOverlay()
@@ -185,16 +201,14 @@ public partial class TimelineEditorWindow : Window
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
         var s = _smoothed.Frames[i];
 
-        // The zoom viewport (crop) at this frame; the full frame when zoom ≈ 1.
-        var z = _zoomCurve is { } zc && i < zc.Length ? zc[i] : 1.0;
-        var vp = z > 1.0001
-            ? AutoZoom.Viewport(z, s.X, s.Y, _source.Width, _source.Height)
-            : new ZoomViewport(0, 0, _source.Width, _source.Height);
+        // The resolved zoom viewport (crop) at this frame; the full frame when there's no zoom.
+        var vp = _zoomViewports is { } v && i < v.Length ? v[i] : new ZoomViewport(0, 0, _source.Width, _source.Height);
+        var zoomed = vp.Width < _source.Width - 0.5 || vp.Height < _source.Height - 0.5;
 
         // Position a point (export px) as a fraction of the displayed crop — matches the export's viewport map.
         Point Norm(double x, double y) => new((x - vp.X) / vp.Width, (y - vp.Y) / vp.Height);
 
-        _preview.SetViewport(z > 1.0001
+        _preview.SetViewport(zoomed
             ? new Rect(vp.X / _source.Width, vp.Y / _source.Height, vp.Width / _source.Width, vp.Height / _source.Height)
             : null);
         _preview.SetCursor(Norm(s.X, s.Y));
@@ -225,6 +239,15 @@ public partial class TimelineEditorWindow : Window
                 Alpha: (1 - p) * style.RipplePeakAlpha));
         }
         return ripples;
+    }
+
+    /// <summary>Persist the authored edit document (zoom events) next to the clip, so it survives restart and
+    /// re-export. Only for a clip that carries a track; an empty edit removes any stale sidecar.</summary>
+    private void PersistEdit()
+    {
+        if (_smoothTrack is null || string.IsNullOrEmpty(_source.Path)) return;
+        try { new ClipEdit(_authoredZoom).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
+        catch { /* best effort — never block closing on a failed save */ }
     }
 
     /// <summary>Start the editor from the persisted tuning so a dialled-in look carries across sessions.</summary>
@@ -569,8 +592,10 @@ public partial class TimelineEditorWindow : Window
     {
         StopPlayback();
         if (!_timeline.HasKeptContent) return;
+        PersistEdit(); // make sure the authored zoom is on disk before we (and the export) read it
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
-        dlg.ConfigureSmoothCursor(_smoothing, _zoom, _cursorSize, _cursorRipple); // carry the tuned preview settings into the export
+        // Carry the tuned preview settings + authored zoom into the export so the file matches the preview.
+        dlg.ConfigureSmoothCursor(_smoothing, _zoom, _cursorSize, _cursorRipple, _authoredZoom);
         await dlg.ShowDialog(this);
     }
 

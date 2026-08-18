@@ -181,17 +181,20 @@ public partial class ExportDialog : Window
 
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
     private ZoomConfig _zoom = ZoomConfig.Default;
+    private ZoomTrack _authoredZoom = ZoomTrack.Empty;
     private double _cursorSize = 1.0;
     private bool _cursorRipple = true;
 
     /// <summary>Carry the editor's tuned smoothing + zoom + cursor look into the export so what you saw in the
-    /// preview is what gets rendered.</summary>
-    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, ZoomConfig zoom, double cursorSize, bool cursorRipple)
+    /// preview is what gets rendered. <paramref name="authoredZoom"/> (when non-empty) is the user's placed
+    /// zoom events and takes precedence over the click-driven auto-zoom.</summary>
+    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, ZoomConfig zoom, double cursorSize, bool cursorRipple, ZoomTrack? authoredZoom = null)
     {
         _smoothing = smoothing;
         _zoom = zoom;
         _cursorSize = cursorSize;
         _cursorRipple = cursorRipple;
+        _authoredZoom = authoredZoom ?? ZoomTrack.Empty;
     }
 
     private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
@@ -238,9 +241,10 @@ public partial class ExportDialog : Window
 
         // Resolve the shared per-frame zoom framing, then compose the effect chain: the zoom transform
         // first, the cursor + ripple overlay on top (each an IFrameCompositor). Adding effects = extending
-        // this chain.
-        var zoomCurve = AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, fps, _zoom);
-        var viewports = AutoZoom.Viewports(smoothed.Frames, zoomCurve, w, h);
+        // this chain. Authored zoom events win over the click-driven auto-zoom when present.
+        ZoomViewport[] viewports = !_authoredZoom.IsEmpty
+            ? _authoredZoom.Resolve(smoothed.Frames.Count, fps, w, h)
+            : AutoZoom.Viewports(smoothed.Frames, AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, fps, _zoom), w, h);
         var style = CursorStyle.ForExport(h, _cursorSize, _cursorRipple);
         var compositor = new CompositorChain(
             new ZoomCompositor(viewports),
