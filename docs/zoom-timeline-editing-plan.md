@@ -5,10 +5,20 @@
 > shape (the region to frame) and easing (how fast, what curve) — and the framing lerps between
 > them. This supersedes the automatic auto-zoom (SC5) as the primary model.
 
-**Status:** Proposed (not started) · **Date:** 2026-08-18 · **Owner:** Jon
-**Relationship to existing work:** replaces/absorbs the click-cluster **auto-zoom** (`AutoZoom`, SC5)
-as the main path. Larger than a §-item in [`smooth-cursor-followups.md`](smooth-cursor-followups.md) —
-scoped and tracked here on its own.
+**Status:** MVP built (branch `feature/compositor-chain`) · **Date:** 2026-08-18 · **Owner:** Jon
+**Relationship to existing work:** replaces the click-cluster **auto-zoom** (`AutoZoom`, SC5) as the main
+path. Built on the compositor-chain platform (Phase 0). Larger than a §-item in
+[`smooth-cursor-followups.md`](smooth-cursor-followups.md) — scoped and tracked here on its own.
+
+> **Built (2026-08-18).** Authored zoom is working end-to-end: a **zoom lane** under the scrubber with
+> add / select / drag / resize event blocks, **click-tick markers** that drags snap to, a selection
+> **inspector** (zoom amount + ease), and **drag-a-box on the preview** to aim (focus = box centre, zoom =
+> fit the box). Events persist to the per-clip **edit document** (`*.edit.json`) and resolve through the
+> shared `ZoomViewport[]` into both the live preview and every export preset. Decisions taken during the
+> build: events are anchored in **source time** (pinned to content across cuts); the old auto-zoom UX was
+> **removed** (not kept as a generator) per review — `AutoZoom` stays as dormant, tested code should a
+> "suggest from clicks" ever be wanted. **Remaining:** overlap/transition polish between adjacent events;
+> keyboard nudge/delete; a possible "suggest from clicks" seed.
 
 ## Why
 
