@@ -72,11 +72,10 @@ public partial class TimelineEditorWindow : Window
     // Zoom authoring lane + inspector.
     private readonly List<ZoomEvent> _zoomEvents = new();
     private ZoomLane? _zoomLane;
-    private StackPanel? _zoomInspector;
-    private Slider? _zoomAmountSlider;
-    private TextBlock? _zoomAmountValue;
-    private Slider? _easeSlider;
-    private TextBlock? _easeValue;
+    private Border? _zoomPropsPane;
+    private NumericUpDown? _zoomAmountInput;
+    private NumericUpDown? _easeInInput;
+    private NumericUpDown? _easeOutInput;
     private bool _suppressZoomInspector;
 
     // Parameterless ctor for the XAML designer only.
@@ -207,11 +206,10 @@ public partial class TimelineEditorWindow : Window
     private void SetupZoomLane()
     {
         _zoomLane = this.FindControl<ZoomLane>("ZoomLane");
-        _zoomInspector = this.FindControl<StackPanel>("ZoomInspector");
-        _zoomAmountSlider = this.FindControl<Slider>("ZoomAmountSlider");
-        _zoomAmountValue = this.FindControl<TextBlock>("ZoomAmountValue");
-        _easeSlider = this.FindControl<Slider>("EaseSlider");
-        _easeValue = this.FindControl<TextBlock>("EaseValue");
+        _zoomPropsPane = this.FindControl<Border>("ZoomPropsPane");
+        _zoomAmountInput = this.FindControl<NumericUpDown>("ZoomAmountInput");
+        _easeInInput = this.FindControl<NumericUpDown>("EaseInInput");
+        _easeOutInput = this.FindControl<NumericUpDown>("EaseOutInput");
 
         if (_zoomLane is not null)
         {
@@ -225,12 +223,9 @@ public partial class TimelineEditorWindow : Window
             add.Click += (_, _) => AddZoomAt(_playheadSourceMs);
         if (this.FindControl<Button>("DeleteZoomButton") is { } del)
             del.Click += (_, _) => DeleteSelectedZoom();
-        if (_zoomAmountSlider is not null)
-            _zoomAmountSlider.PropertyChanged += (_, e) =>
-            { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomInspectorChanged(); };
-        if (_easeSlider is not null)
-            _easeSlider.PropertyChanged += (_, e) =>
-            { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomInspectorChanged(); };
+        if (_zoomAmountInput is not null) _zoomAmountInput.ValueChanged += (_, _) => OnZoomPropsChanged();
+        if (_easeInInput is not null) _easeInInput.ValueChanged += (_, _) => OnZoomPropsChanged();
+        if (_easeOutInput is not null) _easeOutInput.ValueChanged += (_, _) => OnZoomPropsChanged();
     }
 
     // The lane edited an event's timing (drag/resize) — rebuild the track and refresh the current-frame preview.
@@ -243,7 +238,7 @@ public partial class TimelineEditorWindow : Window
     private void OnZoomSelectionChanged(int index)
     {
         var has = index >= 0 && index < _zoomEvents.Count;
-        if (_zoomInspector is not null) _zoomInspector.IsVisible = has;
+        if (_zoomPropsPane is not null) _zoomPropsPane.IsVisible = has;
 
         // Selecting an event enters aim mode (full-frame view + a target box you can redraw); deselecting exits.
         _preview.AimMode = has;
@@ -253,10 +248,10 @@ public partial class TimelineEditorWindow : Window
         {
             var ev = _zoomEvents[index];
             _suppressZoomInspector = true;
-            if (_zoomAmountSlider is not null) _zoomAmountSlider.Value = ev.Zoom;
-            if (_easeSlider is not null) _easeSlider.Value = ev.EaseInMs / 1000.0;
+            if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)ev.Zoom;
+            if (_easeInInput is not null) _easeInInput.Value = (decimal)(ev.EaseInMs / 1000.0);
+            if (_easeOutInput is not null) _easeOutInput.Value = (decimal)(ev.EaseOutMs / 1000.0);
             _suppressZoomInspector = false;
-            UpdateZoomInspectorLabels();
         }
         UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
     }
@@ -284,39 +279,28 @@ public partial class TimelineEditorWindow : Window
         _zoomEvents[i] = _zoomEvents[i] with { Zoom = zoom, CenterX = cx, CenterY = cy };
 
         _suppressZoomInspector = true;
-        if (_zoomAmountSlider is not null) _zoomAmountSlider.Value = zoom;
+        if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)zoom;
         _suppressZoomInspector = false;
-        UpdateZoomInspectorLabels();
         _preview.SetTargetBox(EventBox(_zoomEvents[i])); // snap the shown box to the aspect-correct square
         OnZoomEventsChanged();
         _zoomLane.Refresh();
     }
 
-    private void OnZoomInspectorChanged()
+    // The right-pane inputs changed — apply zoom + independent ease-in/out to the selected event.
+    private void OnZoomPropsChanged()
     {
         if (_suppressZoomInspector || _zoomLane is null) return;
         var i = _zoomLane.SelectedIndex;
         if (i < 0 || i >= _zoomEvents.Count) return;
-        var ease = (long)Math.Round((_easeSlider?.Value ?? 0.4) * 1000);
         _zoomEvents[i] = _zoomEvents[i] with
         {
-            Zoom = Math.Max(1.05, _zoomAmountSlider?.Value ?? _zoomEvents[i].Zoom),
-            EaseInMs = ease,
-            EaseOutMs = ease,
+            Zoom = Math.Max(1.05, (double)(_zoomAmountInput?.Value ?? (decimal)_zoomEvents[i].Zoom)),
+            EaseInMs = (long)Math.Round((double)(_easeInInput?.Value ?? 0) * 1000),
+            EaseOutMs = (long)Math.Round((double)(_easeOutInput?.Value ?? 0) * 1000),
         };
-        UpdateZoomInspectorLabels();
         _preview.SetTargetBox(EventBox(_zoomEvents[i])); // zoom changed → the target box resizes to match
         OnZoomEventsChanged();
         _zoomLane.Refresh();
-    }
-
-    private void UpdateZoomInspectorLabels()
-    {
-        var inv = System.Globalization.CultureInfo.InvariantCulture;
-        if (_zoomAmountValue is not null && _zoomAmountSlider is not null)
-            _zoomAmountValue.Text = _zoomAmountSlider.Value.ToString("0.0#", inv) + "×";
-        if (_easeValue is not null && _easeSlider is not null)
-            _easeValue.Text = _easeSlider.Value.ToString("0.0#", inv) + "s";
     }
 
     private void AddZoomAt(long sourceMs)
@@ -592,10 +576,25 @@ public partial class TimelineEditorWindow : Window
 
     // ---- playback ----
 
-    private void OnPlayPause(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnPlayPause(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => TogglePlayPause();
+
+    private void TogglePlayPause()
     {
         if (_playing) StopPlayback(showStill: true);
         else StartPlayback();
+    }
+
+    protected override void OnKeyDown(Avalonia.Input.KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        // Space toggles play/pause — but not while a text field (e.g. a zoom numeric input) has focus, and not
+        // if a focused control (button / checkbox) already handled the key.
+        if (!e.Handled && e.Key == Avalonia.Input.Key.Space
+            && FocusManager?.GetFocusedElement() is not TextBox)
+        {
+            TogglePlayPause();
+            e.Handled = true;
+        }
     }
 
     private void StartPlayback()

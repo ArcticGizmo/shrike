@@ -13,7 +13,9 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 - Timeline zoom — place, drag and resize zoom events on a clip
 - Aim a zoom by dragging an aspect-locked box on the preview
 - Zoom snaps to where you clicked and eases smoothly in and out
+- Edit a selected zoom's amount and ease-in / ease-out in a side panel
 - Hand-placed zoom events replace the old automatic auto-zoom
+- Spacebar plays and pauses in the editor
 - The cursor is always recorded and drawn in the editor — a single **Show cursor** toggle, per clip
 - Cursor smoothing is one **Smoothness** slider, with **size** and click-**ripple** controls
 - Click ripples now preview live in the editor

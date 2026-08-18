@@ -34,7 +34,8 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="14">
+    <Grid ColumnDefinitions="*,Auto">
+        <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="14">
         <!-- Preview -->
         <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
             <controls:PreviewSurface Name="Preview" />
@@ -80,21 +81,8 @@
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                 <TextBlock Text="✦ Zoom" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
                 <Button Name="AddZoomButton" Classes="tool" Content="+ Add zoom" />
-                <StackPanel Name="ZoomInspector" Orientation="Horizontal" Spacing="10" IsVisible="False" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <TextBlock Text="Zoom" Classes="hint" VerticalAlignment="Center" />
-                        <Slider Name="ZoomAmountSlider" Width="118" Minimum="1.1" Maximum="3.0" VerticalAlignment="Center" />
-                        <TextBlock Name="ZoomAmountValue" Classes="hint" Width="34" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <TextBlock Text="Ease" Classes="hint" VerticalAlignment="Center" />
-                        <Slider Name="EaseSlider" Width="104" Minimum="0" Maximum="1.5" VerticalAlignment="Center" />
-                        <TextBlock Name="EaseValue" Classes="hint" Width="44" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <Button Name="DeleteZoomButton" Classes="tool" Content="Delete" />
-                </StackPanel>
                 <TextBlock Name="ZoomHint" Classes="hint" VerticalAlignment="Center"
-                           Text="double-click the lane to add · drag a box on the preview to aim" />
+                           Text="double-click the lane to add · select an event to edit it on the right · drag a box on the preview to aim" />
             </StackPanel>
             <controls:ZoomLane Name="ZoomLane" />
         </StackPanel>
@@ -112,5 +100,27 @@
                     HorizontalAlignment="Left" IsVisible="False" />
             <Button Grid.Column="7" Classes="tool accent" Content="Export…" Click="OnExport" />
         </Grid>
+        </Grid>
+
+        <!-- Right pane: properties of the selected zoom event (shown from code-behind on selection). -->
+        <Border Grid.Column="1" Name="ZoomPropsPane" IsVisible="False" Width="232"
+                Background="#1A150E" BorderBrush="#322A1E" BorderThickness="1,0,0,0" Padding="16">
+            <StackPanel Spacing="16">
+                <TextBlock Text="✦ Zoom event" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" />
+                <StackPanel Spacing="5">
+                    <TextBlock Text="Zoom (×)" Classes="hint" />
+                    <NumericUpDown Name="ZoomAmountInput" Minimum="1.1" Maximum="3.0" Increment="0.1" FormatString="0.0#" />
+                </StackPanel>
+                <StackPanel Spacing="5">
+                    <TextBlock Text="Ease in (s)" Classes="hint" />
+                    <NumericUpDown Name="EaseInInput" Minimum="0" Maximum="3" Increment="0.1" FormatString="0.0#" />
+                </StackPanel>
+                <StackPanel Spacing="5">
+                    <TextBlock Text="Ease out (s)" Classes="hint" />
+                    <NumericUpDown Name="EaseOutInput" Minimum="0" Maximum="3" Increment="0.1" FormatString="0.0#" />
+                </StackPanel>
+                <Button Name="DeleteZoomButton" Classes="tool" Content="Delete event" HorizontalAlignment="Stretch" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>
