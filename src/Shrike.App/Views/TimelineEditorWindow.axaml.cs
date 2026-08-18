@@ -850,6 +850,9 @@ public partial class TimelineEditorWindow : Window
         StopPlayback();
         _playheadSourceMs = sourceMs;
         _currentEditedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
+        // Move every playhead together — the source may be the strip OR the ruler, so drive all three (the
+        // strip updates its own during its drag, but the ruler drag needs the strip synced, and vice-versa).
+        _strip.SetPlayhead(sourceMs);
         _effectsLane?.SetPlayhead(sourceMs);
         _ruler?.SetPlayhead(sourceMs);
         RequestPreview(sourceMs);
