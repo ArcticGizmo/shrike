@@ -58,6 +58,18 @@ public class EffectTrackTests
     }
 
     [Fact]
+    public void Span_is_half_open_active_at_the_start_frame_not_the_end()
+    {
+        // Regression: an effect must be active at exactly its start (the playhead often sits there right after
+        // adding), and a hard-cut effect is at full strength there — otherwise it looks like nothing appears.
+        var hardCut = new CanvasEffect(1000, 2000, 0, 0, CanvasSpace.Content);
+        Assert.True(hardCut.ActiveAt(1000));       // start included
+        Assert.False(hardCut.ActiveAt(2000));      // end excluded (belongs to whatever follows)
+        Assert.Equal(1.0, hardCut.RampAt(1000), 6); // full strength at the start frame
+        Assert.Equal(0.0, hardCut.RampAt(2000), 6);
+    }
+
+    [Fact]
     public void Ramp_matches_zoom_events_envelope_exactly()
     {
         // A ZoomEffect and the equivalent ZoomEvent must agree on the eased envelope at every sample.

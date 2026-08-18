@@ -36,7 +36,9 @@ public abstract record EffectEvent(long StartMs, long EndMs, long EaseInMs, long
     /// so every effect fades consistently.</summary>
     public double RampAt(long tMs)
     {
-        if (tMs <= StartMs || tMs >= EndMs) return 0.0;
+        // Half-open [Start, End): the start frame is included (a hard-cut effect is at full strength there, an
+        // eased one smoothsteps up from 0), the end frame is not — so back-to-back effects never double up.
+        if (tMs < StartMs || tMs >= EndMs) return 0.0;
         double dur = DurationMs;
         double ein = Math.Clamp(EaseInMs, 0, dur);
         double eout = Math.Clamp(EaseOutMs, 0, dur);
@@ -48,8 +50,9 @@ public abstract record EffectEvent(long StartMs, long EndMs, long EaseInMs, long
         return 1.0;
     }
 
-    /// <summary>Whether this effect is active (envelope &gt; 0) at source time <paramref name="tMs"/>.</summary>
-    public bool ActiveAt(long tMs) => tMs > StartMs && tMs < EndMs;
+    /// <summary>Whether this effect spans source time <paramref name="tMs"/> — half-open [Start, End), so the
+    /// start frame counts and the end frame belongs to whatever follows.</summary>
+    public bool ActiveAt(long tMs) => tMs >= StartMs && tMs < EndMs;
 
     private protected static double Smoothstep(double x)
     {
