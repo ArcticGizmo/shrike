@@ -231,6 +231,7 @@ public partial class TimelineEditorWindow : Window
             _zoomLane.SelectionChanged += OnZoomSelectionChanged;
             _zoomLane.AddRequested += AddZoomAt;
         }
+        _preview.TargetBoxDrawn += OnTargetBoxDrawn;
         if (this.FindControl<Button>("AddZoomButton") is { } add)
             add.Click += (_, _) => AddZoomAt(_playheadSourceMs);
         if (this.FindControl<Button>("DeleteZoomButton") is { } del)
@@ -254,14 +255,52 @@ public partial class TimelineEditorWindow : Window
     {
         var has = index >= 0 && index < _zoomEvents.Count;
         if (_zoomInspector is not null) _zoomInspector.IsVisible = has;
-        if (!has) return;
 
-        var ev = _zoomEvents[index];
+        // Selecting an event enters aim mode (full-frame view + a target box you can redraw); deselecting exits.
+        _preview.AimMode = has;
+        _preview.SetTargetBox(has ? EventBox(_zoomEvents[index]) : null);
+
+        if (has)
+        {
+            var ev = _zoomEvents[index];
+            _suppressZoomInspector = true;
+            if (_zoomAmountSlider is not null) _zoomAmountSlider.Value = ev.Zoom;
+            if (_easeSlider is not null) _easeSlider.Value = ev.EaseInMs / 1000.0;
+            _suppressZoomInspector = false;
+            UpdateZoomInspectorLabels();
+        }
+        UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
+    }
+
+    // The selected event's target as a normalised box (a square in normalised coords: side = 1/zoom).
+    private static Rect EventBox(ZoomEvent ev)
+    {
+        var side = Math.Clamp(1.0 / Math.Max(1.05, ev.Zoom), 0.05, 1.0);
+        var x = Math.Clamp(ev.CenterX - side / 2, 0, 1 - side);
+        var y = Math.Clamp(ev.CenterY - side / 2, 0, 1 - side);
+        return new Rect(x, y, side, side);
+    }
+
+    // The user dragged a box on the preview → derive focus (centre) + zoom (fit the box), aspect enforced.
+    private void OnTargetBoxDrawn(Rect norm)
+    {
+        if (_zoomLane is null) return;
+        var i = _zoomLane.SelectedIndex;
+        if (i < 0 || i >= _zoomEvents.Count) return;
+
+        var side = Math.Max(norm.Width, norm.Height);
+        var zoom = Math.Clamp(1.0 / Math.Max(0.01, side), 1.05, 3.0);
+        var cx = Math.Clamp(norm.X + norm.Width / 2, 0, 1);
+        var cy = Math.Clamp(norm.Y + norm.Height / 2, 0, 1);
+        _zoomEvents[i] = _zoomEvents[i] with { Zoom = zoom, CenterX = cx, CenterY = cy };
+
         _suppressZoomInspector = true;
-        if (_zoomAmountSlider is not null) _zoomAmountSlider.Value = ev.Zoom;
-        if (_easeSlider is not null) _easeSlider.Value = ev.EaseInMs / 1000.0;
+        if (_zoomAmountSlider is not null) _zoomAmountSlider.Value = zoom;
         _suppressZoomInspector = false;
         UpdateZoomInspectorLabels();
+        _preview.SetTargetBox(EventBox(_zoomEvents[i])); // snap the shown box to the aspect-correct square
+        OnZoomEventsChanged();
+        _zoomLane.Refresh();
     }
 
     private void OnZoomInspectorChanged()
@@ -277,6 +316,7 @@ public partial class TimelineEditorWindow : Window
             EaseOutMs = ease,
         };
         UpdateZoomInspectorLabels();
+        _preview.SetTargetBox(EventBox(_zoomEvents[i])); // zoom changed → the target box resizes to match
         OnZoomEventsChanged();
         _zoomLane.Refresh();
     }
@@ -335,8 +375,10 @@ public partial class TimelineEditorWindow : Window
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
         var s = _smoothed.Frames[i];
 
-        // The resolved zoom viewport (crop) at this frame; the full frame when there's no zoom.
-        var vp = _zoomViewports is { } v && i < v.Length ? v[i] : new ZoomViewport(0, 0, _source.Width, _source.Height);
+        // The resolved zoom viewport (crop) at this frame; the full frame when there's no zoom — and always
+        // the full frame while aiming a selected event, so the whole picture is visible to box a target on.
+        var aiming = _zoomLane is { SelectedIndex: >= 0 };
+        var vp = (!aiming && _zoomViewports is { } v && i < v.Length) ? v[i] : new ZoomViewport(0, 0, _source.Width, _source.Height);
         var zoomed = vp.Width < _source.Width - 0.5 || vp.Height < _source.Height - 0.5;
 
         // Position a point (export px) as a fraction of the displayed crop — matches the export's viewport map.

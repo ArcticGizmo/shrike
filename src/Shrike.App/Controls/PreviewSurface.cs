@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 
 namespace Shrike.App.Controls;
@@ -22,6 +23,19 @@ public sealed class PreviewSurface : Control
     private Rect? _viewport;  // optional normalised source crop [0..1] — the zoom framing
     private double _cursorHeightFrac = 1.0 / 45.0; // overlay cursor height as a fraction of the drawn frame height
     private IReadOnlyList<PreviewRipple> _ripples = [];
+
+    // Zoom-aim: draw a box on the frame to define a zoom event's focus + factor.
+    private Rect? _targetBox;      // the selected event's current target, normalised [0..1]
+    private Rect _fitRect;         // where the frame was last drawn (control coords) — for pointer↔normalised maths
+    private bool _drawingBox;
+    private Point _boxStart;       // control coords
+    private Rect? _liveBox;        // in-progress box, control coords
+
+    /// <summary>When true, dragging on the preview draws a target box (raising <see cref="TargetBoxDrawn"/>).</summary>
+    public bool AimMode { get; set; }
+
+    /// <summary>Raised with a normalised [0..1] rectangle when the user finishes dragging a target box.</summary>
+    public event Action<Rect>? TargetBoxDrawn;
 
     /// <summary>Set (or refresh) the frame to display and repaint immediately.</summary>
     public void Show(IImage image)
@@ -65,6 +79,54 @@ public sealed class PreviewSurface : Control
         InvalidateVisual();
     }
 
+    /// <summary>Show the selected zoom event's target box (normalised), or clear it with null.</summary>
+    public void SetTargetBox(Rect? normalized)
+    {
+        _targetBox = normalized;
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (!AimMode) return;
+        _drawingBox = true;
+        _boxStart = e.GetPosition(this);
+        _liveBox = null;
+        e.Pointer.Capture(this);
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (!_drawingBox) return;
+        var p = e.GetPosition(this);
+        _liveBox = new Rect(
+            Math.Min(_boxStart.X, p.X), Math.Min(_boxStart.Y, p.Y),
+            Math.Abs(p.X - _boxStart.X), Math.Abs(p.Y - _boxStart.Y));
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (!_drawingBox) return;
+        _drawingBox = false;
+        e.Pointer.Capture(null);
+
+        if (_liveBox is { } box && _fitRect.Width > 0 && _fitRect.Height > 0)
+        {
+            // Control coords → normalised frame coords, clamped to the frame.
+            var nx = Math.Clamp((box.X - _fitRect.X) / _fitRect.Width, 0, 1);
+            var ny = Math.Clamp((box.Y - _fitRect.Y) / _fitRect.Height, 0, 1);
+            var nw = Math.Clamp(box.Width / _fitRect.Width, 0, 1 - nx);
+            var nh = Math.Clamp(box.Height / _fitRect.Height, 0, 1 - ny);
+            if (nw > 0.04 && nh > 0.04) TargetBoxDrawn?.Invoke(new Rect(nx, ny, nw, nh));
+        }
+        _liveBox = null;
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext ctx)
     {
         base.Render(ctx);
@@ -84,6 +146,7 @@ public sealed class PreviewSurface : Control
         var w = srcRect.Width * scale;
         var h = srcRect.Height * scale;
         var rect = new Rect((dst.Width - w) / 2, (dst.Height - h) / 2, w, h);
+        _fitRect = rect;
         ctx.DrawImage(img, srcRect, rect);
 
         // Ripples sit under the cursor, anchored where the click landed.
@@ -99,6 +162,30 @@ public sealed class PreviewSurface : Control
 
         if (_cursor is { } c)
             DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height), _cursorHeightFrac * rect.Height);
+
+        // Zoom-aim overlay: the selected event's target (dashed) + any in-progress drag (solid), dimming outside.
+        if (AimMode)
+        {
+            if (_targetBox is { } tb)
+            {
+                var box = new Rect(rect.X + tb.X * rect.Width, rect.Y + tb.Y * rect.Height, tb.Width * rect.Width, tb.Height * rect.Height);
+                DimOutside(ctx, rect, box);
+                ctx.DrawRectangle(null, new Pen(new SolidColorBrush(Color.Parse("#F5A524")), 1.6, DashStyle.Dash), box);
+            }
+            if (_liveBox is { } lb)
+                ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(30, 0xF5, 0xA5, 0x24)),
+                    new Pen(new SolidColorBrush(Color.Parse("#F5A524")), 1.6), lb);
+        }
+    }
+
+    // Darken the frame outside the target box so the aim reads clearly.
+    private static void DimOutside(DrawingContext ctx, Rect frame, Rect box)
+    {
+        var dim = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0));
+        ctx.FillRectangle(dim, new Rect(frame.X, frame.Y, frame.Width, box.Y - frame.Y));                 // top
+        ctx.FillRectangle(dim, new Rect(frame.X, box.Bottom, frame.Width, frame.Bottom - box.Bottom));    // bottom
+        ctx.FillRectangle(dim, new Rect(frame.X, box.Y, box.X - frame.X, box.Height));                    // left
+        ctx.FillRectangle(dim, new Rect(box.Right, box.Y, frame.Right - box.Right, box.Height));          // right
     }
 
     private static readonly IBrush CursorFill = new SolidColorBrush(Color.FromRgb(0xFB, 0xF6, 0xEC));
