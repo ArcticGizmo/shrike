@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Shrike.Core.Recording;
 
 namespace Shrike.App.Controls;
 
@@ -31,8 +32,9 @@ public sealed class PreviewSurface : Control
 
     /// <summary>A rendered canvas-effect layer to composite over the frame. <c>ContentSpace</c> layers ride the
     /// zoom crop (drawn through the same source rect as the frame); screen-space layers are fixed over the fit
-    /// rect. The layer bitmap is at source resolution.</summary>
-    public readonly record struct PreviewCanvas(IImage Layer, bool ContentSpace);
+    /// rect. <c>Transform</c> is the layer's animated move/scale/rotate/opacity for the current frame. The layer
+    /// bitmap is at source resolution.</summary>
+    public readonly record struct PreviewCanvas(IImage Layer, bool ContentSpace, LayerTransform Transform);
     private IReadOnlyList<PreviewCanvas> _canvasLayers = [];
 
     // Zoom-aim: draw / move / resize a box on the frame to define a zoom event's focus + factor. The box is a
@@ -229,7 +231,10 @@ public sealed class PreviewSurface : Control
 
         // Content-space canvas layers ride the same source crop as the frame (so they magnify with a zoom).
         foreach (var cv in _canvasLayers)
-            if (cv.ContentSpace) ctx.DrawImage(cv.Layer, srcRect, rect);
+            if (cv.ContentSpace && cv.Transform.Opacity > 0)
+                using (PushLayer(ctx, cv.Transform, rect, rect.Width / srcRect.Width))
+                using (ctx.PushOpacity(cv.Transform.Opacity))
+                    ctx.DrawImage(cv.Layer, srcRect, rect);
 
         // Spotlight glow sits under everything else, following the cursor (drawn as a radial gradient ellipse).
         if (_spotlight is { } sp && sp.Alpha > 0)
@@ -268,7 +273,10 @@ public sealed class PreviewSurface : Control
 
         // Screen-space canvas layers are fixed over the output frame — on top, ignoring the zoom crop.
         foreach (var cv in _canvasLayers)
-            if (!cv.ContentSpace) ctx.DrawImage(cv.Layer, new Rect(cv.Layer.Size), rect);
+            if (!cv.ContentSpace && cv.Transform.Opacity > 0)
+                using (PushLayer(ctx, cv.Transform, rect, rect.Width / Math.Max(1, cv.Layer.Size.Width)))
+                using (ctx.PushOpacity(cv.Transform.Opacity))
+                    ctx.DrawImage(cv.Layer, new Rect(cv.Layer.Size), rect);
 
         // Zoom-aim overlay: dim outside the target square, outline it, and draw aspect-locked corner handles.
         if (AimMode && _targetBox is { } tb)
@@ -283,6 +291,18 @@ public sealed class PreviewSurface : Control
             foreach (var corner in new[] { box.TopLeft, box.TopRight, box.BottomLeft, box.BottomRight })
                 ctx.DrawRectangle(fill, stroke, new Rect(corner.X - 4, corner.Y - 4, 8, 8), 2, 2);
         }
+    }
+
+    // Build the animated-layer transform in display space: scale + rotate about the drawn frame's centre, plus
+    // a translate mapped from source pixels to display pixels. (Opacity is pushed separately by the caller.)
+    private static DrawingContext.PushedState PushLayer(DrawingContext ctx, LayerTransform t, Rect r, double srcToDisp)
+    {
+        double cx = r.Center.X, cy = r.Center.Y;
+        var m = Matrix.CreateTranslation(-cx, -cy)
+              * Matrix.CreateScale(t.Scale, t.Scale)
+              * Matrix.CreateRotation(t.RotationDeg * Math.PI / 180.0)
+              * Matrix.CreateTranslation(cx + t.Dx * srcToDisp, cy + t.Dy * srcToDisp);
+        return ctx.PushTransform(m);
     }
 
     // Darken the frame outside the target box so the aim reads clearly.

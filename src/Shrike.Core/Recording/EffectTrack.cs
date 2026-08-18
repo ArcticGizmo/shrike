@@ -98,12 +98,29 @@ public sealed class EffectTrack
     public bool HasSpotlight => OfKind<SpotlightEffect>().Any();
 
     /// <summary>Per output frame: one effect's eased 0..1 envelope (its <see cref="EffectEvent.RampAt"/> sampled
-    /// at each frame's source time). Drives a canvas layer's fade / a spotlight's intensity.</summary>
+    /// at each frame's source time). Drives a spotlight's intensity.</summary>
     public static double[] ResolveEnvelope(EffectEvent ev, Timeline timeline, int frameCount, int fps)
     {
         var a = new double[Math.Max(0, frameCount)];
         for (var i = 0; i < a.Length; i++)
             a[i] = ev.RampAt(timeline.EditedToSourceMs(fps > 0 ? (long)(i * 1000.0 / fps) : 0));
+        return a;
+    }
+
+    /// <summary>Per output frame: a canvas layer's full transform — its keyframed move/scale/rotate/opacity,
+    /// with the opacity folded together with the effect's own eased envelope (so a static layer with no
+    /// animation reduces to identity geometry at the envelope's alpha, i.e. exactly today's behaviour).</summary>
+    public static LayerTransform[] ResolveCanvasTransforms(CanvasEffect c, Timeline timeline, int frameCount, int fps)
+    {
+        var a = new LayerTransform[Math.Max(0, frameCount)];
+        for (var i = 0; i < a.Length; i++)
+        {
+            var srcMs = timeline.EditedToSourceMs(fps > 0 ? (long)(i * 1000.0 / fps) : 0);
+            var env = c.RampAt(srcMs);
+            var local = Math.Clamp(srcMs - c.StartMs, 0, c.DurationMs);
+            var t = c.Animation.SampleAt(local);
+            a[i] = t with { Opacity = env * t.Opacity };
+        }
         return a;
     }
 

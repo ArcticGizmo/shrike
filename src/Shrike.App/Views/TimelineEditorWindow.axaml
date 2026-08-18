@@ -160,6 +160,17 @@
                 <!-- Canvas editor. -->
                 <StackPanel Name="CanvasEditor" Spacing="10" IsVisible="False">
                     <CheckBox Name="CanvasScreenSpace" Foreground="#B8AE9C" Content="Fixed on screen (ignore zoom)" />
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Animation" Classes="hint" />
+                        <ComboBox Name="CanvasAnimCombo" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="None (static)" />
+                            <ComboBoxItem Content="Fade in / out" />
+                            <ComboBoxItem Content="Slide from left" />
+                            <ComboBoxItem Content="Slide from right" />
+                            <ComboBoxItem Content="Slide from bottom" />
+                            <ComboBoxItem Content="Pop in" />
+                        </ComboBox>
+                    </StackPanel>
                     <ToggleButton Name="CanvasEditToggle" Classes="tool" HorizontalAlignment="Stretch" Content="✎ Edit drawing" />
                     <StackPanel Name="CanvasTools" Spacing="8" IsVisible="False">
                         <TextBlock Text="Tool" Classes="hint" />

@@ -200,12 +200,26 @@ relaunch the dev exe on every change (kill running Shrike first).
   export; content/screen behaves through a zoom; redaction is opaque in the output. *(Interactive draw
   pass pending, per the Avalonia-wiring convention.)*
 
-### M5 · Transform animation channels  *(deferred, architected-for)*
-- Add keyframeable transform channels (position/scale/rotation/opacity) evaluated per frame; the cached
-  canvas sprite is blit with the animated transform — **no re-raster**, static stays the single-keyframe
-  case. Optionally extend animated params to spotlight/zoom.
-- *Content* animation (text typing on, freehand reveal) remains a later, narrower add.
-- **Exit / demo:** a canvas layer slides / scales / fades over its range.
+### ✅ M5 · Transform animation channels
+- ✅ **Model** (`CanvasAnimation.cs`): five keyframe channels (translate x/y, scale, rotation, opacity) in
+  the layer's **local** time, sampled with hold-at-ends + smoothstep between keys. `LayerTransform` is the
+  resolved per-frame transform; `CanvasAnimation.Identity` (all empty) reproduces a static layer exactly, so
+  animation is **purely additive**. `CanvasEffect.Animation` carries it; `EffectTrack.ResolveCanvasTransforms`
+  folds the eased envelope into per-frame opacity.
+- ✅ **Compositor**: `CanvasCompositor` blits under the per-frame `LayerTransform` — a **static layer**
+  (identity geometry) keeps the cheap straight blit; an **animated** one takes a bilinear **affine** resample
+  (inverse-mapped, scale/rotate about the frame centre). The cached sprite is **never re-rasterised**.
+- ✅ **Authoring**: a preset dropdown in the canvas pane (**Fade · Slide from left/right/bottom · Pop**)
+  populates the keyframe channels; "None" clears to static. Presets seed the full model — a per-key editor
+  is the natural next refinement.
+- ✅ **Preview WYSIWYG**: `PreviewSurface` applies the same per-frame transform (scale/rotate about the drawn
+  frame centre + mapped translate + opacity) to the canvas layer, so scrubbing shows the animation.
+- ✅ **Persistence**: the animation channels round-trip in the v2 edit doc.
+- ✅ **Tests**: keyframe sampling, resolve identity-vs-animated, affine translate + opacity blit, preset
+  generation, animation persistence. Build clean; **280 passed**.
+- *Deferred (narrower, later):* a per-key timeline editor; *content* animation (text typing on, freehand
+  reveal); animated params on spotlight/zoom (the same channel model extends to them).
+- **Exit / demo:** a canvas layer slides / scales / fades over its range, in the preview and the export.
 
 ---
 

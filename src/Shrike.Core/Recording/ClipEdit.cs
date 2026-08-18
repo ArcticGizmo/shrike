@@ -97,6 +97,9 @@ public sealed class ClipEdit
                     Start = c.StartMs, End = c.EndMs, EaseIn = c.EaseInMs, EaseOut = c.EaseOutMs,
                     Screen = c.Space == CanvasSpace.Screen,
                     Items = AnnotationJson.ToDtos(c.Annotations).ToArray(),
+                    AnimX = FlatKeys(c.Animation.X), AnimY = FlatKeys(c.Animation.Y),
+                    AnimScale = FlatKeys(c.Animation.Scale), AnimRot = FlatKeys(c.Animation.Rotation),
+                    AnimOpacity = FlatKeys(c.Animation.Opacity),
                 }).ToArray(),
         };
         return JsonSerializer.Serialize(dto, JsonOptions);
@@ -137,8 +140,22 @@ public sealed class ClipEdit
                 events.Add(new CanvasEffect(c.Start, c.End, c.EaseIn, c.EaseOut, c.Screen ? CanvasSpace.Screen : CanvasSpace.Content)
                 {
                     Annotations = AnnotationJson.FromDtos(c.Items),
+                    Animation = new CanvasAnimation(Keys(c.AnimX), Keys(c.AnimY), Keys(c.AnimScale), Keys(c.AnimRot), Keys(c.AnimOpacity)),
                 });
         return new ClipEdit(new EffectTrack(events));
+    }
+
+    // Keyframe channel ↔ flat [at0,v0,at1,v1,…] pairs (null when empty). Read back sorted by time.
+    private static double[]? FlatKeys(IReadOnlyList<Keyframe> ks)
+        => ks.Count == 0 ? null : ks.SelectMany(k => new[] { (double)k.AtMs, k.Value }).ToArray();
+
+    private static IReadOnlyList<Keyframe> Keys(double[]? flat)
+    {
+        var ks = new List<Keyframe>();
+        if (flat is not null)
+            for (var i = 0; i + 1 < flat.Length; i += 2) ks.Add(new Keyframe((long)flat[i], flat[i + 1]));
+        ks.Sort((a, b) => a.AtMs.CompareTo(b.AtMs));
+        return ks;
     }
 
     /// <summary>
@@ -225,5 +242,10 @@ public sealed class ClipEdit
         public long EaseOut { get; set; }
         public bool Screen { get; set; }
         public AnnotationDto[]? Items { get; set; }
+        public double[]? AnimX { get; set; }
+        public double[]? AnimY { get; set; }
+        public double[]? AnimScale { get; set; }
+        public double[]? AnimRot { get; set; }
+        public double[]? AnimOpacity { get; set; }
     }
 }

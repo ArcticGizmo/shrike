@@ -271,7 +271,7 @@ public partial class ExportDialog : Window
         {
             var sprite = RasterizeCanvas(c, w, h);
             if (sprite is null) continue;
-            var comp = new CanvasCompositor(sprite, w, h, EffectTrack.ResolveEnvelope(c, _timeline, frameCount, fps));
+            var comp = new CanvasCompositor(sprite, w, h, EffectTrack.ResolveCanvasTransforms(c, _timeline, frameCount, fps));
             (c.Space == CanvasSpace.Screen ? screenCanvas : contentCanvas).Add(comp);
         }
 

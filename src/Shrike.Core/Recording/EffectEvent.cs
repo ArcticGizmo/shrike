@@ -135,4 +135,8 @@ public sealed record CanvasEffect(
     /// <summary>The drawing, in source-frame image pixels. Empty = an as-yet-undrawn canvas.</summary>
     public IReadOnlyList<Shrike.Core.Annotations.Annotation> Annotations { get; init; }
         = Array.Empty<Shrike.Core.Annotations.Annotation>();
+
+    /// <summary>Keyframed transform (move / scale / rotate / fade) applied to the layer over its span. Identity
+    /// (the default) is a static layer — animation is additive over that.</summary>
+    public CanvasAnimation Animation { get; init; } = CanvasAnimation.Identity;
 }

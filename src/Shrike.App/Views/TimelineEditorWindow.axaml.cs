@@ -95,6 +95,7 @@ public partial class TimelineEditorWindow : Window
     private Control? _canvasTools;
     private Avalonia.Controls.Primitives.ToggleButton? _canvasEditToggle;
     private CheckBox? _canvasScreenSpace;
+    private ComboBox? _canvasAnimCombo;
     private AnnotationDocument? _canvasDoc;
     private int _editingCanvasIndex = -1;
     private bool _suppressCanvasToggle;
@@ -291,8 +292,10 @@ public partial class TimelineEditorWindow : Window
         _canvasTools = this.FindControl<StackPanel>("CanvasTools");
         _canvasEditToggle = this.FindControl<Avalonia.Controls.Primitives.ToggleButton>("CanvasEditToggle");
         _canvasScreenSpace = this.FindControl<CheckBox>("CanvasScreenSpace");
+        _canvasAnimCombo = this.FindControl<ComboBox>("CanvasAnimCombo");
         if (_canvasEditToggle is not null) _canvasEditToggle.IsCheckedChanged += (_, _) => OnCanvasEditToggled();
         if (_canvasScreenSpace is not null) _canvasScreenSpace.IsCheckedChanged += (_, _) => OnCanvasSpaceChanged();
+        if (_canvasAnimCombo is not null) _canvasAnimCombo.SelectionChanged += (_, _) => OnCanvasAnimChanged();
     }
 
     // The zoom effects, as the track the preview + export consume. Non-zoom effects don't affect framing.
@@ -366,6 +369,9 @@ public partial class TimelineEditorWindow : Window
         else if (canvas is not null)
         {
             if (_canvasScreenSpace is not null) _canvasScreenSpace.IsChecked = canvas.Space == CanvasSpace.Screen;
+            // The combo applies presets; it can't reverse-map an arbitrary animation, so it shows the neutral
+            // item on selection (picking a preset overwrites; leaving it keeps any existing keyframes).
+            if (_canvasAnimCombo is not null) _canvasAnimCombo.SelectedIndex = 0;
             if (_canvasTools is not null) _canvasTools.IsVisible = false;
             if (_canvasEditToggle is not null) { _suppressCanvasToggle = true; _canvasEditToggle.IsChecked = false; _suppressCanvasToggle = false; }
         }
@@ -394,6 +400,28 @@ public partial class TimelineEditorWindow : Window
         var i = _effectsLane.SelectedIndex;
         if (i < 0 || i >= _effects.Count || _effects[i] is not CanvasEffect ev) return;
         _effects[i] = ev with { Space = _canvasScreenSpace?.IsChecked == true ? CanvasSpace.Screen : CanvasSpace.Content };
+        UpdateCursorOverlay();
+    }
+
+    // The animation preset dropdown changed — apply the chosen preset's keyframes to the selected canvas.
+    private void OnCanvasAnimChanged()
+    {
+        if (_suppressInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not CanvasEffect ev) return;
+        var kind = (_canvasAnimCombo?.SelectedIndex ?? 0) switch
+        {
+            1 => CanvasAnimationKind.Fade,
+            2 => CanvasAnimationKind.SlideLeft,
+            3 => CanvasAnimationKind.SlideRight,
+            4 => CanvasAnimationKind.SlideUp,
+            5 => CanvasAnimationKind.Pop,
+            _ => CanvasAnimationKind.None,
+        };
+        var anim = kind == CanvasAnimationKind.None
+            ? CanvasAnimation.Identity
+            : CanvasAnimationPresets.Build(kind, ev.DurationMs, _source.Width, _source.Height);
+        _effects[i] = ev with { Animation = anim };
         UpdateCursorOverlay();
     }
 
@@ -676,7 +704,12 @@ public partial class TimelineEditorWindow : Window
         var layers = new List<PreviewSurface.PreviewCanvas>();
         foreach (var c in _effects.OfType<CanvasEffect>())
             if (c.ActiveAt(srcMs) && CanvasLayerBitmap(c) is { } bmp)
-                layers.Add(new PreviewSurface.PreviewCanvas(bmp, c.Space == CanvasSpace.Content));
+            {
+                var local = Math.Clamp(srcMs - c.StartMs, 0, c.DurationMs);
+                var t = c.Animation.SampleAt(local);
+                t = t with { Opacity = c.RampAt(srcMs) * t.Opacity };
+                layers.Add(new PreviewSurface.PreviewCanvas(bmp, c.Space == CanvasSpace.Content, t));
+            }
         return layers;
     }
 
