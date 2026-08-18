@@ -1,0 +1,470 @@
+<title>Timeline as Platform</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ---------- tokens: light is the bare :root; dark is the app's own world ---------- */
+  :root{
+    --ground:#F4EEE2; --surface:#FBF7EF; --surface-2:#F0E9DA; --line:#E0D5C1;
+    --ink:#241D13; --muted:#71634C; --faint:#9C8E76;
+    --accent:#B5730A; --accent-ink:#8A5606; --accent-soft:rgba(181,115,10,.12); --accent-line:rgba(181,115,10,.32);
+    --lane-cut:#8A7E68; --lane-zoom:#2E7C74; --lane-cursor:#B5730A; --lane-future:#7A6A93;
+    --good:#3F7D4E; --warn:#B5730A;
+    --shadow:0 1px 0 rgba(0,0,0,.04), 0 18px 40px -28px rgba(60,40,10,.45);
+    --mono:ui-monospace,"Cascadia Code","Cascadia Mono",Consolas,"SFMono-Regular",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#141009; --surface:#1D1710; --surface-2:#251E14; --line:#382D1D;
+      --ink:#EEE6D6; --muted:#A89A80; --faint:#71634C;
+      --accent:#F5A524; --accent-ink:#F8BD57; --accent-soft:rgba(245,165,36,.14); --accent-line:rgba(245,165,36,.30);
+      --lane-cut:#8C8069; --lane-zoom:#5FA9A1; --lane-cursor:#F5A524; --lane-future:#9A86B4;
+      --good:#66B27C; --warn:#F5A524;
+      --shadow:0 1px 0 rgba(0,0,0,.3), 0 24px 60px -30px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#141009; --surface:#1D1710; --surface-2:#251E14; --line:#382D1D;
+    --ink:#EEE6D6; --muted:#A89A80; --faint:#71634C;
+    --accent:#F5A524; --accent-ink:#F8BD57; --accent-soft:rgba(245,165,36,.14); --accent-line:rgba(245,165,36,.30);
+    --lane-cut:#8C8069; --lane-zoom:#5FA9A1; --lane-cursor:#F5A524; --lane-future:#9A86B4;
+    --good:#66B27C; --warn:#F5A524;
+    --shadow:0 1px 0 rgba(0,0,0,.3), 0 24px 60px -30px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:17px; line-height:1.62;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px}
+  section{padding:56px 0; border-top:1px solid var(--line)}
+  section:first-of-type{border-top:0}
+
+  /* ---------- type ---------- */
+  h1,h2,h3{margin:0; text-wrap:balance; letter-spacing:-.02em; line-height:1.1}
+  h1{font-size:clamp(2.3rem,6vw,4rem); font-weight:800}
+  h2{font-size:clamp(1.5rem,3.2vw,2.15rem); font-weight:750}
+  h3{font-size:1.12rem; font-weight:700; letter-spacing:-.01em}
+  p{margin:.9em 0; max-width:66ch}
+  .lede{font-size:clamp(1.12rem,2vw,1.4rem); line-height:1.5; color:var(--ink); max-width:40ch}
+  strong{font-weight:680}
+  a{color:var(--accent-ink); text-underline-offset:3px; text-decoration-thickness:1px}
+
+  .eyebrow{
+    font-family:var(--mono); font-size:.74rem; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--accent-ink); display:inline-flex; gap:.6em; align-items:center; margin:0 0 18px;
+  }
+  .eyebrow::before{content:"✦"; color:var(--accent); font-size:.9em; transform:translateY(-.5px)}
+  .muted{color:var(--muted)}
+  .kicker{font-family:var(--mono); font-size:.8rem; color:var(--muted); letter-spacing:.02em}
+
+  /* ---------- hero ---------- */
+  .hero{padding-top:64px; padding-bottom:20px}
+  .hero h1{margin-bottom:.32em}
+  .hero .amber{color:var(--accent)}
+  .hero-meta{
+    display:flex; flex-wrap:wrap; gap:8px 10px; margin-top:30px; font-family:var(--mono); font-size:.78rem;
+  }
+  .chip{
+    border:1px solid var(--line); background:var(--surface); color:var(--muted);
+    padding:5px 11px; border-radius:999px; white-space:nowrap;
+  }
+  .chip b{color:var(--ink); font-weight:600}
+
+  /* ---------- editor mock ---------- */
+  figure{margin:0}
+  .app{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    box-shadow:var(--shadow); overflow:hidden; margin-top:8px;
+  }
+  .titlebar{
+    display:flex; align-items:center; gap:12px; padding:11px 14px;
+    background:var(--surface-2); border-bottom:1px solid var(--line);
+    font-family:var(--mono); font-size:.78rem; color:var(--muted);
+  }
+  .dots{display:flex; gap:7px}
+  .dots i{width:11px; height:11px; border-radius:50%; background:var(--line); display:block}
+  .dots i:first-child{background:#E0644B} .dots i:nth-child(2){background:#E7A93B} .dots i:nth-child(3){background:#4FB06A}
+  .titlebar .file{color:var(--ink)} .titlebar .spacer{flex:1}
+
+  /* preview strip */
+  .preview{
+    position:relative; height:150px; background:
+      radial-gradient(120% 140% at 62% 30%, color-mix(in srgb, var(--accent) 8%, var(--surface-2)) 0%, var(--surface-2) 60%);
+    border-bottom:1px solid var(--line); overflow:hidden;
+  }
+  .zoombox{
+    position:absolute; left:47%; top:26%; width:120px; height:76px; border:1.5px dashed var(--lane-zoom);
+    border-radius:6px; color:var(--lane-zoom);
+  }
+  .zoombox span{position:absolute; top:-9px; left:8px; font-family:var(--mono); font-size:.62rem; background:var(--surface-2); padding:0 5px; letter-spacing:.08em}
+  .ripple,.ripple::after{position:absolute; border:2px solid var(--accent); border-radius:50%}
+  .ripple{left:56%; top:52%; width:8px; height:8px; opacity:.9}
+  .ripple::after{content:""; left:-13px; top:-13px; width:34px; height:34px; opacity:.4; border-width:1.5px}
+  .cursor{position:absolute; left:56%; top:52%; color:var(--ink); filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+  .badge{position:absolute; right:12px; bottom:10px; font-family:var(--mono); font-size:.64rem; color:var(--muted); letter-spacing:.06em}
+
+  /* timeline */
+  .tl{--gutter:150px; --dur:100; font-family:var(--mono)}
+  .transport{
+    display:flex; align-items:center; gap:14px; padding:9px 14px; background:var(--surface);
+    border-bottom:1px solid var(--line); font-size:.76rem; color:var(--muted);
+  }
+  .play{width:26px; height:26px; border-radius:6px; border:1px solid var(--accent-line); color:var(--accent);
+    display:grid; place-items:center; background:var(--accent-soft)}
+  .scrub{flex:1; height:4px; border-radius:3px; background:var(--line); position:relative}
+  .scrub::before{content:""; position:absolute; left:0; top:0; height:100%; width:44%; background:var(--accent); border-radius:3px; opacity:.6}
+  .scrub::after{content:""; position:absolute; left:44%; top:-4px; width:12px; height:12px; border-radius:50%; background:var(--accent)}
+
+  .lanes{position:relative}
+  .lane{display:grid; grid-template-columns:var(--gutter) 1fr; border-bottom:1px solid var(--line)}
+  .lane:last-child{border-bottom:0}
+  .lbl{
+    padding:0 12px; display:flex; align-items:center; gap:8px; min-height:46px;
+    border-right:1px solid var(--line); font-size:.75rem; color:var(--ink); background:var(--surface-2);
+  }
+  .lbl .swatch{width:9px; height:9px; border-radius:2px; flex:none}
+  .lbl small{display:block; color:var(--faint); font-size:.66rem; letter-spacing:.02em}
+  .track{position:relative; min-height:46px; background:
+    repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), var(--line) calc(10% - 1px), var(--line) 10%);
+  }
+  .ruler{grid-template-columns:var(--gutter) 1fr}
+  .ruler .track{min-height:26px; display:flex; align-items:center}
+  .tick{position:absolute; top:0; height:100%; border-left:1px solid var(--line); font-size:.6rem; color:var(--faint); padding-left:4px; display:flex; align-items:center}
+
+  .clip{position:absolute; top:8px; height:30px; border-radius:6px; display:flex; align-items:center; gap:6px;
+    padding:0 9px; font-size:.68rem; color:var(--ink); border:1px solid var(--line);
+    background:color-mix(in srgb, var(--lane-cut) 22%, var(--surface)); overflow:hidden}
+  .clip.cut{background:repeating-linear-gradient(45deg, var(--surface) 0 6px, var(--surface-2) 6px 12px);
+    color:var(--faint); border-style:dashed}
+  .clip.zoom{background:color-mix(in srgb, var(--lane-zoom) 26%, var(--surface)); border-color:color-mix(in srgb,var(--lane-zoom) 55%, transparent); color:var(--ink)}
+  .clip.zoom::before{content:"◗"; color:var(--lane-zoom)}
+  .clip .grip{position:absolute; top:0; bottom:0; width:6px; background:color-mix(in srgb, var(--lane-zoom) 60%, transparent)}
+  .clip .grip.l{left:0; border-radius:6px 0 0 6px} .clip .grip.r{right:0; border-radius:0 6px 6px 0}
+  .cursorline{position:absolute; top:20px; left:1%; right:1%; height:5px; border-radius:3px;
+    background:linear-gradient(90deg, color-mix(in srgb,var(--accent) 55%, transparent), color-mix(in srgb,var(--accent) 30%, transparent))}
+  .clickdot{position:absolute; top:14px; width:16px; height:16px; margin-left:-8px; border-radius:50%;
+    border:2px solid var(--accent); background:var(--accent-soft)}
+  .clickdot::after{content:""; position:absolute; inset:3px; border-radius:50%; background:var(--accent); opacity:.85}
+
+  .lane.future{opacity:.5}
+  .lane.future .lbl{background:var(--surface)}
+  .lane.future .track{background:none}
+  .ghost{position:absolute; top:9px; height:28px; border-radius:6px; border:1px dashed var(--lane-future);
+    color:var(--lane-future); font-size:.66rem; display:flex; align-items:center; padding:0 9px; letter-spacing:.02em;
+    background:color-mix(in srgb, var(--lane-future) 8%, transparent)}
+  .divider-lane{grid-column:1/-1; padding:6px 14px; font-size:.66rem; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--faint); background:var(--surface-2); border-bottom:1px solid var(--line); text-align:center}
+
+  .playhead{position:absolute; top:0; bottom:0; width:2px; background:var(--accent); left:calc(var(--gutter) + (100% - var(--gutter))*0.44); z-index:5; pointer-events:none}
+  .playhead::before{content:""; position:absolute; top:-1px; left:-5px; width:12px; height:9px; background:var(--accent); border-radius:2px 2px 3px 3px}
+  @media (prefers-reduced-motion:no-preference){
+    .playhead{animation:sweep 9s ease-in-out infinite alternate}
+    @keyframes sweep{from{left:calc(var(--gutter) + (100% - var(--gutter))*0.08)} to{left:calc(var(--gutter) + (100% - var(--gutter))*0.9)}}
+  }
+  figcaption{font-family:var(--mono); font-size:.72rem; color:var(--muted); margin-top:12px; text-align:center; letter-spacing:.02em}
+
+  /* ---------- generic blocks ---------- */
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:20px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:22px}
+  .card h3{margin-bottom:.4em; display:flex; align-items:center; gap:9px}
+  .card p{margin:.5em 0; font-size:.96rem; color:var(--muted); max-width:none}
+  .tag{font-family:var(--mono); font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:5px; white-space:nowrap}
+  .tag.now{background:var(--accent-soft); color:var(--accent-ink); border:1px solid var(--accent-line)}
+  .tag.next{background:color-mix(in srgb,var(--lane-zoom) 15%, transparent); color:var(--lane-zoom); border:1px solid color-mix(in srgb,var(--lane-zoom) 40%, transparent)}
+  .tag.later{background:color-mix(in srgb,var(--lane-future) 14%, transparent); color:var(--lane-future); border:1px solid color-mix(in srgb,var(--lane-future) 38%, transparent)}
+  .tag.done{background:color-mix(in srgb,var(--good) 15%, transparent); color:var(--good); border:1px solid color-mix(in srgb,var(--good) 40%, transparent)}
+
+  /* pipeline diagram */
+  .flow{display:flex; align-items:stretch; gap:0; flex-wrap:wrap; margin-top:18px; font-family:var(--sans)}
+  .node{flex:1 1 150px; min-width:150px; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 15px; position:relative}
+  .node .n{font-family:var(--mono); font-size:.64rem; color:var(--accent-ink); letter-spacing:.1em; text-transform:uppercase}
+  .node h4{margin:.3em 0 .2em; font-size:.98rem}
+  .node p{margin:0; font-size:.82rem; color:var(--muted); max-width:none}
+  .node code{font-family:var(--mono); font-size:.76rem; color:var(--ink); background:var(--accent-soft); padding:1px 5px; border-radius:4px}
+  .arrow{align-self:center; color:var(--faint); padding:0 10px; font-size:1.2rem}
+  .split{display:flex; flex-direction:column; gap:10px; flex:1 1 180px; min-width:180px}
+  .split .node{flex:none}
+  .split .node.wys{border-color:var(--accent-line); background:var(--accent-soft)}
+
+  /* table */
+  .tablewrap{overflow-x:auto; margin-top:18px; border:1px solid var(--line); border-radius:12px}
+  table{border-collapse:collapse; width:100%; min-width:620px; font-size:.9rem}
+  thead th{font-family:var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted);
+    text-align:left; padding:12px 14px; background:var(--surface-2); border-bottom:1px solid var(--line); font-weight:600}
+  td{padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:top; color:var(--muted)}
+  tbody tr:last-child td{border-bottom:0}
+  td:first-child{color:var(--ink); font-weight:600; white-space:nowrap}
+  td code{font-family:var(--mono); font-size:.8rem; color:var(--ink)}
+  tbody tr:hover td{background:color-mix(in srgb, var(--accent) 4%, transparent)}
+
+  /* build-order steps */
+  .steps{counter-reset:s; display:grid; gap:12px; margin-top:20px}
+  .step{display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:start; background:var(--surface);
+    border:1px solid var(--line); border-radius:10px; padding:16px 18px}
+  .step::before{counter-increment:s; content:counter(s); font-family:var(--mono); font-weight:700; color:var(--accent);
+    width:30px; height:30px; border:1px solid var(--accent-line); border-radius:8px; display:grid; place-items:center; font-size:.9rem; background:var(--accent-soft)}
+  .step h4{margin:.1em 0 .25em; font-size:1rem} .step p{margin:0; font-size:.9rem; color:var(--muted); max-width:none}
+  .step .where{font-family:var(--mono); font-size:.68rem; color:var(--faint)}
+
+  /* roadmap */
+  .road{display:grid; gap:0; margin-top:20px; border-left:2px solid var(--line); padding-left:0}
+  .phase{position:relative; padding:0 0 26px 26px}
+  .phase::before{content:""; position:absolute; left:-7px; top:4px; width:12px; height:12px; border-radius:50%;
+    background:var(--surface); border:2px solid var(--faint)}
+  .phase.active::before{border-color:var(--accent); background:var(--accent)}
+  .phase .ph{font-family:var(--mono); font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--accent-ink)}
+  .phase h3{margin:.2em 0 .3em; font-size:1.1rem}
+  .phase p{margin:0; font-size:.92rem; color:var(--muted)}
+
+  footer{border-top:1px solid var(--line); padding:34px 0 60px; color:var(--faint); font-family:var(--mono); font-size:.74rem}
+
+  @media (max-width:720px){
+    body{font-size:16px}
+    .grid2{grid-template-columns:1fr}
+    .tl{--gutter:104px}
+    .lbl small{display:none}
+    .arrow{transform:rotate(90deg); padding:6px 0; align-self:center}
+    .flow{flex-direction:column}
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Shrike · design vision · 2026-08-18</div>
+    <h1>The timeline is the<br><span class="amber">platform</span>.</h1>
+    <p class="lede">One editing surface where every effect is an event you place, shape, and see — cursor, clicks, zoom, and everything we add next.</p>
+    <div class="hero-meta">
+      <span class="chip"><b>Today</b> · one compositor bakes cursor + ripple + zoom</span>
+      <span class="chip"><b>Next</b> · typed events on lanes, one compositor chain</span>
+      <span class="chip"><b>Rule</b> · every effect shows live in the preview</span>
+    </div>
+  </header>
+
+  <section>
+    <figure>
+      <div class="app" role="img" aria-label="Mock of the Shrike timeline editor with a preview and multiple effect lanes, including greyed-out future lanes.">
+        <div class="titlebar">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="file">clip-20260818.mp4</span>
+          <span class="spacer"></span>
+          <span>1280×720 · 30fps · smooth-cursor</span>
+        </div>
+
+        <div class="preview">
+          <div class="zoombox"><span>ZOOM → 1.8×</span></div>
+          <div class="ripple"></div>
+          <svg class="cursor" width="17" height="22" viewBox="0 0 13 19.4" aria-hidden="true">
+            <path d="M0 0 L0 17 L4.4 12.6 L7.4 19.4 L10.2 18.1 L7.2 11.4 L13 11 Z" fill="#FBF6EC" stroke="#14110D" stroke-width="1.1"/>
+          </svg>
+          <span class="badge">PREVIEW · WYSIWYG</span>
+        </div>
+
+        <div class="transport">
+          <span class="play" aria-hidden="true">▶</span>
+          <span>00:14</span>
+          <span class="scrub"></span>
+          <span>00:32</span>
+        </div>
+
+        <div class="tl">
+          <div class="lanes">
+            <div class="playhead" aria-hidden="true"></div>
+
+            <div class="lane ruler" aria-hidden="true">
+              <div class="lbl" style="min-height:26px">timeline</div>
+              <div class="track">
+                <span class="tick" style="left:0%">0s</span>
+                <span class="tick" style="left:25%">8s</span>
+                <span class="tick" style="left:50%">16s</span>
+                <span class="tick" style="left:75%">24s</span>
+              </div>
+            </div>
+
+            <div class="lane">
+              <div class="lbl"><span class="swatch" style="background:var(--lane-cut)"></span>Video<small>trim &amp; cuts</small></div>
+              <div class="track">
+                <div class="clip" style="left:1%; width:40%">kept</div>
+                <div class="clip cut" style="left:42%; width:13%">cut</div>
+                <div class="clip" style="left:56%; width:43%">kept</div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <div class="lbl"><span class="swatch" style="background:var(--lane-zoom)"></span>Zoom<small>authored events</small></div>
+              <div class="track">
+                <div class="clip zoom" style="left:14%; width:22%"><span class="grip l"></span>1.8× ease<span class="grip r"></span></div>
+                <div class="clip zoom" style="left:60%; width:26%"><span class="grip l"></span>2.2× hold<span class="grip r"></span></div>
+              </div>
+            </div>
+
+            <div class="lane">
+              <div class="lbl"><span class="swatch" style="background:var(--lane-cursor)"></span>Cursor<small>path + clicks</small></div>
+              <div class="track">
+                <div class="cursorline"></div>
+                <div class="clickdot" style="left:20%"></div>
+                <div class="clickdot" style="left:31%"></div>
+                <div class="clickdot" style="left:66%"></div>
+                <div class="clickdot" style="left:78%"></div>
+              </div>
+            </div>
+
+            <div class="divider-lane">planned — same model, new lanes</div>
+
+            <div class="lane future">
+              <div class="lbl"><span class="swatch" style="background:var(--lane-future)"></span>Keystrokes<small>overlay</small></div>
+              <div class="track"><div class="ghost" style="left:24%; width:20%">⌘⇧4 …</div></div>
+            </div>
+            <div class="lane future">
+              <div class="lbl"><span class="swatch" style="background:var(--lane-future)"></span>Callouts<small>text · arrows</small></div>
+              <div class="track"><div class="ghost" style="left:58%; width:24%">“click here”</div></div>
+            </div>
+            <div class="lane future">
+              <div class="lbl"><span class="swatch" style="background:var(--lane-future)"></span>Blur / redact<small>region</small></div>
+              <div class="track"><div class="ghost" style="left:8%; width:16%">▨ region</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>Mock — not a screenshot. Solid lanes ship today; dashed lanes are the same model, unbuilt.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="eyebrow">The shift</div>
+    <h2>From a tuning panel to an editing surface</h2>
+    <p class="muted" style="max-width:60ch">Everything works today — but it's configured, not authored. One <code style="font-family:var(--mono);font-size:.85em">CursorCompositor</code> bakes the cursor, ripples, and zoom together, driven by a few sliders that apply to the whole clip. That ceiling is low: you can't say <em>zoom here, to this, this fast</em>, and there's nowhere to hang the next effect.</p>
+    <div class="grid2" style="margin-top:26px">
+      <div class="card">
+        <h3><span class="tag now">Today</span> Global &amp; baked</h3>
+        <p>A tuning panel: Smoothness, Size, Ripple, Zoom on/off + max. One setting per clip.</p>
+        <p>Zoom is inferred automatically from click clusters — not directable.</p>
+        <p>Effects live inside one compositor class; adding one means editing it.</p>
+      </div>
+      <div class="card">
+        <h3><span class="tag next">Next</span> Placed &amp; composable</h3>
+        <p>Effects are <strong>events on lanes</strong> — placed in time, dragged, resized, shaped.</p>
+        <p>Each effect type is independent: its own model, resolver, and renderer.</p>
+        <p>The compositor becomes a <strong>chain</strong> — effects stack in order, cheaply added.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">The architecture</div>
+    <h2>One path from event to pixels — and to the preview</h2>
+    <p class="muted" style="max-width:62ch">The rails already exist. A non-destructive <code style="font-family:var(--mono);font-size:.85em">Timeline</code> maps edited time to source time; a <code style="font-family:var(--mono);font-size:.85em">FrameCompositePipeline</code> decodes → composes → encodes in one pass. Every effect plugs into the same four-step path, and the resolved per-frame data feeds the export <em>and</em> the live preview from a single source of truth.</p>
+    <div class="flow">
+      <div class="node">
+        <div class="n">Author</div>
+        <h4>Events on a lane</h4>
+        <p>Typed, time-boxed, riding the cuts. e.g. <code>ZoomEvent</code></p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node">
+        <div class="n">Resolve · Core</div>
+        <h4>Per-frame inputs</h4>
+        <p>Pure &amp; tested. Events → one value per frame. e.g. <code>ZoomViewport[]</code></p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="split">
+        <div class="node">
+          <div class="n">Compose · Core</div>
+          <h4>Compositor chain</h4>
+          <p>Each an <code>IFrameCompositor</code>, stacked. Draws/transforms BGRA → the file.</p>
+        </div>
+        <div class="node wys">
+          <div class="n">Preview · App</div>
+          <h4>Same inputs, live</h4>
+          <p>Draws the identical per-frame data onto <code>PreviewSurface</code>. WYSIWYG.</p>
+        </div>
+      </div>
+    </div>
+    <p class="kicker" style="margin-top:20px">Cursor, ripples, and zoom already run this path — the smooth-cursor work built the rails. The vision is to make them <span style="color:var(--accent-ink)">authored</span> and the pattern <span style="color:var(--accent-ink)">repeatable</span>.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">The leverage</div>
+    <h2>Adding an effect is five known parts</h2>
+    <p class="muted" style="max-width:60ch">Because the path is fixed, every new effect is the same shape of work — and most of it is small, pure Core code that's easy to test. The lane UI (step 5) is built <em>once</em> as a framework and reused by every effect after the first.</p>
+    <div class="steps">
+      <div class="step">
+        <div></div>
+        <div><h4>Event model <span class="where">— Core record</span></h4><p>The typed thing on the lane: what it carries and when. e.g. a target rect + easing for zoom, a glyph + duration for a keystroke.</p></div>
+      </div>
+      <div class="step">
+        <div></div>
+        <div><h4>Resolver <span class="where">— Core, headless-tested</span></h4><p>Events → one input per output frame, riding the timeline's kept ranges. Deterministic and unit-tested, exactly like <code style="font-family:var(--mono)">AutoZoom</code> today.</p></div>
+      </div>
+      <div class="step">
+        <div></div>
+        <div><h4>Compositor <span class="where">— Core IFrameCompositor</span></h4><p>Consumes the per-frame input and draws or transforms the frame. Slots into the chain in a defined order (transforms before overlays).</p></div>
+      </div>
+      <div class="step">
+        <div></div>
+        <div><h4>Preview renderer <span class="where">— App PreviewSurface</span></h4><p>Draws the same input live so it's visible while editing. Non-negotiable — the project rule is every effect shows in the preview.</p></div>
+      </div>
+      <div class="step">
+        <div></div>
+        <div><h4>Lane UI + persistence <span class="where">— App, reused framework</span></h4><p>Create / drag / resize events on the lane, edit them in an inspector, save to the clip's sidecar. Built once; every later effect gets it free.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">The payoff</div>
+    <h2>What the same model unlocks</h2>
+    <p class="muted" style="max-width:60ch">Each row is one lane and one small resolver + compositor. None requires new rails — they're the reason to build the platform.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Effect</th><th>Status</th><th>Event carries</th><th>Frame operation</th></tr></thead>
+        <tbody>
+          <tr><td>Cursor + ripple</td><td><span class="tag done">Shipped</span></td><td>Path + click marks (captured)</td><td>Draw arrow &amp; expanding ring</td></tr>
+          <tr><td>Auto-zoom</td><td><span class="tag done">Shipped</span></td><td>Inferred from clicks</td><td>Crop + resample to viewport</td></tr>
+          <tr><td>Authored zoom</td><td><span class="tag next">Next</span></td><td>Target rect + easing + timing</td><td>Crop + resample, lerped</td></tr>
+          <tr><td>Keystroke overlay</td><td><span class="tag later">Later</span></td><td>Key glyphs + timestamps</td><td>Draw a caption chip</td></tr>
+          <tr><td>Callouts &amp; arrows</td><td><span class="tag later">Later</span></td><td>Text, anchor, style</td><td>Draw annotation layer</td></tr>
+          <tr><td>Spotlight / dim</td><td><span class="tag later">Later</span></td><td>Focus region + falloff</td><td>Darken outside the region</td></tr>
+          <tr><td>Blur / redact</td><td><span class="tag later">Later</span></td><td>Region + intensity</td><td>Blur pixels in region</td></tr>
+          <tr><td>Backdrop &amp; padding</td><td><span class="tag later">Later</span></td><td>Inset, radius, background</td><td>Scale frame onto a canvas</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">The route</div>
+    <h2>Build the platform by shipping one effect through it</h2>
+    <p class="muted" style="max-width:60ch">No big-bang rewrite. Prove the model with authored zoom, extract the framework as it earns its place, then fan out.</p>
+    <div class="road">
+      <div class="phase active">
+        <div class="ph">Phase 0 · foundation</div>
+        <h3>Extract the compositor chain</h3>
+        <p>Split today's monolithic <code style="font-family:var(--mono)">CursorCompositor</code> into ordered, composable <code style="font-family:var(--mono)">IFrameCompositor</code>s and retrofit cursor, ripple, and zoom as the first three effects. Behaviour-preserving; unlocks stacking.</p>
+      </div>
+      <div class="phase">
+        <div class="ph">Phase 1 · prove it</div>
+        <h3>Authored zoom, end-to-end</h3>
+        <p>The first placed effect: a zoom lane with target-shape + easing, resolved to a per-frame viewport, previewed live. Detailed in the <strong>timeline-based zoom</strong> plan. Retires auto-zoom to an optional "suggest from clicks" generator.</p>
+      </div>
+      <div class="phase">
+        <div class="ph">Phase 2 · generalise</div>
+        <h3>The lane framework</h3>
+        <p>Lift the zoom lane's create / drag / resize / inspect + sidecar persistence into a reusable lane framework, so the next effect is mostly Core code.</p>
+      </div>
+      <div class="phase">
+        <div class="ph">Phase 3 · fan out</div>
+        <h3>Second effect, cheaply</h3>
+        <p>Add keystrokes or callouts to validate that a new effect really is just five small parts — the proof the platform pays off.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="wrap">
+    Shrike · timeline-editor vision · companion to <span style="color:var(--muted)">docs/zoom-timeline-editing-plan.md</span> &amp; <span style="color:var(--muted)">docs/smooth-cursor-followups.md</span>
+  </footer>
+
+</div>
