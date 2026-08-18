@@ -121,13 +121,18 @@ public enum CanvasSpace
 }
 
 /// <summary>
-/// A drawing-canvas effect — a set of screenshot-style annotations (rectangles, arrows, text, redaction, …)
-/// shown over the frame for its span, in content- or screen-space. The annotation payload + rendering land in
-/// a later milestone; this carries the timing and space so the lane can author it and persistence can store it.
+/// A drawing-canvas effect — a set of screenshot-style <see cref="Shrike.Core.Annotations.Annotation"/>s
+/// (rectangles, arrows, text, redaction, …) shown over the frame for its span, in content- or screen-space.
+/// Annotations are stored in <b>source-frame image pixels</b> (as everywhere in the annotation model), so the
+/// drawing is resolution-independent; the compositor rasterises them to a layer sprite and blits it per frame.
 /// </summary>
 public sealed record CanvasEffect(
     long StartMs, long EndMs, long EaseInMs, long EaseOutMs, CanvasSpace Space)
     : EffectEvent(StartMs, EndMs, EaseInMs, EaseOutMs)
 {
     public override EffectKind Kind => EffectKind.Canvas;
+
+    /// <summary>The drawing, in source-frame image pixels. Empty = an as-yet-undrawn canvas.</summary>
+    public IReadOnlyList<Shrike.Core.Annotations.Annotation> Annotations { get; init; }
+        = Array.Empty<Shrike.Core.Annotations.Annotation>();
 }

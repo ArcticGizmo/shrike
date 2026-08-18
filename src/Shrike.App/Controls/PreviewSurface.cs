@@ -29,6 +29,12 @@ public sealed class PreviewSurface : Control
     private IReadOnlyList<PreviewRipple> _ripples = [];
     private PreviewSpotlight? _spotlight;
 
+    /// <summary>A rendered canvas-effect layer to composite over the frame. <c>ContentSpace</c> layers ride the
+    /// zoom crop (drawn through the same source rect as the frame); screen-space layers are fixed over the fit
+    /// rect. The layer bitmap is at source resolution.</summary>
+    public readonly record struct PreviewCanvas(IImage Layer, bool ContentSpace);
+    private IReadOnlyList<PreviewCanvas> _canvasLayers = [];
+
     // Zoom-aim: draw / move / resize a box on the frame to define a zoom event's focus + factor. The box is a
     // normalised square (the crop is always the frame's aspect ratio, so a square in normalised space), and
     // corner handles resize it aspect-locked with the opposite corner anchored.
@@ -88,6 +94,13 @@ public sealed class PreviewSurface : Control
     public void SetRipples(IReadOnlyList<PreviewRipple> ripples)
     {
         _ripples = ripples;
+        InvalidateVisual();
+    }
+
+    /// <summary>Set the canvas-effect layers to composite over the frame (empty to clear), mirroring the export.</summary>
+    public void SetCanvasLayers(IReadOnlyList<PreviewCanvas> layers)
+    {
+        _canvasLayers = layers;
         InvalidateVisual();
     }
 
@@ -214,6 +227,10 @@ public sealed class PreviewSurface : Control
         _fitRect = rect;
         ctx.DrawImage(img, srcRect, rect);
 
+        // Content-space canvas layers ride the same source crop as the frame (so they magnify with a zoom).
+        foreach (var cv in _canvasLayers)
+            if (cv.ContentSpace) ctx.DrawImage(cv.Layer, srcRect, rect);
+
         // Spotlight glow sits under everything else, following the cursor (drawn as a radial gradient ellipse).
         if (_spotlight is { } sp && sp.Alpha > 0)
         {
@@ -248,6 +265,10 @@ public sealed class PreviewSurface : Control
 
         if (_cursor is { } c)
             DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height), _cursorHeightFrac * rect.Height);
+
+        // Screen-space canvas layers are fixed over the output frame — on top, ignoring the zoom crop.
+        foreach (var cv in _canvasLayers)
+            if (!cv.ContentSpace) ctx.DrawImage(cv.Layer, new Rect(cv.Layer.Size), rect);
 
         // Zoom-aim overlay: dim outside the target square, outline it, and draw aspect-locked corner handles.
         if (AimMode && _targetBox is { } tb)

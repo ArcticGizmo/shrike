@@ -10,6 +10,9 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Shrike.App.Controls;
+using Shrike.Core.Annotations;
+using Shrike.Core.Capture;
+using Shrike.Core.Imaging;
 using Shrike.Core.Recording;
 
 namespace Shrike.App.Views;
@@ -86,6 +89,17 @@ public partial class TimelineEditorWindow : Window
     private CheckBox? _visibilityInput;
     private bool _suppressInspector;   // guards inspector editors from firing during programmatic seeding
 
+    // Inline canvas (drawing) editing over the preview.
+    private AnnotationSurface? _canvasSurface;
+    private Control? _canvasEditor;
+    private Control? _canvasTools;
+    private Avalonia.Controls.Primitives.ToggleButton? _canvasEditToggle;
+    private CheckBox? _canvasScreenSpace;
+    private AnnotationDocument? _canvasDoc;
+    private int _editingCanvasIndex = -1;
+    private bool _suppressCanvasToggle;
+    private readonly Dictionary<IReadOnlyList<Annotation>, Bitmap> _canvasLayerCache = new(ReferenceEqualityComparer.Instance);
+
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
 
@@ -125,7 +139,7 @@ public partial class TimelineEditorWindow : Window
         SetupSmoothingPanel();
         SetupEffectsLane();
 
-        Closed += (_, _) => { PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
+        Closed += (_, _) => { ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -271,6 +285,14 @@ public partial class TimelineEditorWindow : Window
             _spotlightOpacityInput.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSpotlightPropsChanged(); };
         if (_spotlightRadiusInput is not null) _spotlightRadiusInput.ValueChanged += (_, _) => OnSpotlightPropsChanged();
         if (_visibilityInput is not null) _visibilityInput.IsCheckedChanged += (_, _) => OnVisibilityPropsChanged();
+
+        _canvasSurface = this.FindControl<AnnotationSurface>("CanvasSurface");
+        _canvasEditor = this.FindControl<StackPanel>("CanvasEditor");
+        _canvasTools = this.FindControl<StackPanel>("CanvasTools");
+        _canvasEditToggle = this.FindControl<Avalonia.Controls.Primitives.ToggleButton>("CanvasEditToggle");
+        _canvasScreenSpace = this.FindControl<CheckBox>("CanvasScreenSpace");
+        if (_canvasEditToggle is not null) _canvasEditToggle.IsCheckedChanged += (_, _) => OnCanvasEditToggled();
+        if (_canvasScreenSpace is not null) _canvasScreenSpace.IsCheckedChanged += (_, _) => OnCanvasSpaceChanged();
     }
 
     // The zoom effects, as the track the preview + export consume. Non-zoom effects don't affect framing.
@@ -294,21 +316,26 @@ public partial class TimelineEditorWindow : Window
 
     private void OnEffectSelectionChanged(int index)
     {
+        // Changing selection ends any in-progress canvas edit (commits it) before showing the new editor.
+        if (_editingCanvasIndex >= 0) ExitCanvasEdit();
+
         var effect = index >= 0 && index < _effects.Count ? _effects[index] : null;
         var zoom = effect as ZoomEffect;
         var spot = effect as SpotlightEffect;
         var vis = effect as VisibilityEffect;
+        var canvas = effect as CanvasEffect;
 
         // The pane is always present; only its content swaps to the selected effect's editor. Kinds without an
-        // editor (ripple, canvas-so-far) show the empty-state note. Delete is offered for any selection.
+        // editor (ripple) show the empty-state note. Delete is offered for any selection.
         if (_paneHeader is not null) _paneHeader.Text = "✦ " + (effect is null ? "Effect" : KindName(effect.Kind));
         if (_zoomEditor is not null) _zoomEditor.IsVisible = zoom is not null;
         if (_spotlightEditor is not null) _spotlightEditor.IsVisible = spot is not null;
         if (_visibilityEditor is not null) _visibilityEditor.IsVisible = vis is not null;
+        if (_canvasEditor is not null) _canvasEditor.IsVisible = canvas is not null;
         if (_deleteButton is not null) _deleteButton.IsVisible = effect is not null;
         if (_paneEmpty is not null)
         {
-            var hasEditor = zoom is not null || spot is not null || vis is not null;
+            var hasEditor = zoom is not null || spot is not null || vis is not null || canvas is not null;
             _paneEmpty.IsVisible = !hasEditor;
             _paneEmpty.Text = effect is null
                 ? "Select an effect on the timeline to edit it, or right-click the timeline to add one."
@@ -336,9 +363,131 @@ public partial class TimelineEditorWindow : Window
         {
             if (_visibilityInput is not null) _visibilityInput.IsChecked = vis.Visible;
         }
+        else if (canvas is not null)
+        {
+            if (_canvasScreenSpace is not null) _canvasScreenSpace.IsChecked = canvas.Space == CanvasSpace.Screen;
+            if (_canvasTools is not null) _canvasTools.IsVisible = false;
+            if (_canvasEditToggle is not null) { _suppressCanvasToggle = true; _canvasEditToggle.IsChecked = false; _suppressCanvasToggle = false; }
+        }
         _suppressInspector = false;
 
         UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
+    }
+
+    // ---- inline canvas editing ----
+
+    private void OnCanvasToolClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_canvasSurface is not null && sender is Button { Tag: string tag }
+            && Enum.TryParse<AnnotationTool>(tag, out var tool))
+            _canvasSurface.Tool = tool;
+    }
+
+    private void OnCanvasColorClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_canvasSurface is not null && sender is Button { Tag: string hex }) _canvasSurface.StrokeColorHex = hex;
+    }
+
+    private void OnCanvasSpaceChanged()
+    {
+        if (_suppressInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not CanvasEffect ev) return;
+        _effects[i] = ev with { Space = _canvasScreenSpace?.IsChecked == true ? CanvasSpace.Screen : CanvasSpace.Content };
+        UpdateCursorOverlay();
+    }
+
+    private void OnCanvasEditToggled()
+    {
+        if (_suppressCanvasToggle) return;
+        if (_canvasEditToggle?.IsChecked == true) _ = EnterCanvasEdit();
+        else ExitCanvasEdit();
+    }
+
+    // Open the annotation surface over the preview, backed by the frame at the playhead (if inside the span)
+    // or the span start, seeded with the effect's current drawing. Edits commit live to the effect.
+    private async Task EnterCanvasEdit()
+    {
+        if (_canvasSurface is null || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not CanvasEffect c) return;
+
+        StopPlayback();
+        var srcMs = _playheadSourceMs >= c.StartMs && _playheadSourceMs <= c.EndMs ? _playheadSourceMs : c.StartMs;
+        byte[]? png;
+        try { png = await Task.Run(() => _extractor.ExtractPng(srcMs), _cts.Token).ConfigureAwait(true); }
+        catch { png = null; }
+        if (png is null || _effectsLane.SelectedIndex != i || _effects[i] is not CanvasEffect cc)
+        {
+            if (_canvasEditToggle is not null) { _suppressCanvasToggle = true; _canvasEditToggle.IsChecked = false; _suppressCanvasToggle = false; }
+            return;
+        }
+
+        CapturedImage frame;
+        try { frame = ImageCodec.DecodeToCaptured(png); }
+        catch { if (_canvasEditToggle is not null) { _suppressCanvasToggle = true; _canvasEditToggle.IsChecked = false; _suppressCanvasToggle = false; } return; }
+
+        _editingCanvasIndex = i;
+        _canvasDoc = new AnnotationDocument();
+        foreach (var a in cc.Annotations) _canvasDoc.Add(a);
+        _canvasDoc.Changed += OnCanvasDocChanged;
+        _canvasSurface.SetContent(frame, _canvasDoc);
+        _canvasSurface.Tool = AnnotationTool.None;
+        _canvasSurface.IsVisible = true;
+        _preview.IsVisible = false;
+        if (_canvasTools is not null) _canvasTools.IsVisible = true;
+    }
+
+    private void ExitCanvasEdit()
+    {
+        if (_editingCanvasIndex < 0) return;
+        if (_canvasDoc is not null) { _canvasDoc.Changed -= OnCanvasDocChanged; CommitCanvas(); }
+        _canvasDoc = null;
+        _editingCanvasIndex = -1;
+        if (_canvasSurface is not null) _canvasSurface.IsVisible = false;
+        _preview.IsVisible = true;
+        if (_canvasTools is not null) _canvasTools.IsVisible = false;
+        if (_canvasEditToggle is not null && _canvasEditToggle.IsChecked == true)
+        { _suppressCanvasToggle = true; _canvasEditToggle.IsChecked = false; _suppressCanvasToggle = false; }
+        UpdateCursorOverlay();
+    }
+
+    private void OnCanvasDocChanged() => CommitCanvas();
+
+    // Write the live document back to the effect, keeping the drawing in source-frame pixels.
+    private void CommitCanvas()
+    {
+        if (_editingCanvasIndex < 0 || _canvasDoc is null) return;
+        if (_editingCanvasIndex >= _effects.Count || _effects[_editingCanvasIndex] is not CanvasEffect c) return;
+        _canvasLayerCache.Remove(c.Annotations); // the old layer bitmap is now stale
+        _effects[_editingCanvasIndex] = c with { Annotations = _canvasDoc.Items.ToList() };
+    }
+
+    // The rendered (cached) layer bitmap for a canvas effect at source resolution, for the preview overlay.
+    private Bitmap? CanvasLayerBitmap(CanvasEffect c)
+    {
+        if (c.Annotations.Count == 0 || _source.Width <= 0 || _source.Height <= 0) return null;
+        if (_canvasLayerCache.TryGetValue(c.Annotations, out var cached)) return cached;
+
+        var surface = new AnnotationSurface();
+        var doc = new AnnotationDocument();
+        foreach (var a in c.Annotations) doc.Add(a);
+        var blank = new CapturedImage(_source.Width, _source.Height, new byte[_source.Width * _source.Height * 4],
+            new PixelBounds(0, 0, _source.Width, _source.Height), DateTimeOffset.Now);
+        surface.SetContent(blank, doc);
+        var bytes = surface.RenderAnnotationLayer(_source.Width, _source.Height);
+        if (bytes is null) return null;
+
+        var wb = new WriteableBitmap(new PixelSize(_source.Width, _source.Height), new Vector(96, 96),
+            PixelFormat.Bgra8888, AlphaFormat.Premul);
+        using (var fb = wb.Lock())
+        {
+            var rowBytes = _source.Width * 4;
+            for (var row = 0; row < _source.Height; row++)
+                Marshal.Copy(bytes, row * rowBytes, fb.Address + row * fb.RowBytes, rowBytes);
+        }
+        _canvasLayerCache[c.Annotations] = wb;
+        return wb;
     }
 
     // The spotlight editor changed — apply colour / opacity / radius to the selected spotlight.
@@ -443,7 +592,7 @@ public partial class TimelineEditorWindow : Window
             EffectKind.Spotlight => new SpotlightEffect(start, end, 250, 250, s.SpotlightColor, s.SpotlightOpacity, s.SpotlightRadius),
             EffectKind.Ripple => new RippleEffect(start, end),
             EffectKind.Visibility => new VisibilityEffect(start, end, Visible: false), // a "hide" span (default is shown)
-            EffectKind.Canvas => new CanvasEffect(start, end, 200, 200, CanvasSpace.Content),
+            EffectKind.Canvas => new CanvasEffect(start, end, 0, 0, CanvasSpace.Content), // hard cut so redaction stays opaque
             _ => new ZoomEffect(start, end, 400, 400, 0.5, 0.5, 1.8),
         };
         _effects.Add(effect);
@@ -478,6 +627,7 @@ public partial class TimelineEditorWindow : Window
         if (_smoothed is null || _smoothed.IsEmpty)
         {
             _preview.SetCursor(null); _preview.SetViewport(null); _preview.SetRipples([]); _preview.SetSpotlight(null);
+            _preview.SetCanvasLayers(CanvasLayersAt(_timeline.EditedToSourceMs(_currentEditedMs)));
             return;
         }
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
@@ -514,6 +664,20 @@ public partial class TimelineEditorWindow : Window
             ? new PreviewSurface.PreviewSpotlight(Norm(s.X, s.Y), sf.RadiusPx / _source.Height,
                 Avalonia.Media.Color.FromRgb(sf.R, sf.G, sf.B), sf.Alpha)
             : null);
+
+        _preview.SetCanvasLayers(CanvasLayersAt(srcMs));
+    }
+
+    // The canvas layers active at a source time, as preview overlays (skipped while inline-editing, since the
+    // annotation surface itself is showing the live drawing).
+    private IReadOnlyList<PreviewSurface.PreviewCanvas> CanvasLayersAt(long srcMs)
+    {
+        if (_editingCanvasIndex >= 0) return [];
+        var layers = new List<PreviewSurface.PreviewCanvas>();
+        foreach (var c in _effects.OfType<CanvasEffect>())
+            if (c.ActiveAt(srcMs) && CanvasLayerBitmap(c) is { } bmp)
+                layers.Add(new PreviewSurface.PreviewCanvas(bmp, c.Space == CanvasSpace.Content));
+        return layers;
     }
 
     /// <summary>The click ripples live at frame <paramref name="i"/>, mirrored from the export's cursor compositor
@@ -720,6 +884,15 @@ public partial class TimelineEditorWindow : Window
     {
         base.OnKeyDown(e);
         if (e.Handled || FocusManager?.GetFocusedElement() is TextBox) return; // don't steal keys from an input
+
+        // While inline-editing a canvas, keys drive the drawing: Delete removes the selected annotation, Esc
+        // finishes. Timeline shortcuts (space / effect delete-nudge) are suspended so they don't interfere.
+        if (_editingCanvasIndex >= 0)
+        {
+            if (e.Key is Avalonia.Input.Key.Delete or Avalonia.Input.Key.Back) { _canvasSurface?.DeleteSelected(); e.Handled = true; }
+            else if (e.Key == Avalonia.Input.Key.Escape) { ExitCanvasEdit(); e.Handled = true; }
+            return;
+        }
 
         // Space toggles play/pause.
         if (e.Key == Avalonia.Input.Key.Space)

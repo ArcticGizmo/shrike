@@ -97,6 +97,16 @@ public sealed class EffectTrack
     /// <summary>True when any spotlight is active on at least one frame — lets the caller skip the compositor.</summary>
     public bool HasSpotlight => OfKind<SpotlightEffect>().Any();
 
+    /// <summary>Per output frame: one effect's eased 0..1 envelope (its <see cref="EffectEvent.RampAt"/> sampled
+    /// at each frame's source time). Drives a canvas layer's fade / a spotlight's intensity.</summary>
+    public static double[] ResolveEnvelope(EffectEvent ev, Timeline timeline, int frameCount, int fps)
+    {
+        var a = new double[Math.Max(0, frameCount)];
+        for (var i = 0; i < a.Length; i++)
+            a[i] = ev.RampAt(timeline.EditedToSourceMs(fps > 0 ? (long)(i * 1000.0 / fps) : 0));
+        return a;
+    }
+
     public EffectTrack With(IEnumerable<EffectEvent> events) => new(events);
 
     // Parse "#RRGGBB" / "RRGGBB" (and tolerate "#AARRGGBB"); fall back to the spotlight default amber.

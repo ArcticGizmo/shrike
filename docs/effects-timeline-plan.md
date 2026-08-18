@@ -177,21 +177,28 @@ relaunch the dev exe on every change (kill running Shrike first).
   *(Canvas blocks are still not serialised — that lands with M4's annotation payload; a placed canvas is
   session-only until then.)*
 
-### M4 · Canvas effect — static, full tool parity
-- **Model:** `CanvasEffect` = `AnnotationDocument` + content/screen `Space` + ease (+ constant transform
-  channels reserved for M5).
-- **Authoring:** selecting a canvas effect turns the preview into an annotation editing surface — reuse
-  `AnnotationSurface` + the full screenshot toolset (rect, ellipse, line/arrow, freehand, highlight,
-  text, step badge, redaction), scoped to the frame at the effect's mid-time; toolbox hosted in the pane.
-- **Rendering (layer-sprite):** bake the canvas layer to a transparent RGBA sprite via the existing
-  Avalonia renderer (`RenderFlattened` onto transparent, no base image), **cached per effect**,
-  invalidated on edit. A headless `CanvasCompositor : IFrameCompositor` alpha-blits the sprite per
-  active frame with eased alpha; **content-space** maps through `ZoomViewport[]` (composited before/with
-  zoom), **screen-space** blits after zoom. **Redaction** is applied as the existing headless
-  destructive scrub over the active range (content- or screen-space rect) — irreversible, as on
-  screenshots.
-- **Exit / demo:** draw box + text + redaction over a range; shows live in the preview and bakes into
-  the export; the content/screen toggle behaves through a zoom; redaction leaves no recoverable trace.
+### ✅ M4 · Canvas effect — static, full tool parity
+- ✅ **Model:** `CanvasEffect` carries an immutable `IReadOnlyList<Annotation>` (source-frame pixels) +
+  content/screen `Space` + ease. `AnnotationJson` (every type, forgiving) persists it in the v2 edit doc.
+- ✅ **Authoring (inline, chosen UX):** selecting a canvas effect shows a canvas editor in the pane (space
+  toggle + **Edit drawing**). Editing overlays a real `AnnotationSurface` on the preview, backed by the
+  frame at the **playhead-if-inside-else-start**, with the full screenshot toolset (box, ellipse, arrow,
+  line, pen, highlight, text, badge, redaction) + colour swatches; Delete removes a selection, Esc
+  finishes. Edits commit live to the effect.
+- ✅ **Rendering (layer-sprite):** `AnnotationSurface.RenderAnnotationLayer(w,h)` bakes the drawing to a
+  transparent **premultiplied** BGRA sprite via the existing renderer (text/arrows/redaction all free). A
+  headless `CanvasCompositor : IFrameCompositor` alpha-blits it per active frame; **content-space** is
+  composited **before** the zoom transform (magnifies with the content), **screen-space** **after** every
+  overlay (fixed). Redaction bakes as opaque black; canvas defaults to a **hard cut** so redaction stays
+  fully opaque for its whole span.
+- ✅ **Preview WYSIWYG:** `PreviewSurface.SetCanvasLayers` composites cached layer bitmaps over the frame —
+  content rides the zoom crop, screen is fixed — so scrubbing shows the drawing; while editing, the
+  annotation surface is the live view.
+- ✅ **Tests:** annotation-JSON round-trip (every type), canvas compositor blit + envelope, v2 canvas
+  persistence. Build clean; **276 passed**.
+- **Exit / demo:** draw a box + text + redaction over a range; shows in the preview and bakes into the
+  export; content/screen behaves through a zoom; redaction is opaque in the output. *(Interactive draw
+  pass pending, per the Avalonia-wiring convention.)*
 
 ### M5 · Transform animation channels  *(deferred, architected-for)*
 - Add keyframeable transform channels (position/scale/rotation/opacity) evaluated per frame; the cached

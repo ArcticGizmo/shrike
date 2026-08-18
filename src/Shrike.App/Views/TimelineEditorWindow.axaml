@@ -36,9 +36,12 @@
 
     <Grid ColumnDefinitions="*,Auto">
         <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" Margin="14">
-        <!-- Preview -->
+        <!-- Preview (with the inline annotation surface overlaid for canvas editing) -->
         <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
-            <controls:PreviewSurface Name="Preview" />
+            <Panel>
+                <controls:PreviewSurface Name="Preview" />
+                <controls:AnnotationSurface Name="CanvasSurface" IsVisible="False" />
+            </Panel>
         </Border>
 
         <!-- Transport -->
@@ -152,6 +155,38 @@
                     <CheckBox Name="VisibilityInput" Content="Cursor shown" Foreground="#B8AE9C" />
                     <TextBlock Classes="hint" TextWrapping="Wrap"
                                Text="Uncheck to hide the cursor for this span. The default full-length block keeps the cursor shown." />
+                </StackPanel>
+
+                <!-- Canvas editor. -->
+                <StackPanel Name="CanvasEditor" Spacing="10" IsVisible="False">
+                    <CheckBox Name="CanvasScreenSpace" Foreground="#B8AE9C" Content="Fixed on screen (ignore zoom)" />
+                    <ToggleButton Name="CanvasEditToggle" Classes="tool" HorizontalAlignment="Stretch" Content="✎ Edit drawing" />
+                    <StackPanel Name="CanvasTools" Spacing="8" IsVisible="False">
+                        <TextBlock Text="Tool" Classes="hint" />
+                        <WrapPanel>
+                            <Button Classes="tool" Tag="None" Content="Select" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Rectangle" Content="Box" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Ellipse" Content="Ellipse" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Arrow" Content="Arrow" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Line" Content="Line" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Freehand" Content="Pen" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Highlight" Content="Mark" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Text" Content="Text" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="StepBadge" Content="Badge" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="Redaction" Content="Redact" Click="OnCanvasToolClick" Margin="0,0,4,4" />
+                        </WrapPanel>
+                        <TextBlock Text="Colour" Classes="hint" />
+                        <WrapPanel>
+                            <Button Classes="tool" Tag="#F5A524" Content="●" Foreground="#F5A524" Click="OnCanvasColorClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="#E5484D" Content="●" Foreground="#E5484D" Click="OnCanvasColorClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="#30A46C" Content="●" Foreground="#30A46C" Click="OnCanvasColorClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="#4C8DFF" Content="●" Foreground="#4C8DFF" Click="OnCanvasColorClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="#FFFFFF" Content="●" Foreground="#FFFFFF" Click="OnCanvasColorClick" Margin="0,0,4,4" />
+                            <Button Classes="tool" Tag="#141414" Content="●" Foreground="#141414" Click="OnCanvasColorClick" Margin="0,0,4,4" />
+                        </WrapPanel>
+                        <TextBlock Classes="hint" TextWrapping="Wrap"
+                                   Text="Draw on the frame. Redaction is permanent in the export. Click Done when finished." />
+                    </StackPanel>
                 </StackPanel>
 
                 <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"

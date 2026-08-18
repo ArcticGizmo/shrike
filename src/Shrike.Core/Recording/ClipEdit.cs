@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Shrike.Core.Annotations;
 
 namespace Shrike.Core.Recording;
 
@@ -90,6 +91,13 @@ public sealed class ClipEdit
                     Start = s.StartMs, End = s.EndMs, EaseIn = s.EaseInMs, EaseOut = s.EaseOutMs,
                     Color = s.Color, Opacity = s.Opacity, Radius = s.Radius,
                 }).ToArray(),
+            Canvas = Effects.OfKind<CanvasEffect>()
+                .Select(c => new CanvasDto
+                {
+                    Start = c.StartMs, End = c.EndMs, EaseIn = c.EaseInMs, EaseOut = c.EaseOutMs,
+                    Screen = c.Space == CanvasSpace.Screen,
+                    Items = AnnotationJson.ToDtos(c.Annotations).ToArray(),
+                }).ToArray(),
         };
         return JsonSerializer.Serialize(dto, JsonOptions);
     }
@@ -124,6 +132,12 @@ public sealed class ClipEdit
             if (r.End > r.Start) events.Add(new RippleEffect(r.Start, r.End));
         foreach (var s in dto.Spotlight ?? [])
             if (s.End > s.Start) events.Add(new SpotlightEffect(s.Start, s.End, s.EaseIn, s.EaseOut, s.Color, s.Opacity, s.Radius));
+        foreach (var c in dto.Canvas ?? [])
+            if (c.End > c.Start)
+                events.Add(new CanvasEffect(c.Start, c.End, c.EaseIn, c.EaseOut, c.Screen ? CanvasSpace.Screen : CanvasSpace.Content)
+                {
+                    Annotations = AnnotationJson.FromDtos(c.Items),
+                });
         return new ClipEdit(new EffectTrack(events));
     }
 
@@ -165,6 +179,7 @@ public sealed class ClipEdit
         public VisibilityDto[]? Visibility { get; set; }
         public RippleDto[]? Ripple { get; set; }
         public SpotlightDto[]? Spotlight { get; set; }
+        public CanvasDto[]? Canvas { get; set; }
     }
 
     private sealed class ZoomDto
@@ -200,5 +215,15 @@ public sealed class ClipEdit
         public string Color { get; set; } = "#FFD24A";
         public double Opacity { get; set; } = 0.30;
         public int Radius { get; set; } = 30;
+    }
+
+    private sealed class CanvasDto
+    {
+        public long Start { get; set; }
+        public long End { get; set; }
+        public long EaseIn { get; set; }
+        public long EaseOut { get; set; }
+        public bool Screen { get; set; }
+        public AnnotationDto[]? Items { get; set; }
     }
 }
