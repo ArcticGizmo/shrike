@@ -64,16 +64,24 @@ public sealed class CursorCompositor : IFrameCompositor
     private readonly SmoothedCursorTrack _track;
     private readonly CursorStyle _style;
     private readonly ZoomViewport[]? _viewports;  // shared per-frame zoom framing (null = no zoom)
+    private readonly bool[]? _cursorVisible;      // per-frame gate (null = always shown)
+    private readonly bool[]? _ripplesEnabled;     // per-frame gate (null = follow style.RippleEnabled)
     private readonly byte[] _mask;      // arrow coverage, 0..255
     private readonly int _mw, _mh;
 
-    public CursorCompositor(SmoothedCursorTrack track, CursorStyle? style = null, ZoomViewport[]? viewports = null)
+    public CursorCompositor(SmoothedCursorTrack track, CursorStyle? style = null, ZoomViewport[]? viewports = null,
+        bool[]? cursorVisible = null, bool[]? ripplesEnabled = null)
     {
         _track = track;
         _style = style ?? CursorStyle.Default;
         _viewports = viewports;
+        _cursorVisible = cursorVisible;
+        _ripplesEnabled = ripplesEnabled;
         _mask = BakeArrow(_style.Height, out _mw, out _mh);
     }
+
+    private bool At(bool[]? mask, int frameIndex, bool fallback)
+        => mask is null ? fallback : mask[Math.Clamp(frameIndex, 0, mask.Length - 1)];
 
     public void Compose(byte[] bgra, int width, int height, int frameIndex)
     {
@@ -89,8 +97,9 @@ public sealed class CursorCompositor : IFrameCompositor
             : new ZoomViewport(0, 0, width, height);
 
         // Ripples first (under the cursor), anchored where the click landed — mapped through the viewport.
+        // A ripple range (per-frame gate) enables them where it spans; without a gate, follow the style flag.
         var rippleFrames = Math.Max(1, (int)Math.Round(_style.RippleSeconds * _track.Fps));
-        if (_style.RippleEnabled)
+        if (At(_ripplesEnabled, frameIndex, _style.RippleEnabled))
         foreach (var click in _track.Clicks)
         {
             var age = frameIndex - click.FrameIndex;
@@ -102,7 +111,9 @@ public sealed class CursorCompositor : IFrameCompositor
             DrawRing(bgra, width, height, rx, ry, radius, _style.RippleThickness, Ripple, (1 - p) * _style.RipplePeakAlpha);
         }
 
-        // Cursor: a dark outline (mask blitted at 1px offsets) then the light fill on top.
+        // Cursor: a dark outline (mask blitted at 1px offsets) then the light fill on top. A visibility range
+        // can hide it for this frame (ripples above are unaffected — they belong to their own range).
+        if (!At(_cursorVisible, frameIndex, true)) return;
         var (mxp, myp) = Map(pos.X, pos.Y, vp, width, height);
         var ax = (int)Math.Round(mxp);
         var ay = (int)Math.Round(myp);

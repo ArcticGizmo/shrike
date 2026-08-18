@@ -59,16 +59,13 @@ public partial class TimelineEditorWindow : Window
     private MouseTrack? _smoothTrack;
     private SmoothedCursorTrack? _smoothed;
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
-    private ZoomTrack _authoredZoom = ZoomTrack.Empty;          // user-placed zoom events (the edit document)
+    private ZoomTrack _authoredZoom = ZoomTrack.Empty;          // zoom events resolved from _effects (for preview/export)
     private double _cursorSize = 1.0;
-    private bool _cursorRipple = true;
-    private bool _showCursor = true;              // per-clip: draw the synthetic cursor (default from capture)
-    private CheckBox? _cursorToggle;
+    private bool _rippleDefaultOn = true;         // seed a full-length ripple for new/migrated clips (from settings)
     private Slider? _smoothnessSlider;
     private TextBlock? _smoothnessValue;
     private Slider? _sizeSlider;
     private TextBlock? _sizeValue;
-    private CheckBox? _rippleToggle;
 
     // Unified effects lane + the always-present properties pane.
     private readonly List<EffectEvent> _effects = new();
@@ -77,11 +74,17 @@ public partial class TimelineEditorWindow : Window
     private TextBlock? _paneHeader;
     private TextBlock? _paneEmpty;
     private Control? _zoomEditor;
+    private Control? _spotlightEditor;
+    private Control? _visibilityEditor;
     private Button? _deleteButton;
     private NumericUpDown? _zoomAmountInput;
     private NumericUpDown? _easeInInput;
     private NumericUpDown? _easeOutInput;
-    private bool _suppressZoomInspector;
+    private TextBox? _spotlightColorInput;
+    private Slider? _spotlightOpacityInput;
+    private NumericUpDown? _spotlightRadiusInput;
+    private CheckBox? _visibilityInput;
+    private bool _suppressInspector;   // guards inspector editors from firing during programmatic seeding
 
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
@@ -176,17 +179,22 @@ public partial class TimelineEditorWindow : Window
         }
         catch { _smoothTrack = null; }
 
-        // The authored edit document: zoom events + the cursor-shown default. Empty zoom means no zoom yet.
+        // The authored edit document. A v2 doc carries the full effect track; a v1/fresh clip migrates its zoom
+        // + cursor-shown flag and seeds the full-length defaults (cursor shown + ripples on) as editable blocks.
         var edit = ClipEdit.Load(Shrike.Core.AppStorage.EditDocFor(_source.Path));
-        _authoredZoom = edit.Zoom;
-        _showCursor = edit.ShowCursor;
-        if (_cursorToggle is not null) _cursorToggle.IsChecked = _showCursor;
-
-        // Seed the lane's editable list from the loaded zoom events (the only kind persisted so far), and mark
-        // where clicks fired (snap targets). Other effect kinds are placeable but session-only until the v2
-        // edit-doc format (M3) stores them.
         _effects.Clear();
-        _effects.AddRange(_authoredZoom.Events.Select(ZoomEffect.FromZoomEvent));
+        if (edit.HasEffectTrack)
+        {
+            _effects.AddRange(edit.Effects.Events);
+        }
+        else
+        {
+            _effects.AddRange(edit.ToEffectTrack(_timeline.DurationMs).Events); // zoom + full-length visibility
+            if (_rippleDefaultOn && _timeline.DurationMs > 0) _effects.Add(new RippleEffect(0, _timeline.DurationMs));
+        }
+        _authoredZoom = ZoomTrackFromEffects();
+
+        // Seed the lane from the loaded effects, and mark where clicks fired (snap targets).
         if (_effectsLane is not null)
         {
             _effectsLane.Timeline = _timeline;
@@ -229,10 +237,16 @@ public partial class TimelineEditorWindow : Window
         _paneHeader = this.FindControl<TextBlock>("PaneHeader");
         _paneEmpty = this.FindControl<TextBlock>("PaneEmpty");
         _zoomEditor = this.FindControl<StackPanel>("ZoomEditor");
+        _spotlightEditor = this.FindControl<StackPanel>("SpotlightEditor");
+        _visibilityEditor = this.FindControl<StackPanel>("VisibilityEditor");
         _deleteButton = this.FindControl<Button>("DeleteZoomButton");
         _zoomAmountInput = this.FindControl<NumericUpDown>("ZoomAmountInput");
         _easeInInput = this.FindControl<NumericUpDown>("EaseInInput");
         _easeOutInput = this.FindControl<NumericUpDown>("EaseOutInput");
+        _spotlightColorInput = this.FindControl<TextBox>("SpotlightColorInput");
+        _spotlightOpacityInput = this.FindControl<Slider>("SpotlightOpacityInput");
+        _spotlightRadiusInput = this.FindControl<NumericUpDown>("SpotlightRadiusInput");
+        _visibilityInput = this.FindControl<CheckBox>("VisibilityInput");
 
         if (_effectsLane is not null)
         {
@@ -250,11 +264,21 @@ public partial class TimelineEditorWindow : Window
         if (_zoomAmountInput is not null) _zoomAmountInput.ValueChanged += (_, _) => OnZoomPropsChanged();
         if (_easeInInput is not null) _easeInInput.ValueChanged += (_, _) => OnZoomPropsChanged();
         if (_easeOutInput is not null) _easeOutInput.ValueChanged += (_, _) => OnZoomPropsChanged();
+
+        if (_spotlightColorInput is not null)
+            _spotlightColorInput.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) OnSpotlightPropsChanged(); };
+        if (_spotlightOpacityInput is not null)
+            _spotlightOpacityInput.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSpotlightPropsChanged(); };
+        if (_spotlightRadiusInput is not null) _spotlightRadiusInput.ValueChanged += (_, _) => OnSpotlightPropsChanged();
+        if (_visibilityInput is not null) _visibilityInput.IsCheckedChanged += (_, _) => OnVisibilityPropsChanged();
     }
 
     // The zoom effects, as the track the preview + export consume. Non-zoom effects don't affect framing.
     private ZoomTrack ZoomTrackFromEffects()
         => new(_effects.OfType<ZoomEffect>().Select(z => z.ToZoomEvent()).ToList());
+
+    // The current authored effects as an immutable track — for per-frame preview lookups + export.
+    private EffectTrack CurrentEffects => new(_effects);
 
     // The selected effect if it's a zoom (the only kind with an inspector + aim box today), else null.
     private ZoomEffect? SelectedZoomEffect()
@@ -272,32 +296,76 @@ public partial class TimelineEditorWindow : Window
     {
         var effect = index >= 0 && index < _effects.Count ? _effects[index] : null;
         var zoom = effect as ZoomEffect;
+        var spot = effect as SpotlightEffect;
+        var vis = effect as VisibilityEffect;
 
-        // The pane is always present; only its content swaps. Zoom has the inspector; other kinds show the
-        // empty-state note (their editor lands in a later milestone). Delete is offered for any selection.
+        // The pane is always present; only its content swaps to the selected effect's editor. Kinds without an
+        // editor (ripple, canvas-so-far) show the empty-state note. Delete is offered for any selection.
         if (_paneHeader is not null) _paneHeader.Text = "✦ " + (effect is null ? "Effect" : KindName(effect.Kind));
         if (_zoomEditor is not null) _zoomEditor.IsVisible = zoom is not null;
+        if (_spotlightEditor is not null) _spotlightEditor.IsVisible = spot is not null;
+        if (_visibilityEditor is not null) _visibilityEditor.IsVisible = vis is not null;
         if (_deleteButton is not null) _deleteButton.IsVisible = effect is not null;
         if (_paneEmpty is not null)
         {
-            _paneEmpty.IsVisible = zoom is null;
+            var hasEditor = zoom is not null || spot is not null || vis is not null;
+            _paneEmpty.IsVisible = !hasEditor;
             _paneEmpty.Text = effect is null
                 ? "Select an effect on the timeline to edit it, or right-click the timeline to add one."
-                : "No adjustable properties yet — drag to move / resize, or delete.";
+                : "No adjustable properties — drag to move / resize, or delete.";
         }
 
-        // Aim box + inspector are zoom-only today.
+        // Aim box + inspector are zoom-only.
         _preview.AimMode = zoom is not null;
         _preview.SetTargetBox(zoom is not null ? EventBox(zoom) : null);
+
+        _suppressInspector = true;
         if (zoom is not null)
         {
-            _suppressZoomInspector = true;
             if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)zoom.Zoom;
             if (_easeInInput is not null) _easeInInput.Value = (decimal)(zoom.EaseInMs / 1000.0);
             if (_easeOutInput is not null) _easeOutInput.Value = (decimal)(zoom.EaseOutMs / 1000.0);
-            _suppressZoomInspector = false;
         }
+        else if (spot is not null)
+        {
+            if (_spotlightColorInput is not null) _spotlightColorInput.Text = spot.Color;
+            if (_spotlightOpacityInput is not null) _spotlightOpacityInput.Value = spot.Opacity;
+            if (_spotlightRadiusInput is not null) _spotlightRadiusInput.Value = spot.Radius;
+        }
+        else if (vis is not null)
+        {
+            if (_visibilityInput is not null) _visibilityInput.IsChecked = vis.Visible;
+        }
+        _suppressInspector = false;
+
         UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
+    }
+
+    // The spotlight editor changed — apply colour / opacity / radius to the selected spotlight.
+    private void OnSpotlightPropsChanged()
+    {
+        if (_suppressInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not SpotlightEffect ev) return;
+        var color = string.IsNullOrWhiteSpace(_spotlightColorInput?.Text) ? ev.Color : _spotlightColorInput!.Text!.Trim();
+        _effects[i] = ev with
+        {
+            Color = color,
+            Opacity = Math.Clamp(_spotlightOpacityInput?.Value ?? ev.Opacity, 0.1, 1.0),
+            Radius = (int)Math.Clamp((double)(_spotlightRadiusInput?.Value ?? ev.Radius), 12, 160),
+        };
+        UpdateCursorOverlay();
+    }
+
+    // The visibility editor changed — flip the selected span between shown/hidden.
+    private void OnVisibilityPropsChanged()
+    {
+        if (_suppressInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not VisibilityEffect ev) return;
+        _effects[i] = ev with { Visible = _visibilityInput?.IsChecked ?? true };
+        _effectsLane.Refresh(); // the block label shows shown/hidden
+        UpdateCursorOverlay();
     }
 
     private static string KindName(EffectKind kind) => kind switch
@@ -332,9 +400,9 @@ public partial class TimelineEditorWindow : Window
         var cy = Math.Clamp(norm.Y + norm.Height / 2, 0, 1);
         _effects[i] = ev with { Zoom = zoom, CenterX = cx, CenterY = cy };
 
-        _suppressZoomInspector = true;
+        _suppressInspector = true;
         if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)zoom;
-        _suppressZoomInspector = false;
+        _suppressInspector = false;
         _preview.SetTargetBox(EventBox((ZoomEffect)_effects[i])); // snap the shown box to the aspect-correct square
         OnEffectsChanged();
         _effectsLane.Refresh();
@@ -343,7 +411,7 @@ public partial class TimelineEditorWindow : Window
     // The right-pane inputs changed — apply zoom + independent ease-in/out to the selected zoom effect.
     private void OnZoomPropsChanged()
     {
-        if (_suppressZoomInspector || _effectsLane is null) return;
+        if (_suppressInspector || _effectsLane is null) return;
         var i = _effectsLane.SelectedIndex;
         if (i < 0 || i >= _effects.Count || _effects[i] is not ZoomEffect ev) return;
         _effects[i] = ev with
@@ -409,7 +477,7 @@ public partial class TimelineEditorWindow : Window
     {
         if (_smoothed is null || _smoothed.IsEmpty)
         {
-            _preview.SetCursor(null); _preview.SetViewport(null); _preview.SetRipples([]);
+            _preview.SetCursor(null); _preview.SetViewport(null); _preview.SetRipples([]); _preview.SetSpotlight(null);
             return;
         }
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
@@ -430,19 +498,32 @@ public partial class TimelineEditorWindow : Window
         _preview.SetViewport(zoomed
             ? new Rect(vp.X / _source.Width, vp.Y / _source.Height, vp.Width / _source.Width, vp.Height / _source.Height)
             : null);
-        // Zoom still applies when the cursor is hidden — only the cursor + ripples drop out.
-        _preview.SetCursor(_showCursor ? Norm(s.X, s.Y) : null);
-        _preview.SetRipples(_showCursor ? ActiveRipples(i, vp) : []);
+
+        // Visibility / ripple / spotlight are resolved from the effect track at this frame's source time — the
+        // same lookups the export uses — so the preview mirrors the file. Zoom still applies when the cursor is
+        // hidden; only the cursor + ripples drop out.
+        var srcMs = _timeline.EditedToSourceMs((long)(i * 1000.0 / _smoothed.Fps));
+        var fx = CurrentEffects;
+        var visible = fx.VisibilityAt(srcMs)?.Visible ?? true;
+        var ripplesOn = fx.RipplesEnabledAt(srcMs);
+        _preview.SetCursor(visible ? Norm(s.X, s.Y) : null);
+        _preview.SetRipples(visible && ripplesOn ? ActiveRipples(i, vp) : []);
+
+        var sf = fx.SpotlightAt(srcMs, _source.Height);
+        _preview.SetSpotlight(sf.Active
+            ? new PreviewSurface.PreviewSpotlight(Norm(s.X, s.Y), sf.RadiusPx / _source.Height,
+                Avalonia.Media.Color.FromRgb(sf.R, sf.G, sf.B), sf.Alpha)
+            : null);
     }
 
     /// <summary>The click ripples live at frame <paramref name="i"/>, mirrored from the export's cursor compositor
     /// (same lifetime, radii, and viewport mapping) so the preview matches the file.</summary>
     private IReadOnlyList<PreviewSurface.PreviewRipple> ActiveRipples(int i, ZoomViewport vp)
     {
-        if (!_cursorRipple || _smoothed is null || _smoothed.IsEmpty || _source.Height <= 0)
+        if (_smoothed is null || _smoothed.IsEmpty || _source.Height <= 0)
             return [];
 
-        var style = CursorStyle.ForExport(_source.Height, _cursorSize, _cursorRipple);
+        var style = CursorStyle.ForExport(_source.Height, _cursorSize);
         var rippleFrames = Math.Max(1, (int)Math.Round(style.RippleSeconds * _smoothed.Fps));
         var ripples = new List<PreviewSurface.PreviewRipple>();
         foreach (var click in _smoothed.Clicks)
@@ -466,7 +547,7 @@ public partial class TimelineEditorWindow : Window
     private void PersistEdit()
     {
         if (_smoothTrack is null || string.IsNullOrEmpty(_source.Path)) return;
-        try { new ClipEdit(_authoredZoom, _showCursor).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
+        try { new ClipEdit(CurrentEffects).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
         catch { /* best effort — never block closing on a failed save */ }
     }
 
@@ -476,7 +557,7 @@ public partial class TimelineEditorWindow : Window
         var s = Services.SettingsService.Instance?.Current ?? Shrike.Core.Settings.AppSettings.Default;
         _smoothing = CursorSmoothing.FromSmoothness(s.CursorSmoothness);
         _cursorSize = s.CursorSize;
-        _cursorRipple = s.CursorRippleEnabled;
+        _rippleDefaultOn = s.CursorRippleEnabled; // the seed for a new/migrated clip's full-length ripple block
     }
 
     /// <summary>Save the current smoothing/zoom back to settings (on close), but only for a clip that actually
@@ -490,7 +571,6 @@ public partial class TimelineEditorWindow : Window
         {
             CursorSmoothness = _smoothing.Smoothness,
             CursorSize = _cursorSize,
-            CursorRippleEnabled = _cursorRipple,
         });
     }
 
@@ -507,27 +587,15 @@ public partial class TimelineEditorWindow : Window
                 if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
             };
         }
-        _cursorToggle = this.FindControl<CheckBox>("CursorToggle");
-        if (_cursorToggle is not null)
-        {
-            _cursorToggle.IsChecked = _showCursor;
-            _cursorToggle.IsCheckedChanged += (_, _) => OnCursorLookChanged();
-        }
         _sizeSlider = this.FindControl<Slider>("SizeSlider");
         _sizeValue = this.FindControl<TextBlock>("SizeValue");
-        _rippleToggle = this.FindControl<CheckBox>("RippleToggle");
         if (_sizeSlider is not null)
         {
             _sizeSlider.Value = _cursorSize;
             _sizeSlider.PropertyChanged += (_, e) =>
             {
-                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnCursorLookChanged();
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnCursorSizeChanged();
             };
-        }
-        if (_rippleToggle is not null)
-        {
-            _rippleToggle.IsChecked = _cursorRipple;
-            _rippleToggle.IsCheckedChanged += (_, _) => OnCursorLookChanged();
         }
         if (this.FindControl<Button>("SmoothingReset") is { } reset)
             reset.Click += (_, _) => ResetSmoothing();
@@ -536,21 +604,19 @@ public partial class TimelineEditorWindow : Window
         UpdateCursorScale();
     }
 
-    private void OnCursorLookChanged()
+    private void OnCursorSizeChanged()
     {
-        _showCursor = _cursorToggle?.IsChecked ?? true;
         _cursorSize = Math.Clamp(_sizeSlider?.Value ?? _cursorSize, 0.5, 2.0);
-        _cursorRipple = _rippleToggle?.IsChecked ?? true;
         UpdateSmoothingLabels();
         UpdateCursorScale();
-        UpdateCursorOverlay(); // refresh cursor/ripple visibility at the current frame
+        UpdateCursorOverlay(); // refresh cursor/ripple size at the current frame
     }
 
     /// <summary>Keep the previewed cursor the same relative size as the export renders it (WYSIWYG).</summary>
     private void UpdateCursorScale()
     {
         if (_source.Height <= 0) return;
-        var frac = CursorStyle.ForExport(_source.Height, _cursorSize, _cursorRipple).Height / (double)_source.Height;
+        var frac = CursorStyle.ForExport(_source.Height, _cursorSize).Height / (double)_source.Height;
         _preview.SetCursorScale(frac);
     }
 
@@ -566,10 +632,8 @@ public partial class TimelineEditorWindow : Window
     {
         _smoothing = CursorSmoothing.FromSmoothness(CursorSmoothing.DefaultSmoothness);
         _cursorSize = 1.0;
-        _cursorRipple = true;
         if (_smoothnessSlider is not null) _smoothnessSlider.Value = _smoothing.Smoothness * 100.0;
         if (_sizeSlider is not null) _sizeSlider.Value = _cursorSize;
-        if (_rippleToggle is not null) _rippleToggle.IsChecked = _cursorRipple;
         UpdateSmoothingLabels();
         UpdateCursorScale();
         ReprojectSmoothTrack();
@@ -837,8 +901,8 @@ public partial class TimelineEditorWindow : Window
         if (!_timeline.HasKeptContent) return;
         PersistEdit(); // make sure the authored zoom is on disk before we (and the export) read it
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
-        // Carry the tuned preview settings + authored zoom into the export so the file matches the preview.
-        dlg.ConfigureSmoothCursor(_smoothing, _cursorSize, _cursorRipple, _showCursor, _authoredZoom);
+        // Carry the tuned smoothing/size + the authored effect track into the export so the file matches the preview.
+        dlg.ConfigureEffects(_smoothing, _cursorSize, CurrentEffects);
         await dlg.ShowDialog(this);
     }
 

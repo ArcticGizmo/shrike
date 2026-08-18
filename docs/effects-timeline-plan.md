@@ -152,17 +152,30 @@ relaunch the dev exe on every change (kill running Shrike first).
 - ✅ **Exit / demo:** scrub from the ruler; select/deselect any effect — the pane stays put and only its
   content changes; layout never shifts. Build clean, **262 passed**.
 
-### M3 · Mouse effects as ranged effects  *(spotlight · ripple · visibility)*
-- **Spotlight:** net-new `SpotlightCompositor : IFrameCompositor` (eased glow under the smoothed cursor
-  within range) + matching preview draw in `PreviewSurface`. Pane editor: colour, opacity, radius
-  (seed from the leftover `AppSettings.Spotlight*` fields).
-- **Ripple:** convert the clip-wide ripple to a ranged `RippleEffect` — `CursorCompositor` enables
-  ripples only for clicks inside an active range; preview mirrors. Default full-length seed keeps
-  today's behaviour.
-- **Visibility:** convert `ShowCursor` to ranged `VisibilityEffect`; within a non-visible range the
-  cursor (and its ripples/spotlight) are suppressed. Default full-length "shown" seed.
-- **Exit / demo:** hide the cursor for one span, spotlight another, ripple a third — each visible in the
-  **preview and the exported file**, tuned from the pane.
+### ✅ M3 · Mouse effects as ranged effects  *(spotlight · ripple · visibility)*
+- ✅ **Spotlight:** net-new `SpotlightCompositor : IFrameCompositor` (soft radial glow under the smoothed
+  cursor, eased alpha, mapped through the shared viewports) + matching `PreviewSurface.SetSpotlight`
+  radial-gradient draw. Pane editor: colour (hex), opacity, radius; new-block defaults seed from
+  `AppSettings.Spotlight*`.
+- ✅ **Ripple:** `CursorCompositor` gained an optional per-frame `ripplesEnabled` mask; a `RippleEffect`
+  span enables ripples for clicks inside it. Preview mirrors via `RipplesEnabledAt`. Default full-length
+  ripple block seeded (from `CursorRippleEnabled`) so today's behaviour is preserved.
+- ✅ **Visibility:** `CursorCompositor` gained an optional per-frame `cursorVisible` mask; a
+  `VisibilityEffect(Visible=false)` span hides the cursor (ripples belong to their own range). Default
+  full-length "shown" block seeded (migrated from v1 `ShowCursor`). Pane editor: a shown/hidden toggle.
+- ✅ **Resolvers** on `EffectTrack` (`ResolveCursorVisible` / `ResolveRipplesEnabled` / `ResolveSpotlight`
+  + `SpotlightAt`, `VisibilityAt`, `RipplesEnabledAt`, hex parse) — pure, headless-tested; the preview and
+  export share them so WYSIWYG holds.
+- ✅ **Persistence bumped to v2**: `ClipEdit` now stores the whole `EffectTrack` (zoom + visibility + ripple
+  + spotlight); v1 docs still read and migrate; the capture-time default writer stays v1. Export takes the
+  effect track (`ConfigureEffects`) and builds the chain **zoom → spotlight → cursor(+masks)**.
+- ✅ The global **Show / Ripple** checkboxes were removed from the cursor panel — they're timeline effects
+  now (Smoothness + Size remain global tuning).
+- ✅ **Exit / demo:** hide the cursor for one span, spotlight another, ripple a third — each resolves in
+  the preview and the export from the same track, tuned from the pane. Build clean; **271 passed**.
+
+  *(Canvas blocks are still not serialised — that lands with M4's annotation payload; a placed canvas is
+  session-only until then.)*
 
 ### M4 · Canvas effect — static, full tool parity
 - **Model:** `CanvasEffect` = `AnnotationDocument` + content/screen `Space` + ease (+ constant transform

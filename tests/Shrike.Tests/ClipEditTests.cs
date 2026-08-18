@@ -131,9 +131,62 @@ public class ClipEditTests
         // The whole point: an existing on-disk (v1) edit projects onto the effects model.
         var v1Json = new ClipEdit(new ZoomTrack([new ZoomEvent(500, 1500, 0.5, 0.5, 2.0, 200, 200)]),
             showCursor: false).ToJson();
-        var effects = ClipEdit.FromJson(v1Json).ToEffectTrack(clipDurationMs: 3000);
+        var back = ClipEdit.FromJson(v1Json);
+        Assert.False(back.HasEffectTrack); // read as v1 → editor will seed defaults
+        var effects = back.ToEffectTrack(clipDurationMs: 3000);
 
         Assert.Single(effects.OfKind<ZoomEffect>());
         Assert.False(Assert.Single(effects.OfKind<VisibilityEffect>()).Visible);
+    }
+
+    // --- v2 effect-track persistence ----------------------------------------------------------------------
+
+    [Fact]
+    public void Round_trips_a_full_v2_effect_track()
+    {
+        var effects = new EffectTrack(
+        [
+            new ZoomEffect(0, 1200, 300, 300, 0.6, 0.4, 1.8),
+            new VisibilityEffect(0, 5000, true),
+            new VisibilityEffect(2000, 3000, false),
+            new RippleEffect(0, 5000),
+            new SpotlightEffect(1000, 2000, 250, 250, "#FF0000", 0.4, 48),
+        ]);
+
+        var back = ClipEdit.FromJson(new ClipEdit(effects).ToJson());
+
+        Assert.True(back.HasEffectTrack);
+        Assert.Single(back.Effects.OfKind<ZoomEffect>());
+        Assert.Equal(2, back.Effects.OfKind<VisibilityEffect>().Count());
+        Assert.Single(back.Effects.OfKind<RippleEffect>());
+        var spot = Assert.Single(back.Effects.OfKind<SpotlightEffect>());
+        Assert.Equal("#FF0000", spot.Color);
+        Assert.Equal(48, spot.Radius);
+        Assert.Equal(0.4, spot.Opacity, 3);
+    }
+
+    [Fact]
+    public void V2_show_cursor_is_derived_from_a_hide_span_at_the_start()
+    {
+        // A full-length "shown" seed → ShowCursor true; a hide span starting at 0 → false.
+        Assert.True(new ClipEdit(new EffectTrack([new VisibilityEffect(0, 5000, true)])).ShowCursor);
+        Assert.False(new ClipEdit(new EffectTrack([new VisibilityEffect(0, 5000, false)])).ShowCursor);
+    }
+
+    [Fact]
+    public void V2_edit_is_empty_only_with_no_effects_and_save_deletes_it()
+    {
+        Assert.True(new ClipEdit(EffectTrack.Empty).IsEmpty);
+        Assert.False(new ClipEdit(new EffectTrack([new RippleEffect(0, 1000)])).IsEmpty);
+
+        var path = Path.Combine(Path.GetTempPath(), "shrike-v2-" + Guid.NewGuid().ToString("N") + ".edit.json");
+        try
+        {
+            new ClipEdit(new EffectTrack([new SpotlightEffect(0, 1000, 100, 100, "#FFD24A", 0.3, 30)])).Save(path);
+            Assert.True(ClipEdit.Load(path).Effects.OfKind<SpotlightEffect>().Any());
+            new ClipEdit(EffectTrack.Empty).Save(path);
+            Assert.False(File.Exists(path));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
     }
 }

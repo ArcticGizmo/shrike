@@ -114,4 +114,34 @@ public class CursorCompositorTests
         // Ripple flag is carried through.
         Assert.False(CursorStyle.ForExport(1080, 1.0, rippleEnabled: false).RippleEnabled);
     }
+
+    [Fact]
+    public void Visibility_mask_hides_the_cursor_on_masked_frames()
+    {
+        var frames = new[] { new CursorSample(40, 30) };
+
+        var shown = new byte[W * H * 4];
+        new CursorCompositor(Track(frames), cursorVisible: [true]).Compose(shown, W, H, 0);
+
+        var hidden = new byte[W * H * 4];
+        new CursorCompositor(Track(frames), cursorVisible: [false]).Compose(hidden, W, H, 0);
+
+        Assert.True(NonZero(shown) > 0);
+        Assert.Equal(0, NonZero(hidden)); // a hidden frame draws nothing
+    }
+
+    [Fact]
+    public void Ripple_mask_gates_the_ring_per_frame()
+    {
+        var frames = new[] { new CursorSample(60, 45) };
+        var clicked = Track(frames, [new CursorClickMark(0, MouseButtonKind.Left)]);
+
+        var on = new byte[W * H * 4];
+        new CursorCompositor(clicked, CursorStyle.Default, ripplesEnabled: [true]).Compose(on, W, H, 5);
+
+        var off = new byte[W * H * 4];
+        new CursorCompositor(clicked, CursorStyle.Default, ripplesEnabled: [false]).Compose(off, W, H, 5);
+
+        Assert.True(NonZero(on) > NonZero(off)); // the ripple only paints when its range enables it
+    }
 }

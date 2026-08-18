@@ -18,11 +18,16 @@ public sealed class PreviewSurface : Control
     /// and stay the same on-screen size through zoom — matching how the export bakes them.</summary>
     public readonly record struct PreviewRipple(Point Center, double RadiusFraction, double ThicknessFraction, double Alpha);
 
+    /// <summary>A spotlight glow to preview: a soft radial halo under the cursor. Centre is normalised [0..1]
+    /// within the displayed frame; radius is a fraction of the drawn frame height, matching the export.</summary>
+    public readonly record struct PreviewSpotlight(Point Center, double RadiusFraction, Color Color, double Alpha);
+
     private IImage? _image;
     private Point? _cursor;   // optional overlay cursor, normalised [0..1] within the displayed (cropped) frame
     private Rect? _viewport;  // optional normalised source crop [0..1] — the zoom framing
     private double _cursorHeightFrac = 1.0 / 45.0; // overlay cursor height as a fraction of the drawn frame height
     private IReadOnlyList<PreviewRipple> _ripples = [];
+    private PreviewSpotlight? _spotlight;
 
     // Zoom-aim: draw / move / resize a box on the frame to define a zoom event's focus + factor. The box is a
     // normalised square (the crop is always the frame's aspect ratio, so a square in normalised space), and
@@ -83,6 +88,13 @@ public sealed class PreviewSurface : Control
     public void SetRipples(IReadOnlyList<PreviewRipple> ripples)
     {
         _ripples = ripples;
+        InvalidateVisual();
+    }
+
+    /// <summary>Overlay the spotlight glow active at the current time (null to clear), mirroring the export.</summary>
+    public void SetSpotlight(PreviewSpotlight? spotlight)
+    {
+        _spotlight = spotlight;
         InvalidateVisual();
     }
 
@@ -201,6 +213,27 @@ public sealed class PreviewSurface : Control
         var rect = new Rect((dst.Width - w) / 2, (dst.Height - h) / 2, w, h);
         _fitRect = rect;
         ctx.DrawImage(img, srcRect, rect);
+
+        // Spotlight glow sits under everything else, following the cursor (drawn as a radial gradient ellipse).
+        if (_spotlight is { } sp && sp.Alpha > 0)
+        {
+            var centre = new Point(rect.X + sp.Center.X * rect.Width, rect.Y + sp.Center.Y * rect.Height);
+            var radius = sp.RadiusFraction * rect.Height;
+            if (radius > 0)
+            {
+                var inner = Color.FromArgb((byte)Math.Clamp(sp.Alpha * 255, 0, 255), sp.Color.R, sp.Color.G, sp.Color.B);
+                var outer = Color.FromArgb(0, sp.Color.R, sp.Color.G, sp.Color.B);
+                var brush = new RadialGradientBrush
+                {
+                    Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                    GradientOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                    RadiusX = new RelativeScalar(0.5, RelativeUnit.Relative),
+                    RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(inner, 0), new GradientStop(outer, 1) },
+                };
+                ctx.DrawEllipse(brush, null, centre, radius, radius);
+            }
+        }
 
         // Ripples sit under the cursor, anchored where the click landed.
         foreach (var r in _ripples)

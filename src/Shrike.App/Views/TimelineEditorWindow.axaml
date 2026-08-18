@@ -56,8 +56,6 @@
             <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
                 <TextBlock Text="✦ Cursor" Foreground="#F5A524" FontFamily="Consolas,monospace"
                            FontSize="12" VerticalAlignment="Center" />
-                <CheckBox Name="CursorToggle" Content="Show" VerticalAlignment="Center" Foreground="#B8AE9C"
-                          ToolTip.Tip="Draw the cursor in this clip" />
                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <TextBlock Text="Smoothness" Classes="hint" VerticalAlignment="Center" />
                     <Slider Name="SmoothnessSlider" Width="150" Minimum="0" Maximum="100" VerticalAlignment="Center" />
@@ -68,7 +66,8 @@
                     <Slider Name="SizeSlider" Width="104" Minimum="0.5" Maximum="2.0" VerticalAlignment="Center" />
                     <TextBlock Name="SizeValue" Classes="hint" Width="42" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
                 </StackPanel>
-                <CheckBox Name="RippleToggle" Content="Ripple" VerticalAlignment="Center" Foreground="#B8AE9C" />
+                <TextBlock Classes="hint" VerticalAlignment="Center"
+                           Text="cursor / ripple / spotlight are now timeline effects — right-click the lane" />
                 <Button Name="SmoothingReset" Classes="tool" Content="Reset" />
             </StackPanel>
         </Border>
@@ -130,6 +129,29 @@
                         <TextBlock Text="Ease out (s)" Classes="hint" />
                         <NumericUpDown Name="EaseOutInput" Minimum="0" Maximum="3" Increment="0.1" FormatString="0.0#" />
                     </StackPanel>
+                </StackPanel>
+
+                <!-- Spotlight editor. -->
+                <StackPanel Name="SpotlightEditor" Spacing="16" IsVisible="False">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Colour (hex)" Classes="hint" />
+                        <TextBox Name="SpotlightColorInput" PlaceholderText="#FFD24A" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Opacity" Classes="hint" />
+                        <Slider Name="SpotlightOpacityInput" Minimum="0.1" Maximum="1.0" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Radius (px)" Classes="hint" />
+                        <NumericUpDown Name="SpotlightRadiusInput" Minimum="12" Maximum="160" Increment="2" FormatString="0" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Visibility editor. -->
+                <StackPanel Name="VisibilityEditor" Spacing="8" IsVisible="False">
+                    <CheckBox Name="VisibilityInput" Content="Cursor shown" Foreground="#B8AE9C" />
+                    <TextBlock Classes="hint" TextWrapping="Wrap"
+                               Text="Uncheck to hide the cursor for this span. The default full-length block keeps the cursor shown." />
                 </StackPanel>
 
                 <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"

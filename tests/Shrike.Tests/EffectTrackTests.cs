@@ -110,6 +110,59 @@ public class EffectTrackTests
         Assert.True(track.RipplesEnabledAt(1200));
         Assert.False(track.RipplesEnabledAt(1800));
     }
+
+    // --- per-output-frame resolvers -----------------------------------------------------------------------
+
+    [Fact]
+    public void ResolveCursorVisible_defaults_true_and_a_hide_span_masks_its_frames()
+    {
+        var timeline = new Timeline(2000); // no cuts → edited time == source time
+        var track = new EffectTrack([new VisibilityEffect(500, 1500, false)]);
+        var mask = track.ResolveCursorVisible(timeline, frameCount: 40, fps: 20); // 50ms per frame
+
+        Assert.True(mask[0]);    // 0ms  — default shown
+        Assert.False(mask[20]);  // 1000ms — inside the hide span
+        Assert.True(mask[39]);   // 1950ms — after it, shown again
+    }
+
+    [Fact]
+    public void ResolveRipplesEnabled_is_true_only_inside_a_ripple_span()
+    {
+        var timeline = new Timeline(2000);
+        var track = new EffectTrack([new RippleEffect(1000, 1500)]);
+        var mask = track.ResolveRipplesEnabled(timeline, frameCount: 40, fps: 20);
+
+        Assert.False(mask[10]); // 500ms
+        Assert.True(mask[24]);  // 1200ms
+        Assert.False(mask[34]); // 1700ms
+    }
+
+    [Fact]
+    public void ResolveSpotlight_is_active_and_eased_inside_its_span()
+    {
+        var timeline = new Timeline(2000);
+        var track = new EffectTrack([new SpotlightEffect(0, 2000, 500, 500, "#FF0000", 0.5, 40)]);
+        var frames = track.ResolveSpotlight(timeline, frameCount: 40, fps: 20, height: 1080);
+
+        var mid = frames[20]; // 1000ms — mid-hold, fully ramped
+        Assert.True(mid.Active);
+        Assert.Equal(0.5, mid.Alpha, 3);           // Opacity * ramp(=1)
+        Assert.Equal((byte)0xFF, mid.R);           // parsed colour
+        Assert.Equal((byte)0x00, mid.G);
+        Assert.True(mid.RadiusPx > 0);
+
+        // Outside any spotlight → inactive.
+        Assert.False(new EffectTrack([]).ResolveSpotlight(timeline, 40, 20, 1080)[20].Active);
+    }
+
+    [Fact]
+    public void ParseHex_reads_rgb_and_falls_back_on_junk()
+    {
+        Assert.Equal(((byte)0xFF, (byte)0xD2, (byte)0x4A), EffectTrack.ParseHex("#FFD24A"));
+        Assert.Equal(((byte)0x10, (byte)0x20, (byte)0x30), EffectTrack.ParseHex("102030"));
+        Assert.Equal(((byte)0x11, (byte)0x22, (byte)0x33), EffectTrack.ParseHex("#FF112233")); // AARRGGBB → RGB
+        Assert.Equal(((byte)0xFF, (byte)0xD2, (byte)0x4A), EffectTrack.ParseHex("not-a-colour"));
+    }
 }
 
 file static class EffectTrackTestExtensions
