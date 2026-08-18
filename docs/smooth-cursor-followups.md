@@ -16,8 +16,12 @@ high-quality intermediate). Tunable and previewed live in the editor. 225 tests 
 **Shipped:** §A — `feature/smooth-cursor` merged to `main` (PR #4, `23cd471`); **v0.2.0** bumped, tagged, and
 released (the tag contains the merge).
 
-**Not done:** a release-grade tuning UI (§B, next), a real-hardware QA pass (§C), and the performance and
-fidelity items below.
+**Not done:** a real-hardware QA pass (§C), and the performance and fidelity items below.
+
+**Superseding zoom:** the automatic click-cluster zoom (`AutoZoom`, SC5) is being replaced by a directable
+**timeline-based zoom** — authored zoom events with a target shape + easing, previewed live. Scoped separately
+in [`zoom-timeline-editing-plan.md`](zoom-timeline-editing-plan.md). The current auto-zoom stays as the interim
+path until that lands.
 
 ## Guiding rules (carried from the main plan)
 
@@ -54,9 +58,11 @@ rolls into the §C hardware pass.)*
   `RippleEnabled` flag and a resolution-aware `CursorStyle.ForExport(exportHeight, sizeScale, rippleEnabled)`
   factory; both are threaded through `ConfigureSmoothCursor` → `CursorCompositor` (which previously always used
   `CursorStyle.Default`). The preview scales its overlay cursor to match (`PreviewSurface.SetCursorScale`), so
-  size stays WYSIWYG. *(Ripples still aren't drawn in the live preview — a pre-existing gap — so the ripple
-  toggle only shows in the export; noted for §C look review. Press **"punch"** stays deferred: it's genuine
-  net-new compositor logic, not just a flag.)*
+  size stays WYSIWYG. Press **"punch"** stays deferred: it's genuine net-new compositor logic, not just a flag.
+- ✅ **Click ripples now render in the live preview** (`PreviewSurface.SetRipples` + `ActiveRipples`), mirroring
+  the export's lifetime/radii/viewport map — so clicks are visible while editing, not just in the file. This
+  also established the project-wide rule that **every export effect must show in the preview** (see
+  [`CLAUDE.md`](../CLAUDE.md)); the earlier ripple-preview gap is closed.
 - ✅ Cursor **size scales with export resolution** — `ForExport` bases the cursor on the frame height
   (~24px at 1080p, clamped [14,64]), so a fixed size no longer looks large on 480p / tiny on 4K; the user
   `CursorSize` (0.5–2×) multiplies that base.

@@ -177,23 +177,54 @@ public partial class TimelineEditorWindow : Window
 
     private void UpdateCursorOverlay()
     {
-        if (_smoothed is null || _smoothed.IsEmpty) { _preview.SetCursor(null); _preview.SetViewport(null); return; }
+        if (_smoothed is null || _smoothed.IsEmpty)
+        {
+            _preview.SetCursor(null); _preview.SetViewport(null); _preview.SetRipples([]);
+            return;
+        }
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
         var s = _smoothed.Frames[i];
 
+        // The zoom viewport (crop) at this frame; the full frame when zoom ≈ 1.
         var z = _zoomCurve is { } zc && i < zc.Length ? zc[i] : 1.0;
-        if (z > 1.0001)
+        var vp = z > 1.0001
+            ? AutoZoom.Viewport(z, s.X, s.Y, _source.Width, _source.Height)
+            : new ZoomViewport(0, 0, _source.Width, _source.Height);
+
+        // Position a point (export px) as a fraction of the displayed crop — matches the export's viewport map.
+        Point Norm(double x, double y) => new((x - vp.X) / vp.Width, (y - vp.Y) / vp.Height);
+
+        _preview.SetViewport(z > 1.0001
+            ? new Rect(vp.X / _source.Width, vp.Y / _source.Height, vp.Width / _source.Width, vp.Height / _source.Height)
+            : null);
+        _preview.SetCursor(Norm(s.X, s.Y));
+        _preview.SetRipples(ActiveRipples(i, vp));
+    }
+
+    /// <summary>The click ripples live at frame <paramref name="i"/>, mirrored from the export's cursor compositor
+    /// (same lifetime, radii, and viewport mapping) so the preview matches the file.</summary>
+    private IReadOnlyList<PreviewSurface.PreviewRipple> ActiveRipples(int i, ZoomViewport vp)
+    {
+        if (!_cursorRipple || _smoothed is null || _smoothed.IsEmpty || _source.Height <= 0)
+            return [];
+
+        var style = CursorStyle.ForExport(_source.Height, _cursorSize, _cursorRipple);
+        var rippleFrames = Math.Max(1, (int)Math.Round(style.RippleSeconds * _smoothed.Fps));
+        var ripples = new List<PreviewSurface.PreviewRipple>();
+        foreach (var click in _smoothed.Clicks)
         {
-            // Crop the preview to the zoom viewport and place the cursor within that crop (0..1).
-            var vp = AutoZoom.Viewport(z, s.X, s.Y, _source.Width, _source.Height);
-            _preview.SetViewport(new Rect(vp.X / _source.Width, vp.Y / _source.Height, vp.Width / _source.Width, vp.Height / _source.Height));
-            _preview.SetCursor(new Point((s.X - vp.X) / vp.Width, (s.Y - vp.Y) / vp.Height));
+            var age = i - click.FrameIndex;
+            if (age < 0 || age >= rippleFrames) continue;
+            var p = age / (double)rippleFrames;
+            var c = _smoothed.Frames[Math.Clamp(click.FrameIndex, 0, _smoothed.Frames.Count - 1)];
+            var radiusPx = style.RippleStartRadius + p * (style.RippleEndRadius - style.RippleStartRadius);
+            ripples.Add(new PreviewSurface.PreviewRipple(
+                Center: new Point((c.X - vp.X) / vp.Width, (c.Y - vp.Y) / vp.Height),
+                RadiusFraction: radiusPx / _source.Height,
+                ThicknessFraction: style.RippleThickness / _source.Height,
+                Alpha: (1 - p) * style.RipplePeakAlpha));
         }
-        else
-        {
-            _preview.SetViewport(null);
-            _preview.SetCursor(new Point(s.X / _source.Width, s.Y / _source.Height));
-        }
+        return ripples;
     }
 
     /// <summary>Start the editor from the persisted tuning so a dialled-in look carries across sessions.</summary>
@@ -281,6 +312,7 @@ public partial class TimelineEditorWindow : Window
         _cursorRipple = _rippleToggle?.IsChecked ?? true;
         UpdateSmoothingLabels();
         UpdateCursorScale();
+        UpdateCursorOverlay(); // refresh ripple size/visibility at the current frame
     }
 
     /// <summary>Keep the previewed cursor the same relative size as the export renders it (WYSIWYG).</summary>

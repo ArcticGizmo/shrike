@@ -12,10 +12,16 @@ namespace Shrike.App.Controls;
 /// </summary>
 public sealed class PreviewSurface : Control
 {
+    /// <summary>A click ripple to preview: an expanding ring. Centre is normalised [0..1] within the displayed
+    /// (cropped) frame; the radius/thickness are fractions of the drawn frame height so they read as true circles
+    /// and stay the same on-screen size through zoom — matching how the export bakes them.</summary>
+    public readonly record struct PreviewRipple(Point Center, double RadiusFraction, double ThicknessFraction, double Alpha);
+
     private IImage? _image;
     private Point? _cursor;   // optional overlay cursor, normalised [0..1] within the displayed (cropped) frame
     private Rect? _viewport;  // optional normalised source crop [0..1] — the zoom framing
     private double _cursorHeightFrac = 1.0 / 45.0; // overlay cursor height as a fraction of the drawn frame height
+    private IReadOnlyList<PreviewRipple> _ripples = [];
 
     /// <summary>Set (or refresh) the frame to display and repaint immediately.</summary>
     public void Show(IImage image)
@@ -51,6 +57,14 @@ public sealed class PreviewSurface : Control
         InvalidateVisual();
     }
 
+    /// <summary>Overlay the click ripples active at the current time (empty to clear), so the previewed clicks
+    /// match what the export bakes in.</summary>
+    public void SetRipples(IReadOnlyList<PreviewRipple> ripples)
+    {
+        _ripples = ripples;
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext ctx)
     {
         base.Render(ctx);
@@ -71,6 +85,17 @@ public sealed class PreviewSurface : Control
         var h = srcRect.Height * scale;
         var rect = new Rect((dst.Width - w) / 2, (dst.Height - h) / 2, w, h);
         ctx.DrawImage(img, srcRect, rect);
+
+        // Ripples sit under the cursor, anchored where the click landed.
+        foreach (var r in _ripples)
+        {
+            if (r.Alpha <= 0) continue;
+            var centre = new Point(rect.X + r.Center.X * rect.Width, rect.Y + r.Center.Y * rect.Height);
+            var radius = r.RadiusFraction * rect.Height;
+            var thickness = Math.Max(1.0, r.ThicknessFraction * rect.Height);
+            var colour = Color.FromArgb((byte)Math.Clamp(r.Alpha * 255, 0, 255), 0xF5, 0xA5, 0x24); // amber
+            ctx.DrawEllipse(null, new Pen(new SolidColorBrush(colour), thickness), centre, radius, radius);
+        }
 
         if (_cursor is { } c)
             DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height), _cursorHeightFrac * rect.Height);
