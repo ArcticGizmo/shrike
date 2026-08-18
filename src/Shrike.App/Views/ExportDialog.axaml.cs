@@ -179,62 +179,82 @@ public partial class ExportDialog : Window
         Finish(outputPath, copyToClipboard);
     }
 
-    private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
-        IProgress<double> progress, CancellationToken ct)
-    {
-#if DEBUG
-        // Experimental: if this clip carries a smooth-cursor track and we're producing an MP4, render the
-        // synthetic cursor into the frames via the composite pipeline (interim H.264) instead of a plain
-        // transcode. Everything else falls through to the normal export.
-        if (TryCompositeCursorExport(profile, outputPath, progress, ct, out var composite))
-        {
-            await composite;
-            return;
-        }
-#endif
-        var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
-        await new VideoExporter(_ffmpegPath).ExportAsync(cmd, _timeline.KeptDurationMs, progress, ct);
-    }
-
-#if DEBUG
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
     private ZoomConfig _zoom = ZoomConfig.Default;
 
-    /// <summary>Debug: carry the editor's tuned smoothing + zoom into the export so what you saw in the
-    /// preview is what gets rendered.</summary>
+    /// <summary>Carry the editor's tuned smoothing + zoom into the export so what you saw in the preview is
+    /// what gets rendered.</summary>
     internal void ConfigureSmoothCursor(CursorSmoothing smoothing, ZoomConfig zoom)
     {
         _smoothing = smoothing;
         _zoom = zoom;
     }
 
-    private bool TryCompositeCursorExport(ExportProfile profile, string outputPath,
-        IProgress<double> progress, CancellationToken ct, out Task task)
+    private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
+        IProgress<double> progress, CancellationToken ct)
     {
-        task = Task.CompletedTask;
-        if (profile.Codec is not (ExportCodec.H264 or ExportCodec.H265)) return false;
+        // If this clip carries a smooth-cursor track, render the synthetic cursor + zoom into the frames
+        // before encoding to the chosen preset. Otherwise, the plain transcode.
+        if (LoadTrack() is { Points.Count: > 0 } track)
+        {
+            await CompositeCursorExport(profile, hardware, track, outputPath, progress, ct);
+            return;
+        }
 
+        var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
+        await new VideoExporter(_ffmpegPath).ExportAsync(cmd, _timeline.KeptDurationMs, progress, ct);
+    }
+
+    private MouseTrack? LoadTrack()
+    {
         var sidecar = Shrike.Core.AppStorage.SidecarFor(_source.Path);
-        if (!File.Exists(sidecar)) return false;
+        if (!File.Exists(sidecar)) return null;
+        try { return MouseTrack.Load(sidecar); }
+        catch { return null; }
+    }
 
-        MouseTrack track;
-        try { track = MouseTrack.Load(sidecar); }
-        catch { return false; }
+    /// <summary>
+    /// Two stages, for full preset parity: (1) composite the smoothed cursor + auto-zoom into a
+    /// high-quality intermediate at the target size, then (2) run the normal export on that intermediate,
+    /// so every preset (H.265 / hardware / GIF / WebP / Source) ships with the cursor baked in.
+    /// </summary>
+    private async Task CompositeCursorExport(ExportProfile profile, HwEncoder? hardware, MouseTrack track,
+        string outputPath, IProgress<double> progress, CancellationToken ct)
+    {
+        var probe = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware: null, outputPath);
+        int w = probe.TargetWidth, h = probe.TargetHeight, fps = probe.TargetFps;
 
-        // Target dims/fps come from the chosen preset; project the cursor into that space.
-        var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware: null, outputPath);
-        int w = cmd.TargetWidth, h = cmd.TargetHeight, fps = cmd.TargetFps;
         var smoothed = SmoothCursor.Project(track, _timeline, fps, w, h, _smoothing);
-        if (smoothed.IsEmpty) return false;
+        if (smoothed.IsEmpty)
+        {
+            var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
+            await new VideoExporter(_ffmpegPath).ExportAsync(plain, _timeline.KeptDurationMs, progress, ct);
+            return;
+        }
 
         var zoomCurve = AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, fps, _zoom);
         var compositor = new CursorCompositor(smoothed, style: null, zoomCurve);
-        var bitrate = (int)Math.Clamp((long)w * h * fps / 10, 1_000_000, 12_000_000);
-        var pipeline = new FrameCompositePipeline(_ffmpegPath);
-        task = Task.Run(() => pipeline.Run(_source, _timeline.KeptRanges, w, h, fps, bitrate, outputPath, compositor, progress, ct), ct);
-        return true;
+
+        var intermediate = Path.Combine(Path.GetTempPath(), "shrike-cursor-" + Guid.NewGuid().ToString("N") + ".mp4");
+        var interBitrate = (int)Math.Clamp((long)w * h * fps / 3, 8_000_000, 80_000_000); // generous → near-transparent
+        try
+        {
+            // Stage 1 — composite to the intermediate (0..50% of the bar).
+            var stage1 = new Progress<double>(v => progress.Report(v * 0.5));
+            var pipeline = new FrameCompositePipeline(_ffmpegPath);
+            await Task.Run(() => pipeline.Run(_source, _timeline.KeptRanges, w, h, fps, interBitrate, intermediate, compositor, stage1, ct), ct);
+
+            // Stage 2 — encode the already trimmed/scaled intermediate to the chosen preset (50..100%).
+            var interSource = new RecordingSource(intermediate, w, h, fps, TimeSpan.FromMilliseconds(_timeline.KeptDurationMs));
+            var cmd = ExportCommand.Build(interSource, new Timeline(interSource).KeptRanges, profile, hardware, outputPath);
+            var stage2 = new Progress<double>(v => progress.Report(0.5 + v * 0.5));
+            await new VideoExporter(_ffmpegPath).ExportAsync(cmd, _timeline.KeptDurationMs, stage2, ct);
+        }
+        finally
+        {
+            try { if (File.Exists(intermediate)) File.Delete(intermediate); } catch { /* best effort */ }
+        }
     }
-#endif
 
     private void Finish(string outputPath, bool copyToClipboard)
     {

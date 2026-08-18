@@ -114,10 +114,6 @@ public partial class RecordingHudWindow : Window
         // "Hide cursor" is simply the inverse of CursorInRecording.
         if (_hideCursorButton is not null) _hideCursorButton.IsChecked = !cursorInRecording;
         if (_smoothCursorButton is not null) _smoothCursorButton.IsChecked = smoothCursorOn;
-#if DEBUG
-        // Experimental smooth-cursor is a dev-only feature for now; the toggle is hidden in Release.
-        if (_smoothCursorButton is not null) _smoothCursorButton.IsVisible = true;
-#endif
         UpdateSmoothState();
 
         // SizeToContent means the real size isn't known until layout runs; re-place when it settles (and

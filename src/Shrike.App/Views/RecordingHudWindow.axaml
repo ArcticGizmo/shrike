@@ -79,7 +79,6 @@
             <!-- Smooth-cursor toggle (experimental): logs the pointer path and draws a smoothed synthetic
                  cursor in post. It hides the real cursor and supersedes the spotlight while on. -->
             <ToggleButton Name="SmoothCursorButton" Classes="hud" Content="Smooth cursor ✦" Click="OnToggleSmoothCursor"
-                          IsVisible="False"
                           ToolTip.Tip="Experimental — record the pointer and draw a smoothed cursor at export (hides the real cursor)" />
 
             <!-- Spotlight controls: available in both setup and recording. -->

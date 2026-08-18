@@ -54,10 +54,7 @@ public partial class TimelineEditorWindow : Window
     private bool _extracting;
     private Bitmap? _currentFrame;
 
-#if DEBUG
-    // Preview overlay of the smoothed synthetic cursor — lets us watch SC2 working on Play/scrub before the
-    // export pipeline (SC3/SC4) exists. Debug-only: showing it in preview but not in the export would break
-    // WYSIWYG, so it's un-gated only once SC4 draws the cursor into exported frames too.
+    // Smooth-cursor preview overlay + tuning: watch and dial in the smoothing/zoom the export renders.
     private MouseTrack? _smoothTrack;
     private SmoothedCursorTrack? _smoothed;
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
@@ -70,7 +67,6 @@ public partial class TimelineEditorWindow : Window
     private CheckBox? _zoomToggle;
     private Slider? _zoomSlider;
     private TextBlock? _zoomValue;
-#endif
 
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
@@ -97,11 +93,9 @@ public partial class TimelineEditorWindow : Window
         _strip.Scrubbing += OnScrub;
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
-#if DEBUG
         // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
         _timeline.Changed += ReprojectSmoothTrack;
         SetupSmoothingPanel();
-#endif
 
         Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
@@ -143,13 +137,10 @@ public partial class TimelineEditorWindow : Window
         UpdateLabels();
         RequestPreview(0);
         _ = LoadThumbnailsAsync(_cts.Token);
-#if DEBUG
         LoadSmoothTrack();
-#endif
     }
 
-#if DEBUG
-    // ---- smooth-cursor preview overlay (experimental; SC2 validation) ----
+    // ---- smooth-cursor preview overlay + tuning ----
 
     private void LoadSmoothTrack()
     {
@@ -283,7 +274,6 @@ public partial class TimelineEditorWindow : Window
         if (_betaValue is not null) _betaValue.Text = _smoothing.Beta.ToString("0.00#", inv);
         if (_zoomValue is not null) _zoomValue.Text = _zoom.MaxZoom.ToString("0.0#", inv) + "×";
     }
-#endif
 
     // ---- scrubbing / preview ----
 
@@ -294,9 +284,7 @@ public partial class TimelineEditorWindow : Window
         _currentEditedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
         RequestPreview(sourceMs);
         UpdateLabels();
-#if DEBUG
         UpdateCursorOverlay();
-#endif
     }
 
     private void OnSeek(long sourceMs) => OnScrub(sourceMs);
@@ -404,9 +392,7 @@ public partial class TimelineEditorWindow : Window
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
         UpdateLabels();
-#if DEBUG
         UpdateCursorOverlay();
-#endif
     }
 
     private void EnsurePlayBitmap(int w, int h)
@@ -494,9 +480,7 @@ public partial class TimelineEditorWindow : Window
         StopPlayback();
         if (!_timeline.HasKeptContent) return;
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
-#if DEBUG
         dlg.ConfigureSmoothCursor(_smoothing, _zoom); // carry the tuned preview settings into the export
-#endif
         await dlg.ShowDialog(this);
     }
 

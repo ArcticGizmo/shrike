@@ -92,6 +92,49 @@ public class FrameCompositePipelineTests
         }
     }
 
+    [Fact]
+    public async Task Composite_then_export_honours_the_chosen_preset()
+    {
+        // Parity check: stage 1 composites to a high-quality intermediate, stage 2 encodes it with a real
+        // preset (H.265) — the same two-stage path the export dialog uses so every preset gets the cursor.
+        if (Ffmpeg.Locate() is not { } ffmpeg) return;
+
+        var dir = Path.Combine(Path.GetTempPath(), $"shrike-parity-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var srcPath = Path.Combine(dir, "src.mp4");
+        var interPath = Path.Combine(dir, "inter.mp4");
+        var outPath = Path.Combine(dir, "out.mp4");
+        try
+        {
+            Run(ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc=duration=3:size=320x240:rate=30",
+                "-pix_fmt", "yuv420p", srcPath);
+            var source = MediaProbe.Probe(ffmpeg, srcPath);
+            Assert.NotNull(source);
+
+            var timeline = new Timeline(source!);
+
+            // Stage 1 — composite (identity is enough to prove the chain) to the intermediate.
+            new FrameCompositePipeline(ffmpeg).Run(source!, timeline.KeptRanges,
+                source!.Width, source.Height, source.Fps, bitrate: 20_000_000, interPath, new IdentityCompositor());
+            Assert.True(File.Exists(interPath));
+
+            // Stage 2 — encode the intermediate with an H.265 preset via the normal exporter.
+            var interSource = new RecordingSource(interPath, source.Width, source.Height, source.Fps, source.Duration);
+            var profile = ExportProfile.Presets.First(p => p.Codec == ExportCodec.H265);
+            var cmd = ExportCommand.Build(interSource, new Timeline(interSource).KeptRanges, profile, hardware: null, outPath);
+            await new VideoExporter(ffmpeg).ExportAsync(cmd, timeline.KeptDurationMs, new Progress<double>());
+
+            var exported = MediaProbe.Probe(ffmpeg, outPath);
+            Assert.NotNull(exported);
+            Assert.Equal(3.0, exported!.Duration.TotalSeconds, 1); // survives both stages at the right length
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     private static void Run(string exe, params string[] args)
     {
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
