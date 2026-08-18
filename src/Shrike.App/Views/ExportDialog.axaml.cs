@@ -180,18 +180,15 @@ public partial class ExportDialog : Window
     }
 
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
-    private ZoomConfig _zoom = ZoomConfig.Default;
     private ZoomTrack _authoredZoom = ZoomTrack.Empty;
     private double _cursorSize = 1.0;
     private bool _cursorRipple = true;
 
-    /// <summary>Carry the editor's tuned smoothing + zoom + cursor look into the export so what you saw in the
-    /// preview is what gets rendered. <paramref name="authoredZoom"/> (when non-empty) is the user's placed
-    /// zoom events and takes precedence over the click-driven auto-zoom.</summary>
-    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, ZoomConfig zoom, double cursorSize, bool cursorRipple, ZoomTrack? authoredZoom = null)
+    /// <summary>Carry the editor's tuned smoothing + cursor look + authored zoom into the export so what you saw
+    /// in the preview is what gets rendered. Zoom is entirely authored — no events means no zoom.</summary>
+    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, double cursorSize, bool cursorRipple, ZoomTrack? authoredZoom = null)
     {
         _smoothing = smoothing;
-        _zoom = zoom;
         _cursorSize = cursorSize;
         _cursorRipple = cursorRipple;
         _authoredZoom = authoredZoom ?? ZoomTrack.Empty;
@@ -239,16 +236,13 @@ public partial class ExportDialog : Window
             return;
         }
 
-        // Resolve the shared per-frame zoom framing, then compose the effect chain: the zoom transform
-        // first, the cursor + ripple overlay on top (each an IFrameCompositor). Adding effects = extending
-        // this chain. Authored zoom events win over the click-driven auto-zoom when present.
-        ZoomViewport[] viewports = !_authoredZoom.IsEmpty
-            ? _authoredZoom.Resolve(smoothed.Frames.Count, fps, w, h)
-            : AutoZoom.Viewports(smoothed.Frames, AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, fps, _zoom), w, h);
+        // Compose the effect chain: the zoom transform first (only when there are authored events), the
+        // cursor + ripple overlay on top (each an IFrameCompositor). Adding effects = extending this chain.
         var style = CursorStyle.ForExport(h, _cursorSize, _cursorRipple);
-        var compositor = new CompositorChain(
-            new ZoomCompositor(viewports),
-            new CursorCompositor(smoothed, style, viewports));
+        ZoomViewport[]? viewports = _authoredZoom.IsEmpty ? null : _authoredZoom.Resolve(smoothed.Frames.Count, fps, w, h);
+        var compositor = viewports is null
+            ? new CompositorChain(new CursorCompositor(smoothed, style, null))
+            : new CompositorChain(new ZoomCompositor(viewports), new CursorCompositor(smoothed, style, viewports));
 
         var intermediate = Path.Combine(Path.GetTempPath(), "shrike-cursor-" + Guid.NewGuid().ToString("N") + ".mp4");
         var interBitrate = (int)Math.Clamp((long)w * h * fps / 3, 8_000_000, 80_000_000); // generous → near-transparent

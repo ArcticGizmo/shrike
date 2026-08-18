@@ -58,16 +58,12 @@ public partial class TimelineEditorWindow : Window
     private MouseTrack? _smoothTrack;
     private SmoothedCursorTrack? _smoothed;
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
-    private ZoomConfig _zoom = ZoomConfig.Default;              // auto-zoom fallback when nothing is authored
     private ZoomTrack _authoredZoom = ZoomTrack.Empty;          // user-placed zoom events (the edit document)
-    private ZoomViewport[]? _zoomViewports;                     // resolved per-frame framing (authored or auto)
+    private ZoomViewport[]? _zoomViewports;                     // resolved per-frame framing (null = no zoom)
     private double _cursorSize = 1.0;
     private bool _cursorRipple = true;
     private Slider? _smoothnessSlider;
     private TextBlock? _smoothnessValue;
-    private CheckBox? _zoomToggle;
-    private Slider? _zoomSlider;
-    private TextBlock? _zoomValue;
     private Slider? _sizeSlider;
     private TextBlock? _sizeValue;
     private CheckBox? _rippleToggle;
@@ -177,18 +173,10 @@ public partial class TimelineEditorWindow : Window
             return;
         }
         _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height, _smoothing);
-        _zoomViewports = ResolveZoomViewports(_smoothed);
+        _zoomViewports = _authoredZoom.IsEmpty
+            ? null // no authored zoom → full frame throughout
+            : _authoredZoom.Resolve(_smoothed.Frames.Count, _smoothed.Fps, _source.Width, _source.Height);
         UpdateCursorOverlay();
-    }
-
-    /// <summary>The per-frame zoom framing: the authored zoom track when the user has placed events, otherwise
-    /// the click-driven auto-zoom (the toggle/Max in the panel). Same shape either way — one viewport per frame.</summary>
-    private ZoomViewport[] ResolveZoomViewports(SmoothedCursorTrack smoothed)
-    {
-        if (!_authoredZoom.IsEmpty)
-            return _authoredZoom.Resolve(smoothed.Frames.Count, smoothed.Fps, _source.Width, _source.Height);
-        var curve = AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, smoothed.Fps, _zoom);
-        return AutoZoom.Viewports(smoothed.Frames, curve, _source.Width, _source.Height);
     }
 
     private void UpdateCursorOverlay()
@@ -255,7 +243,6 @@ public partial class TimelineEditorWindow : Window
     {
         var s = Services.SettingsService.Instance?.Current ?? Shrike.Core.Settings.AppSettings.Default;
         _smoothing = CursorSmoothing.FromSmoothness(s.CursorSmoothness);
-        _zoom = ZoomConfig.Default with { Enabled = s.CursorZoomEnabled, MaxZoom = s.CursorZoomMax };
         _cursorSize = s.CursorSize;
         _cursorRipple = s.CursorRippleEnabled;
     }
@@ -270,8 +257,6 @@ public partial class TimelineEditorWindow : Window
         svc.Update(svc.Current with
         {
             CursorSmoothness = _smoothing.Smoothness,
-            CursorZoomEnabled = _zoom.Enabled,
-            CursorZoomMax = _zoom.MaxZoom,
             CursorSize = _cursorSize,
             CursorRippleEnabled = _cursorRipple,
         });
@@ -288,22 +273,6 @@ public partial class TimelineEditorWindow : Window
             _smoothnessSlider.PropertyChanged += (_, e) =>
             {
                 if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
-            };
-        }
-        _zoomToggle = this.FindControl<CheckBox>("ZoomToggle");
-        _zoomSlider = this.FindControl<Slider>("ZoomSlider");
-        _zoomValue = this.FindControl<TextBlock>("ZoomValue");
-        if (_zoomToggle is not null)
-        {
-            _zoomToggle.IsChecked = _zoom.Enabled;
-            _zoomToggle.IsCheckedChanged += (_, _) => OnZoomChanged();
-        }
-        if (_zoomSlider is not null)
-        {
-            _zoomSlider.Value = _zoom.MaxZoom;
-            _zoomSlider.PropertyChanged += (_, e) =>
-            {
-                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomChanged();
             };
         }
         _sizeSlider = this.FindControl<Slider>("SizeSlider");
@@ -354,24 +323,12 @@ public partial class TimelineEditorWindow : Window
         ReprojectSmoothTrack();
     }
 
-    private void OnZoomChanged()
-    {
-        var enabled = _zoomToggle?.IsChecked ?? false;
-        var max = Math.Max(1.0, _zoomSlider?.Value ?? _zoom.MaxZoom);
-        _zoom = _zoom with { Enabled = enabled, MaxZoom = max };
-        UpdateSmoothingLabels();
-        ReprojectSmoothTrack();
-    }
-
     private void ResetSmoothing()
     {
         _smoothing = CursorSmoothing.FromSmoothness(CursorSmoothing.DefaultSmoothness);
-        _zoom = ZoomConfig.Default;
         _cursorSize = 1.0;
         _cursorRipple = true;
         if (_smoothnessSlider is not null) _smoothnessSlider.Value = _smoothing.Smoothness * 100.0;
-        if (_zoomToggle is not null) _zoomToggle.IsChecked = _zoom.Enabled;
-        if (_zoomSlider is not null) _zoomSlider.Value = _zoom.MaxZoom;
         if (_sizeSlider is not null) _sizeSlider.Value = _cursorSize;
         if (_rippleToggle is not null) _rippleToggle.IsChecked = _cursorRipple;
         UpdateSmoothingLabels();
@@ -384,7 +341,6 @@ public partial class TimelineEditorWindow : Window
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         if (_smoothnessValue is not null)
             _smoothnessValue.Text = Math.Round(_smoothing.Smoothness * 100.0).ToString("0", inv) + "%";
-        if (_zoomValue is not null) _zoomValue.Text = _zoom.MaxZoom.ToString("0.0#", inv) + "×";
         if (_sizeValue is not null) _sizeValue.Text = _cursorSize.ToString("0.0#", inv) + "×";
     }
 
@@ -595,7 +551,7 @@ public partial class TimelineEditorWindow : Window
         PersistEdit(); // make sure the authored zoom is on disk before we (and the export) read it
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
         // Carry the tuned preview settings + authored zoom into the export so the file matches the preview.
-        dlg.ConfigureSmoothCursor(_smoothing, _zoom, _cursorSize, _cursorRipple, _authoredZoom);
+        dlg.ConfigureSmoothCursor(_smoothing, _cursorSize, _cursorRipple, _authoredZoom);
         await dlg.ShowDialog(this);
     }
 

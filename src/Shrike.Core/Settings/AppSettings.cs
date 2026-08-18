@@ -66,12 +66,6 @@ public sealed record AppSettings
     /// <see cref="Shrike.Core.Recording.CursorSmoothing.FromSmoothness"/>. Default reproduces the shipped look.</summary>
     public double CursorSmoothness { get; init; } = Recording.CursorSmoothing.DefaultSmoothness;
 
-    /// <summary>Ease the framing toward click activity (auto-zoom). On by default within the opt-in feature.</summary>
-    public bool CursorZoomEnabled { get; init; } = true;
-
-    /// <summary>Maximum auto-zoom factor at a click cluster (1 = no zoom).</summary>
-    public double CursorZoomMax { get; init; } = 1.6;
-
     /// <summary>Relative synthetic-cursor size (1 = the resolution-scaled default; 0.5 = half, 2 = double).</summary>
     public double CursorSize { get; init; } = 1.0;
 
@@ -89,7 +83,6 @@ public sealed record AppSettings
         SpotlightRadius = Math.Clamp(SpotlightRadius, 12, 160),
         SpotlightColor = string.IsNullOrWhiteSpace(SpotlightColor) ? "#FFD24A" : SpotlightColor,
         CursorSmoothness = Math.Clamp(CursorSmoothness, 0.0, 1.0),
-        CursorZoomMax = Math.Clamp(CursorZoomMax, 1.0, 2.5),
         CursorSize = Math.Clamp(CursorSize, 0.5, 2.0),
     };
 }
