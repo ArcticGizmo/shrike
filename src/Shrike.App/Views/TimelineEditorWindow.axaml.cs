@@ -68,6 +68,16 @@ public partial class TimelineEditorWindow : Window
     private TextBlock? _sizeValue;
     private CheckBox? _rippleToggle;
 
+    // Zoom authoring lane + inspector.
+    private readonly List<ZoomEvent> _zoomEvents = new();
+    private ZoomLane? _zoomLane;
+    private StackPanel? _zoomInspector;
+    private Slider? _zoomAmountSlider;
+    private TextBlock? _zoomAmountValue;
+    private Slider? _easeSlider;
+    private TextBlock? _easeValue;
+    private bool _suppressZoomInspector;
+
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
 
@@ -97,6 +107,7 @@ public partial class TimelineEditorWindow : Window
         _timeline.Changed += ReprojectSmoothTrack;
         SeedTuningFromSettings();
         SetupSmoothingPanel();
+        SetupZoomLane();
 
         Closed += (_, _) => { PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
@@ -152,14 +163,27 @@ public partial class TimelineEditorWindow : Window
         }
         catch { _smoothTrack = null; }
 
-        // The authored edit document (zoom events); empty means auto-zoom applies as the default.
+        // The authored edit document (zoom events); empty means no zoom until the user places some.
         _authoredZoom = Shrike.Core.AppStorage.EditDocFor(_source.Path) is { } editPath
             ? ClipEdit.Load(editPath).Zoom
             : ZoomTrack.Empty;
 
-        // The tuning panel only makes sense for a clip that actually carries a track.
-        if (this.FindControl<Border>("SmoothingPanel") is { } panel)
-            panel.IsVisible = _smoothTrack is not null;
+        // Seed the lane's editable list from the loaded events, and mark where clicks fired (snap targets).
+        _zoomEvents.Clear();
+        _zoomEvents.AddRange(_authoredZoom.Events);
+        if (_zoomLane is not null)
+        {
+            _zoomLane.Timeline = _timeline;
+            _zoomLane.Events = _zoomEvents;
+            _zoomLane.ClickMarks = _smoothTrack?.Clicks.Where(c => c.Down).Select(c => (long)c.TMs).ToArray() ?? [];
+            _zoomLane.Select(-1);
+            _zoomLane.Refresh();
+        }
+
+        // The tuning panel + zoom lane only make sense for a clip that actually carries a track.
+        var hasTrack = _smoothTrack is not null;
+        if (this.FindControl<Border>("SmoothingPanel") is { } panel) panel.IsVisible = hasTrack;
+        if (this.FindControl<StackPanel>("ZoomPanel") is { } zoomPanel) zoomPanel.IsVisible = hasTrack;
 
         ReprojectSmoothTrack();
     }
@@ -177,6 +201,128 @@ public partial class TimelineEditorWindow : Window
             ? null // no authored zoom → full frame throughout
             : _authoredZoom.Resolve(_timeline, _smoothed.Frames.Count, _smoothed.Fps, _source.Width, _source.Height);
         UpdateCursorOverlay();
+    }
+
+    /// <summary>Re-resolve just the zoom viewports after a zoom edit — cheap, skips re-running the smoothing.</summary>
+    private void RefreshZoomViewports()
+    {
+        if (_smoothed is null) return;
+        _zoomViewports = _authoredZoom.IsEmpty
+            ? null
+            : _authoredZoom.Resolve(_timeline, _smoothed.Frames.Count, _smoothed.Fps, _source.Width, _source.Height);
+        UpdateCursorOverlay();
+    }
+
+    // ---- zoom authoring ----
+
+    private void SetupZoomLane()
+    {
+        _zoomLane = this.FindControl<ZoomLane>("ZoomLane");
+        _zoomInspector = this.FindControl<StackPanel>("ZoomInspector");
+        _zoomAmountSlider = this.FindControl<Slider>("ZoomAmountSlider");
+        _zoomAmountValue = this.FindControl<TextBlock>("ZoomAmountValue");
+        _easeSlider = this.FindControl<Slider>("EaseSlider");
+        _easeValue = this.FindControl<TextBlock>("EaseValue");
+
+        if (_zoomLane is not null)
+        {
+            _zoomLane.Timeline = _timeline;
+            _zoomLane.Changed += OnZoomEventsChanged;
+            _zoomLane.SelectionChanged += OnZoomSelectionChanged;
+            _zoomLane.AddRequested += AddZoomAt;
+        }
+        if (this.FindControl<Button>("AddZoomButton") is { } add)
+            add.Click += (_, _) => AddZoomAt(_playheadSourceMs);
+        if (this.FindControl<Button>("DeleteZoomButton") is { } del)
+            del.Click += (_, _) => DeleteSelectedZoom();
+        if (_zoomAmountSlider is not null)
+            _zoomAmountSlider.PropertyChanged += (_, e) =>
+            { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomInspectorChanged(); };
+        if (_easeSlider is not null)
+            _easeSlider.PropertyChanged += (_, e) =>
+            { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomInspectorChanged(); };
+    }
+
+    // The lane edited an event's timing (drag/resize) — rebuild the track and re-resolve the preview.
+    private void OnZoomEventsChanged()
+    {
+        _authoredZoom = new ZoomTrack(_zoomEvents);
+        RefreshZoomViewports();
+    }
+
+    private void OnZoomSelectionChanged(int index)
+    {
+        var has = index >= 0 && index < _zoomEvents.Count;
+        if (_zoomInspector is not null) _zoomInspector.IsVisible = has;
+        if (!has) return;
+
+        var ev = _zoomEvents[index];
+        _suppressZoomInspector = true;
+        if (_zoomAmountSlider is not null) _zoomAmountSlider.Value = ev.Zoom;
+        if (_easeSlider is not null) _easeSlider.Value = ev.EaseInMs / 1000.0;
+        _suppressZoomInspector = false;
+        UpdateZoomInspectorLabels();
+    }
+
+    private void OnZoomInspectorChanged()
+    {
+        if (_suppressZoomInspector || _zoomLane is null) return;
+        var i = _zoomLane.SelectedIndex;
+        if (i < 0 || i >= _zoomEvents.Count) return;
+        var ease = (long)Math.Round((_easeSlider?.Value ?? 0.4) * 1000);
+        _zoomEvents[i] = _zoomEvents[i] with
+        {
+            Zoom = Math.Max(1.05, _zoomAmountSlider?.Value ?? _zoomEvents[i].Zoom),
+            EaseInMs = ease,
+            EaseOutMs = ease,
+        };
+        UpdateZoomInspectorLabels();
+        OnZoomEventsChanged();
+        _zoomLane.Refresh();
+    }
+
+    private void UpdateZoomInspectorLabels()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (_zoomAmountValue is not null && _zoomAmountSlider is not null)
+            _zoomAmountValue.Text = _zoomAmountSlider.Value.ToString("0.0#", inv) + "×";
+        if (_easeValue is not null && _easeSlider is not null)
+            _easeValue.Text = _easeSlider.Value.ToString("0.0#", inv) + "s";
+    }
+
+    private void AddZoomAt(long sourceMs)
+    {
+        if (_zoomLane is null) return;
+        var full = _timeline.DurationMs;
+        var dur = Math.Min(1500, full);
+        var start = Math.Clamp(sourceMs, 0, Math.Max(0, full - dur));
+        var end = Math.Min(full, start + dur);
+        var (cx, cy) = CursorNormAtSource(sourceMs);
+        _zoomEvents.Add(new ZoomEvent(start, end, cx, cy, 1.8, 400, 400));
+        OnZoomEventsChanged();
+        _zoomLane.Select(_zoomEvents.Count - 1);
+        _zoomLane.Refresh();
+    }
+
+    private void DeleteSelectedZoom()
+    {
+        if (_zoomLane is null) return;
+        var i = _zoomLane.SelectedIndex;
+        if (i < 0 || i >= _zoomEvents.Count) return;
+        _zoomEvents.RemoveAt(i);
+        _zoomLane.Select(-1);
+        OnZoomEventsChanged();
+        _zoomLane.Refresh();
+    }
+
+    // Normalised cursor position at a source time — the default focus for a new zoom event.
+    private (double X, double Y) CursorNormAtSource(long sourceMs)
+    {
+        if (_smoothed is null || _smoothed.IsEmpty || _source.Width <= 0 || _source.Height <= 0) return (0.5, 0.5);
+        var editedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
+        var i = Math.Clamp((int)Math.Round(editedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
+        var s = _smoothed.Frames[i];
+        return (Math.Clamp(s.X / _source.Width, 0, 1), Math.Clamp(s.Y / _source.Height, 0, 1));
     }
 
     private void UpdateCursorOverlay()
@@ -351,6 +497,7 @@ public partial class TimelineEditorWindow : Window
         StopPlayback();
         _playheadSourceMs = sourceMs;
         _currentEditedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
+        _zoomLane?.SetPlayhead(sourceMs);
         RequestPreview(sourceMs);
         UpdateLabels();
         UpdateCursorOverlay();
@@ -460,6 +607,7 @@ public partial class TimelineEditorWindow : Window
         _currentEditedMs = Math.Min(_currentEditedMs + (long)(1000.0 / player.Fps), _timeline.KeptDurationMs);
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
+        _zoomLane?.SetPlayhead(_playheadSourceMs);
         UpdateLabels();
         UpdateCursorOverlay();
     }

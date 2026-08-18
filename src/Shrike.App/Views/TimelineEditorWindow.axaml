@@ -34,7 +34,7 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="*,Auto,Auto,Auto,Auto" Margin="14">
+    <Grid RowDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="14">
         <!-- Preview -->
         <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
             <controls:PreviewSurface Name="Preview" />
@@ -73,8 +73,32 @@
         <!-- Scrubber -->
         <controls:TimelineStrip Grid.Row="3" Name="Strip" Margin="0,0,0,10" />
 
+        <!-- Zoom lane (shown + wired from code-behind when a track is present). -->
+        <StackPanel Grid.Row="4" Name="ZoomPanel" IsVisible="False" Spacing="6" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <TextBlock Text="✦ Zoom" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
+                <Button Name="AddZoomButton" Classes="tool" Content="+ Add zoom" />
+                <StackPanel Name="ZoomInspector" Orientation="Horizontal" Spacing="10" IsVisible="False" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock Text="Zoom" Classes="hint" VerticalAlignment="Center" />
+                        <Slider Name="ZoomAmountSlider" Width="118" Minimum="1.1" Maximum="3.0" VerticalAlignment="Center" />
+                        <TextBlock Name="ZoomAmountValue" Classes="hint" Width="34" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock Text="Ease" Classes="hint" VerticalAlignment="Center" />
+                        <Slider Name="EaseSlider" Width="104" Minimum="0" Maximum="1.5" VerticalAlignment="Center" />
+                        <TextBlock Name="EaseValue" Classes="hint" Width="44" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button Name="DeleteZoomButton" Classes="tool" Content="Delete" />
+                </StackPanel>
+                <TextBlock Name="ZoomHint" Classes="hint" VerticalAlignment="Center"
+                           Text="double-click the lane to add · drag a box on the preview to aim" />
+            </StackPanel>
+            <controls:ZoomLane Name="ZoomLane" />
+        </StackPanel>
+
         <!-- Toolbar -->
-        <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
+        <Grid Grid.Row="5" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
             <Button Grid.Column="0" Classes="tool" Content="Mark In"   Click="OnMarkIn"    Margin="0,0,6,0" />
             <Button Grid.Column="1" Classes="tool" Content="Mark Out"  Click="OnMarkOut"   Margin="0,0,6,0" />
             <Button Grid.Column="2" Classes="tool" Content="Cut"       Click="OnCut"       Margin="0,0,6,0" />
