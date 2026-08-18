@@ -14,15 +14,24 @@ public sealed class ClipEdit
 {
     private const int SchemaVersion = 1;
 
-    /// <summary>The authored zoom events. Empty means "no authored zoom" (auto-zoom then applies as the default).</summary>
+    /// <summary>The authored zoom events. Empty means "no authored zoom".</summary>
     public ZoomTrack Zoom { get; }
 
-    public ClipEdit(ZoomTrack? zoom = null) => Zoom = zoom ?? ZoomTrack.Empty;
+    /// <summary>Whether the synthetic cursor is drawn in the preview/export. The clip's default comes from the
+    /// capture-time "Show cursor" toggle; the editor can flip it. Default true.</summary>
+    public bool ShowCursor { get; }
+
+    public ClipEdit(ZoomTrack? zoom = null, bool showCursor = true)
+    {
+        Zoom = zoom ?? ZoomTrack.Empty;
+        ShowCursor = showCursor;
+    }
 
     public static ClipEdit Empty { get; } = new();
 
-    /// <summary>Nothing authored yet — the export/preview can take the plain (auto) path.</summary>
-    public bool IsEmpty => Zoom.IsEmpty;
+    /// <summary>Nothing to persist — no authored zoom and the cursor is shown (the default). An empty edit
+    /// leaves no sidecar on disk.</summary>
+    public bool IsEmpty => Zoom.IsEmpty && ShowCursor;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -35,6 +44,7 @@ public sealed class ClipEdit
         var dto = new Dto
         {
             V = SchemaVersion,
+            ShowCursor = ShowCursor,
             Zoom = Zoom.Events.Select(e => new ZoomDto
             {
                 Start = e.StartMs, End = e.EndMs, Cx = e.CenterX, Cy = e.CenterY,
@@ -53,7 +63,7 @@ public sealed class ClipEdit
             .Where(z => z.End > z.Start && z.Zoom > 1)
             .Select(z => new ZoomEvent(z.Start, z.End, z.Cx, z.Cy, z.Zoom, z.EaseIn, z.EaseOut))
             .ToList();
-        return new ClipEdit(new ZoomTrack(events));
+        return new ClipEdit(new ZoomTrack(events), dto.ShowCursor);
     }
 
     /// <summary>Write the edit document to <paramref name="path"/>; deletes it when empty so a clip with no
@@ -74,6 +84,7 @@ public sealed class ClipEdit
     private sealed class Dto
     {
         public int V { get; set; } = SchemaVersion;
+        public bool ShowCursor { get; set; } = true; // absent in older files → cursor shown
         public ZoomDto[]? Zoom { get; set; }
     }
 

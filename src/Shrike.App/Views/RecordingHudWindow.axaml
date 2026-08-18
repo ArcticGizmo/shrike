@@ -71,42 +71,10 @@
             <TextBlock Text="⠿" VerticalAlignment="Center" Foreground="#6B6152" FontSize="15"
                        ToolTip.Tip="Drag to move" />
 
-            <!-- Hide-cursor toggle: keeps the pointer out of the recording (the cursor is painted into
-                 frames, so this is independent of the spotlight). -->
-            <ToggleButton Name="HideCursorButton" Classes="hud" Content="Hide cursor" Click="OnToggleHideCursor"
-                          ToolTip.Tip="Keep the mouse pointer out of the recording" />
-
-            <!-- Smooth-cursor toggle (experimental): logs the pointer path and draws a smoothed synthetic
-                 cursor in post. It hides the real cursor and supersedes the spotlight while on. -->
-            <ToggleButton Name="SmoothCursorButton" Classes="hud" Content="Smooth cursor ✦" Click="OnToggleSmoothCursor"
-                          ToolTip.Tip="Experimental — record the pointer and draw a smoothed cursor at export (hides the real cursor)" />
-
-            <!-- Spotlight controls: available in both setup and recording. -->
-            <StackPanel Name="SpotlightGroup" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
-                <ToggleButton Name="SpotlightButton" Classes="hud seg-left" Content="Spotlight" Click="OnToggleSpotlight"
-                              ToolTip.Tip="Glowing spotlight under the cursor — shown on screen and in the recording" />
-                <Border Width="1" Background="#140F0A" />
-                <Button Name="SpotlightMenu" Classes="hud seg-right" Content="⚙" Padding="8,6" ToolTip.Tip="Spotlight colour, opacity &amp; size">
-                    <Button.Flyout>
-                        <Flyout Placement="Top">
-                            <StackPanel Width="236" Spacing="10" Margin="4">
-                                <TextBlock Text="Spotlight colour" Foreground="#B8AE9C" FontSize="12" />
-                                <WrapPanel Name="Swatches" Orientation="Horizontal" />
-                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                    <TextBlock Text="Opacity" Foreground="#EDE6DA" FontSize="12" VerticalAlignment="Center" />
-                                    <TextBlock Name="OpacityValue" Grid.Column="1" Foreground="#B8AE9C" FontSize="12" VerticalAlignment="Center" />
-                                </Grid>
-                                <Slider Name="OpacitySlider" Minimum="0.1" Maximum="1" />
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Text="Size" Foreground="#EDE6DA" FontSize="12" VerticalAlignment="Center" />
-                                    <TextBlock Name="SizeValue" Grid.Column="1" Foreground="#B8AE9C" FontSize="12" VerticalAlignment="Center" />
-                                </Grid>
-                                <Slider Name="SizeSlider" Minimum="16" Maximum="120" />
-                            </StackPanel>
-                        </Flyout>
-                    </Button.Flyout>
-                </Button>
-            </StackPanel>
+            <!-- Show-cursor toggle: the recording is always a clean plate with the pointer path logged, so the
+                 cursor is drawn in post. This sets the clip's default (editable later in the editor). -->
+            <ToggleButton Name="ShowCursorButton" Classes="hud" Content="Show cursor" Click="OnToggleShowCursor"
+                          ToolTip.Tip="Draw the cursor in the edited video (on by default). You can change this per-clip in the editor." />
 
             <Border Width="1" Background="#322A1E" Margin="2,1" />
 

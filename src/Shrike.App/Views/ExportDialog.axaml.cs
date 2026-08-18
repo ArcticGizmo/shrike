@@ -183,23 +183,27 @@ public partial class ExportDialog : Window
     private ZoomTrack _authoredZoom = ZoomTrack.Empty;
     private double _cursorSize = 1.0;
     private bool _cursorRipple = true;
+    private bool _showCursor = true;
 
     /// <summary>Carry the editor's tuned smoothing + cursor look + authored zoom into the export so what you saw
-    /// in the preview is what gets rendered. Zoom is entirely authored — no events means no zoom.</summary>
-    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, double cursorSize, bool cursorRipple, ZoomTrack? authoredZoom = null)
+    /// in the preview is what gets rendered. Cursor and zoom are both post effects: <paramref name="showCursor"/>
+    /// gates the cursor overlay, and an empty <paramref name="authoredZoom"/> means no zoom.</summary>
+    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, double cursorSize, bool cursorRipple, bool showCursor, ZoomTrack? authoredZoom = null)
     {
         _smoothing = smoothing;
         _cursorSize = cursorSize;
         _cursorRipple = cursorRipple;
+        _showCursor = showCursor;
         _authoredZoom = authoredZoom ?? ZoomTrack.Empty;
     }
 
     private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
         IProgress<double> progress, CancellationToken ct)
     {
-        // If this clip carries a smooth-cursor track, render the synthetic cursor + zoom into the frames
-        // before encoding to the chosen preset. Otherwise, the plain transcode.
-        if (LoadTrack() is { Points.Count: > 0 } track)
+        // Composite in post only when there's something to draw: the cursor (if shown) or authored zoom.
+        // Both need the logged pointer track; without it — or with nothing to render — it's a plain transcode.
+        var wantsComposite = _showCursor || !_authoredZoom.IsEmpty;
+        if (wantsComposite && LoadTrack() is { Points.Count: > 0 } track)
         {
             await CompositeCursorExport(profile, hardware, track, outputPath, progress, ct);
             return;
@@ -236,13 +240,20 @@ public partial class ExportDialog : Window
             return;
         }
 
-        // Compose the effect chain: the zoom transform first (only when there are authored events), the
-        // cursor + ripple overlay on top (each an IFrameCompositor). Adding effects = extending this chain.
-        var style = CursorStyle.ForExport(h, _cursorSize, _cursorRipple);
+        // Compose the effect chain: the zoom transform first (only when there are authored events), then the
+        // cursor + ripple overlay (only when the cursor is shown). Each is an IFrameCompositor; adding an
+        // effect = appending to this chain.
         ZoomViewport[]? viewports = _authoredZoom.IsEmpty ? null : _authoredZoom.Resolve(_timeline, smoothed.Frames.Count, fps, w, h);
-        var compositor = viewports is null
-            ? new CompositorChain(new CursorCompositor(smoothed, style, null))
-            : new CompositorChain(new ZoomCompositor(viewports), new CursorCompositor(smoothed, style, viewports));
+        var effects = new List<IFrameCompositor>();
+        if (viewports is not null) effects.Add(new ZoomCompositor(viewports));
+        if (_showCursor) effects.Add(new CursorCompositor(smoothed, CursorStyle.ForExport(h, _cursorSize, _cursorRipple), viewports));
+        if (effects.Count == 0)
+        {
+            var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
+            await new VideoExporter(_ffmpegPath).ExportAsync(plain, _timeline.KeptDurationMs, progress, ct);
+            return;
+        }
+        var compositor = new CompositorChain(effects);
 
         var intermediate = Path.Combine(Path.GetTempPath(), "shrike-cursor-" + Guid.NewGuid().ToString("N") + ".mp4");
         var interBitrate = (int)Math.Clamp((long)w * h * fps / 3, 8_000_000, 80_000_000); // generous → near-transparent

@@ -35,14 +35,14 @@ internal sealed class CaptureController
     private Recorder? _recorder;
     private RecordingHudWindow? _hud;
     private RecordingRegionWindow? _regionWindow;
-    private CursorSpotlightWindow? _spotlight;
     private Task<Recorder?>? _buildTask;
 
-    // Smooth-cursor (experimental): when on for a recording, we log the pointer track live and hide the
-    // real cursor so export can composite a smoothed synthetic one.
+    // Every recording is a clean plate with the pointer path logged live, so the cursor (and future effects)
+    // are composited in post. The "Show cursor" toggle only sets the clip's default — persisted per-clip so
+    // the editor can flip it.
     private MouseTrackRecorder? _trackRecorder;
     private MouseHook? _mouseHook;
-    private bool _smoothCursor;
+    private bool _showCursor = true;
     private PixelBounds _pendingRegion;
 
     /// <summary>The last capture mode the user ran, so the editor's "New capture" button can repeat it.</summary>
@@ -387,29 +387,18 @@ internal sealed class CaptureController
         if (_regionWindow is not null) { _regionWindow.Activate(); return; }
         if (_recorder is not null) { _hud?.Activate(); return; }
 
-        var cursorOn = _settings?.Current.CursorInRecording ?? true;
-        // The cursor is painted into frames on its own; the spotlight is a real overlay. They're
-        // independent, so both can be on at once.
-        var spotlightOn = _settings?.Current.SpotlightCursorEnabled ?? false;
-        var style = CurrentSpotlightStyle();
-        _smoothCursor = false; // experimental, opt-in per recording
+        // The "Show cursor" default is remembered across recordings (CursorInRecording now means "draw the
+        // cursor in the edited video" — every recording is a clean plate regardless).
+        _showCursor = _settings?.Current.CursorInRecording ?? true;
 
         var regionWindow = new RecordingRegionWindow(region, MonitorsOrFallback());
-        var hud = new RecordingHudWindow(region, spotlightOn, style, cursorOn, smoothCursorOn: false);
-
-        // The spotlight is a real on-screen overlay (captured naturally), so it previews during setup and
-        // simply carries into the recording — one source of truth for "what's being recorded".
-        var spotlight = new CursorSpotlightWindow(style);
-        _spotlight = spotlight;
+        var hud = new RecordingHudWindow(region, _showCursor);
 
         // Setup wiring: the HUD's Record/Cancel drive the region window; its handle drags trail the HUD.
         hud.RecordRequested += OnRecordRequested;
         hud.CancelRequested += TeardownRecordingSetup;
         hud.Finished += OnRecordingFinished;
-        hud.SpotlightToggled += OnSpotlightToggled;
-        hud.SpotlightStyleChanged += OnSpotlightStyleChanged;
-        hud.CursorInRecordingToggled += OnCursorInRecordingToggled;
-        hud.SmoothCursorToggled += OnSmoothCursorToggled;
+        hud.ShowCursorToggled += OnShowCursorToggled;
         hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
 
         regionWindow.RegionChanged += hud.FollowRegion;
@@ -425,54 +414,14 @@ internal sealed class CaptureController
         // so dragging/raising the frame can never bury the HUD behind its scrim.
         hud.Show(regionWindow);
         hud.Activate();
-        // Show the spotlight last so its glow previews above the scrim.
-        spotlight.SetActive(spotlightOn);
     }
 
-    private SpotlightStyle CurrentSpotlightStyle()
+    private void OnShowCursorToggled(bool show)
     {
-        var s = _settings?.Current;
-        return new SpotlightStyle(
-            s?.SpotlightColor ?? "#FFD24A",
-            s?.SpotlightOpacity ?? 0.30,
-            s?.SpotlightRadius ?? 30);
-    }
-
-    private void OnSpotlightToggled(bool on)
-    {
-        _spotlight?.SetActive(on);
-        if (_settings is not null && _settings.Current.SpotlightCursorEnabled != on)
-            _settings.Update(_settings.Current with { SpotlightCursorEnabled = on });
-    }
-
-    private void OnCursorInRecordingToggled(bool inRecording)
-    {
-        if (_settings is not null && _settings.Current.CursorInRecording != inRecording)
-            _settings.Update(_settings.Current with { CursorInRecording = inRecording });
-    }
-
-    /// <summary>Experimental: turning smooth-cursor on logs the pointer track and draws a smoothed cursor
-    /// in post. It needs a clean plate, so it hides the real cursor and turns the live spotlight off (a
-    /// baked spotlight would follow the hidden real cursor and misalign with the synthetic one).</summary>
-    private void OnSmoothCursorToggled(bool on)
-    {
-        _smoothCursor = on;
-        if (on)
-            _spotlight?.SetActive(false);
-        else
-            _spotlight?.SetActive(_settings?.Current.SpotlightCursorEnabled ?? false);
-    }
-
-    private void OnSpotlightStyleChanged(SpotlightStyle style)
-    {
-        _spotlight?.UpdateStyle(style);
-        if (_settings is not null)
-            _settings.Update(_settings.Current with
-            {
-                SpotlightColor = style.Color,
-                SpotlightOpacity = style.Opacity,
-                SpotlightRadius = style.Radius,
-            });
+        _showCursor = show;
+        // Remember the choice as the default for the next recording.
+        if (_settings is not null && _settings.Current.CursorInRecording != show)
+            _settings.Update(_settings.Current with { CursorInRecording = show });
     }
 
     /// <summary>Record pressed: the region is now final, so kick off the (slow) ffmpeg pipeline build in
@@ -492,8 +441,9 @@ internal sealed class CaptureController
         var region = _regionWindow.Region;
         _pendingRegion = region;
         const int fps = 30;
-        // Smooth cursor needs a clean plate, so it forces the real cursor off regardless of the setting.
-        var captureCursor = !_smoothCursor && (_settings?.Current.CursorInRecording ?? true);
+        // Always record a clean plate (no baked cursor) — the pointer path is logged and the cursor is drawn
+        // in post, so it (and future effects) stay fully editable.
+        const bool captureCursor = false;
         // A stable per-profile working folder (not %TEMP%, which the OS can purge) so the source MP4 and
         // its *.track.json sidecar survive to be edited / re-exported.
         var path = Path.Combine(AppStorage.RecordingsDirectory(),
@@ -533,11 +483,10 @@ internal sealed class CaptureController
         StartTrackCapture(recorder);
     }
 
-    /// <summary>Arm the smooth-cursor track for this recording: install the mouse hook and stamp each event
-    /// with the recorder's pause-excluded clock. No-op unless smooth-cursor is on for this take.</summary>
+    /// <summary>Arm the pointer track for this recording: install the mouse hook and stamp each event with the
+    /// recorder's pause-excluded clock. Always on — every recording logs the path so post can draw the cursor.</summary>
     private void StartTrackCapture(Recorder recorder)
     {
-        if (!_smoothCursor) return;
         try
         {
             // The recorded rectangle is the region origin with the source's even-trimmed size.
@@ -571,7 +520,6 @@ internal sealed class CaptureController
             _hud = null;
             _regionWindow?.Close();
             _regionWindow = null;
-            CloseSpotlight();
         });
     }
 
@@ -596,14 +544,9 @@ internal sealed class CaptureController
         }
     }
 
-    private void CloseSpotlight()
-    {
-        _spotlight?.Close();
-        _spotlight = null;
-    }
-
-    /// <summary>Tear down the mouse hook and, if a track was captured for a saved recording, write it as a
-    /// <c>*.track.json</c> sidecar next to the MP4. Best-effort — the recording is fine without it.</summary>
+    /// <summary>Tear down the mouse hook and, for a saved recording, write the pointer track as a
+    /// <c>*.track.json</c> sidecar next to the MP4, plus the clip's initial edit document carrying the
+    /// "Show cursor" default. Best-effort — the recording is fine without them.</summary>
     private void WriteMouseTrackSidecar(string? savedPath)
     {
         var track = _trackRecorder;
@@ -614,10 +557,12 @@ internal sealed class CaptureController
         try
         {
             track.Build().Save(AppStorage.SidecarFor(savedPath));
+            // Seed the clip's edit document with the capture-time cursor default (only persists if non-default).
+            new ClipEdit(ZoomTrack.Empty, _showCursor).Save(AppStorage.EditDocFor(savedPath));
         }
         catch
         {
-            // best effort — a missing track just means no smoothing is available for this clip
+            // best effort — a missing track just means no cursor overlay is available for this clip
         }
     }
 
@@ -641,11 +586,9 @@ internal sealed class CaptureController
 
     private void OnRecordingFinished(string? savedPath)
     {
-        // The HUD closes itself; drop the region frame (which doubled as the recording border) and the
-        // spotlight overlay with it.
+        // The HUD closes itself; drop the region frame (which doubled as the recording border) with it.
         _regionWindow?.Close();
         _regionWindow = null;
-        CloseSpotlight();
         var recorder = _recorder;
         _recorder = null;
 

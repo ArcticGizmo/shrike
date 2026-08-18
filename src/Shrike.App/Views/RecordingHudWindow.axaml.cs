@@ -32,35 +32,20 @@ public partial class RecordingHudWindow : Window
 {
     private enum HudState { Setup, Recording }
 
-    // Preset spotlight colours offered in the settings flyout.
-    private static readonly string[] SwatchColors =
-        ["#FFD24A", "#F5A524", "#EF4444", "#22C55E", "#3B82F6", "#EC4899", "#FFFFFF"];
-
     private readonly DispatcherTimer _tick;
 
     private PixelBounds _region;
     private Recorder? _recorder;
     private HudState _state = HudState.Setup;
-    private SpotlightStyle _spotlightStyle;
-    private bool _initializing;
     private bool _userMoved;   // once the user drags the HUD, we stop auto-following the region
     private bool _closing;
 
     private StackPanel? _setupPanel;
     private StackPanel? _recordingPanel;
-    private ToggleButton? _hideCursorButton;
-    private ToggleButton? _smoothCursorButton;
-    private StackPanel? _spotlightGroup;
-    private ToggleButton? _spotlightButton;
-    private WrapPanel? _swatches;
-    private Slider? _opacitySlider;
-    private Slider? _sizeSlider;
-    private TextBlock? _opacityValue;
-    private TextBlock? _sizeValue;
+    private ToggleButton? _showCursorButton;
     private TextBlock? _elapsed;
     private Button? _pauseButton;
     private Ellipse? _recDot;
-    private readonly List<Button> _swatchButtons = [];
 
     /// <summary>Raised when the user presses Record in the setup state (region is final).</summary>
     public event Action? RecordRequested;
@@ -71,50 +56,26 @@ public partial class RecordingHudWindow : Window
     /// <summary>Raised once when recording ends: the saved MP4 path, or null if discarded.</summary>
     public event Action<string?>? Finished;
 
-    /// <summary>Raised when the spotlight toggle flips (on/off).</summary>
-    public event Action<bool>? SpotlightToggled;
-
-    /// <summary>Raised when the "hide cursor" toggle flips. The argument is whether the cursor should
-    /// appear <b>in the recording</b> (i.e. the inverse of "hide"), matching <c>CursorInRecording</c>.</summary>
-    public event Action<bool>? CursorInRecordingToggled;
-
-    /// <summary>Raised when the experimental "smooth cursor" toggle flips (on/off).</summary>
-    public event Action<bool>? SmoothCursorToggled;
-
-    /// <summary>Raised when the spotlight colour / opacity / size changes.</summary>
-    internal event Action<SpotlightStyle>? SpotlightStyleChanged;
+    /// <summary>Raised when the "show cursor" toggle flips. The argument is whether the synthetic cursor
+    /// should be drawn in the edited video (the clip's default; the editor can change it later).</summary>
+    public event Action<bool>? ShowCursorToggled;
 
     // Parameterless ctor for the XAML designer only.
-    public RecordingHudWindow() : this(default, false, new SpotlightStyle("#FFD24A", 0.30, 30), true, false) { }
+    public RecordingHudWindow() : this(default, true) { }
 
-    internal RecordingHudWindow(PixelBounds region, bool spotlightOn, SpotlightStyle spotlightStyle,
-        bool cursorInRecording, bool smoothCursorOn)
+    internal RecordingHudWindow(PixelBounds region, bool showCursor)
     {
         _region = region;
-        _spotlightStyle = spotlightStyle;
         InitializeComponent();
 
         _setupPanel = this.FindControl<StackPanel>("SetupPanel");
         _recordingPanel = this.FindControl<StackPanel>("RecordingPanel");
-        _hideCursorButton = this.FindControl<ToggleButton>("HideCursorButton");
-        _smoothCursorButton = this.FindControl<ToggleButton>("SmoothCursorButton");
-        _spotlightGroup = this.FindControl<StackPanel>("SpotlightGroup");
-        _spotlightButton = this.FindControl<ToggleButton>("SpotlightButton");
-        _swatches = this.FindControl<WrapPanel>("Swatches");
-        _opacitySlider = this.FindControl<Slider>("OpacitySlider");
-        _sizeSlider = this.FindControl<Slider>("SizeSlider");
-        _opacityValue = this.FindControl<TextBlock>("OpacityValue");
-        _sizeValue = this.FindControl<TextBlock>("SizeValue");
+        _showCursorButton = this.FindControl<ToggleButton>("ShowCursorButton");
         _elapsed = this.FindControl<TextBlock>("Elapsed");
         _pauseButton = this.FindControl<Button>("PauseButton");
         _recDot = this.FindControl<Ellipse>("RecDot");
 
-        InitSpotlightControls(spotlightOn);
-
-        // "Hide cursor" is simply the inverse of CursorInRecording.
-        if (_hideCursorButton is not null) _hideCursorButton.IsChecked = !cursorInRecording;
-        if (_smoothCursorButton is not null) _smoothCursorButton.IsChecked = smoothCursorOn;
-        UpdateSmoothState();
+        if (_showCursorButton is not null) _showCursorButton.IsChecked = showCursor;
 
         // SizeToContent means the real size isn't known until layout runs; re-place when it settles (and
         // again whenever the bar's width changes, e.g. swapping to the recording controls) unless the user
@@ -137,53 +98,6 @@ public partial class RecordingHudWindow : Window
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
-
-    private void InitSpotlightControls(bool spotlightOn)
-    {
-        _initializing = true;
-
-        if (_spotlightButton is not null) _spotlightButton.IsChecked = spotlightOn;
-
-        // Colour swatches.
-        foreach (var hex in SwatchColors)
-        {
-            var swatch = new Button
-            {
-                Width = 24,
-                Height = 24,
-                Margin = new Thickness(0, 0, 6, 6),
-                CornerRadius = new CornerRadius(6),
-                Background = new SolidColorBrush(Color.Parse(hex)),
-                BorderThickness = new Thickness(2),
-                BorderBrush = Brushes.Transparent,
-                Tag = hex,
-            };
-            swatch.Click += OnSwatch;
-            _swatchButtons.Add(swatch);
-            _swatches?.Children.Add(swatch);
-        }
-        HighlightSwatch(_spotlightStyle.Color);
-
-        if (_opacitySlider is not null)
-        {
-            _opacitySlider.Value = _spotlightStyle.Opacity;
-            _opacitySlider.PropertyChanged += (_, e) =>
-            {
-                if (e.Property == RangeBase.ValueProperty) OnOpacityChanged();
-            };
-        }
-        if (_sizeSlider is not null)
-        {
-            _sizeSlider.Value = _spotlightStyle.Radius;
-            _sizeSlider.PropertyChanged += (_, e) =>
-            {
-                if (e.Property == RangeBase.ValueProperty) OnSizeChanged();
-            };
-        }
-
-        UpdateStyleLabels();
-        _initializing = false;
-    }
 
     protected override void OnOpened(EventArgs e)
     {
@@ -232,75 +146,10 @@ public partial class RecordingHudWindow : Window
         }
     }
 
-    // ---- spotlight / cursor controls ----
+    // ---- cursor control ----
 
-    private void OnToggleSpotlight(object? sender, RoutedEventArgs e)
-        => SpotlightToggled?.Invoke(_spotlightButton?.IsChecked ?? false);
-
-    // The cursor is painted into frames independently of the spotlight, so the two toggles are free.
-    private void OnToggleHideCursor(object? sender, RoutedEventArgs e)
-        => CursorInRecordingToggled?.Invoke(!(_hideCursorButton?.IsChecked ?? false)); // report "in recording" = !hide
-
-    private void OnToggleSmoothCursor(object? sender, RoutedEventArgs e)
-    {
-        UpdateSmoothState();
-        SmoothCursorToggled?.Invoke(_smoothCursorButton?.IsChecked ?? false);
-    }
-
-    /// <summary>While smooth-cursor is on it supersedes the real cursor and the spotlight (the cursor is
-    /// drawn in post over a clean plate), so grey those controls out to keep the HUD honest.</summary>
-    private void UpdateSmoothState()
-    {
-        var smooth = _smoothCursorButton?.IsChecked ?? false;
-        if (_hideCursorButton is not null) _hideCursorButton.IsEnabled = !smooth;
-        if (_spotlightGroup is not null) _spotlightGroup.IsEnabled = !smooth;
-    }
-
-    private void OnSwatch(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: string hex }) return;
-        _spotlightStyle = _spotlightStyle with { Color = hex };
-        HighlightSwatch(hex);
-        RaiseStyleChanged();
-    }
-
-    private void OnOpacityChanged()
-    {
-        if (_opacitySlider is null) return;
-        _spotlightStyle = _spotlightStyle with { Opacity = Math.Round(_opacitySlider.Value, 2) };
-        UpdateStyleLabels();
-        RaiseStyleChanged();
-    }
-
-    private void OnSizeChanged()
-    {
-        if (_sizeSlider is null) return;
-        _spotlightStyle = _spotlightStyle with { Radius = (int)Math.Round(_sizeSlider.Value) };
-        UpdateStyleLabels();
-        RaiseStyleChanged();
-    }
-
-    private void HighlightSwatch(string hex)
-    {
-        foreach (var b in _swatchButtons)
-            b.BorderBrush = b.Tag is string t && string.Equals(t, hex, StringComparison.OrdinalIgnoreCase)
-                ? Brushes.White
-                : Brushes.Transparent;
-    }
-
-    private void UpdateStyleLabels()
-    {
-        if (_opacityValue is not null)
-            _opacityValue.Text = $"{(int)Math.Round(_spotlightStyle.Opacity * 100)}%";
-        if (_sizeValue is not null)
-            _sizeValue.Text = _spotlightStyle.Radius.ToString(CultureInfo.InvariantCulture);
-    }
-
-    private void RaiseStyleChanged()
-    {
-        if (_initializing) return;
-        SpotlightStyleChanged?.Invoke(_spotlightStyle);
-    }
+    private void OnToggleShowCursor(object? sender, RoutedEventArgs e)
+        => ShowCursorToggled?.Invoke(_showCursorButton?.IsChecked ?? true);
 
     // ---- setup / recording actions ----
 

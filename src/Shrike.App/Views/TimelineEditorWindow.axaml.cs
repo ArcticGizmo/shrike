@@ -62,6 +62,8 @@ public partial class TimelineEditorWindow : Window
     private ZoomViewport[]? _zoomViewports;                     // resolved per-frame framing (null = no zoom)
     private double _cursorSize = 1.0;
     private bool _cursorRipple = true;
+    private bool _showCursor = true;              // per-clip: draw the synthetic cursor (default from capture)
+    private CheckBox? _cursorToggle;
     private Slider? _smoothnessSlider;
     private TextBlock? _smoothnessValue;
     private Slider? _sizeSlider;
@@ -163,10 +165,11 @@ public partial class TimelineEditorWindow : Window
         }
         catch { _smoothTrack = null; }
 
-        // The authored edit document (zoom events); empty means no zoom until the user places some.
-        _authoredZoom = Shrike.Core.AppStorage.EditDocFor(_source.Path) is { } editPath
-            ? ClipEdit.Load(editPath).Zoom
-            : ZoomTrack.Empty;
+        // The authored edit document: zoom events + the cursor-shown default. Empty zoom means no zoom yet.
+        var edit = ClipEdit.Load(Shrike.Core.AppStorage.EditDocFor(_source.Path));
+        _authoredZoom = edit.Zoom;
+        _showCursor = edit.ShowCursor;
+        if (_cursorToggle is not null) _cursorToggle.IsChecked = _showCursor;
 
         // Seed the lane's editable list from the loaded events, and mark where clicks fired (snap targets).
         _zoomEvents.Clear();
@@ -387,8 +390,9 @@ public partial class TimelineEditorWindow : Window
         _preview.SetViewport(zoomed
             ? new Rect(vp.X / _source.Width, vp.Y / _source.Height, vp.Width / _source.Width, vp.Height / _source.Height)
             : null);
-        _preview.SetCursor(Norm(s.X, s.Y));
-        _preview.SetRipples(ActiveRipples(i, vp));
+        // Zoom still applies when the cursor is hidden — only the cursor + ripples drop out.
+        _preview.SetCursor(_showCursor ? Norm(s.X, s.Y) : null);
+        _preview.SetRipples(_showCursor ? ActiveRipples(i, vp) : []);
     }
 
     /// <summary>The click ripples live at frame <paramref name="i"/>, mirrored from the export's cursor compositor
@@ -422,7 +426,7 @@ public partial class TimelineEditorWindow : Window
     private void PersistEdit()
     {
         if (_smoothTrack is null || string.IsNullOrEmpty(_source.Path)) return;
-        try { new ClipEdit(_authoredZoom).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
+        try { new ClipEdit(_authoredZoom, _showCursor).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
         catch { /* best effort — never block closing on a failed save */ }
     }
 
@@ -463,6 +467,12 @@ public partial class TimelineEditorWindow : Window
                 if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
             };
         }
+        _cursorToggle = this.FindControl<CheckBox>("CursorToggle");
+        if (_cursorToggle is not null)
+        {
+            _cursorToggle.IsChecked = _showCursor;
+            _cursorToggle.IsCheckedChanged += (_, _) => OnCursorLookChanged();
+        }
         _sizeSlider = this.FindControl<Slider>("SizeSlider");
         _sizeValue = this.FindControl<TextBlock>("SizeValue");
         _rippleToggle = this.FindControl<CheckBox>("RippleToggle");
@@ -488,11 +498,12 @@ public partial class TimelineEditorWindow : Window
 
     private void OnCursorLookChanged()
     {
+        _showCursor = _cursorToggle?.IsChecked ?? true;
         _cursorSize = Math.Clamp(_sizeSlider?.Value ?? _cursorSize, 0.5, 2.0);
         _cursorRipple = _rippleToggle?.IsChecked ?? true;
         UpdateSmoothingLabels();
         UpdateCursorScale();
-        UpdateCursorOverlay(); // refresh ripple size/visibility at the current frame
+        UpdateCursorOverlay(); // refresh cursor/ripple visibility at the current frame
     }
 
     /// <summary>Keep the previewed cursor the same relative size as the export renders it (WYSIWYG).</summary>
@@ -741,7 +752,7 @@ public partial class TimelineEditorWindow : Window
         PersistEdit(); // make sure the authored zoom is on disk before we (and the export) read it
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
         // Carry the tuned preview settings + authored zoom into the export so the file matches the preview.
-        dlg.ConfigureSmoothCursor(_smoothing, _cursorSize, _cursorRipple, _authoredZoom);
+        dlg.ConfigureSmoothCursor(_smoothing, _cursorSize, _cursorRipple, _showCursor, _authoredZoom);
         await dlg.ShowDialog(this);
     }
 

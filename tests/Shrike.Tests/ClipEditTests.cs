@@ -31,7 +31,19 @@ public class ClipEditTests
     {
         Assert.True(ClipEdit.Empty.IsEmpty);
         Assert.True(new ClipEdit(ZoomTrack.Empty).IsEmpty);
+        Assert.True(new ClipEdit(ZoomTrack.Empty, showCursor: true).IsEmpty);
         Assert.False(new ClipEdit(new ZoomTrack([new ZoomEvent(0, 1000, 0.5, 0.5, 2, 100, 100)])).IsEmpty);
+        // A non-default "hide cursor" is state worth persisting, so it's not empty.
+        Assert.False(new ClipEdit(ZoomTrack.Empty, showCursor: false).IsEmpty);
+    }
+
+    [Fact]
+    public void Round_trips_show_cursor_default()
+    {
+        Assert.True(ClipEdit.FromJson(new ClipEdit(ZoomTrack.Empty, showCursor: true).ToJson()).ShowCursor);
+        Assert.False(ClipEdit.FromJson(new ClipEdit(ZoomTrack.Empty, showCursor: false).ToJson()).ShowCursor);
+        // Older files without the field default to showing the cursor.
+        Assert.True(ClipEdit.FromJson("{}").ShowCursor);
     }
 
     [Fact]

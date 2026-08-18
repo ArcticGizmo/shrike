@@ -53,8 +53,10 @@
                 Background="#1C1710" BorderBrush="#322A1E" BorderThickness="1" CornerRadius="7"
                 Padding="10,7" Margin="0,0,0,10">
             <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                <TextBlock Text="✦ Smooth cursor" Foreground="#F5A524" FontFamily="Consolas,monospace"
+                <TextBlock Text="✦ Cursor" Foreground="#F5A524" FontFamily="Consolas,monospace"
                            FontSize="12" VerticalAlignment="Center" />
+                <CheckBox Name="CursorToggle" Content="Show" VerticalAlignment="Center" Foreground="#B8AE9C"
+                          ToolTip.Tip="Draw the cursor in this clip" />
                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <TextBlock Text="Smoothness" Classes="hint" VerticalAlignment="Center" />
                     <Slider Name="SmoothnessSlider" Width="150" Minimum="0" Maximum="100" VerticalAlignment="Center" />
