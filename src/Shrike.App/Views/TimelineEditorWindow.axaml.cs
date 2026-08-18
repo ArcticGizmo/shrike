@@ -98,6 +98,8 @@ public partial class TimelineEditorWindow : Window
         _playTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _playTimer.Tick += (_, _) => AdvancePlayback();
 
+        if (this.FindControl<TimeRuler>("TimeRuler") is { } ruler) ruler.Timeline = _timeline;
+
         _strip.Timeline = _timeline;
         _strip.Seeked += OnSeek;
         _strip.Scrubbing += OnScrub;

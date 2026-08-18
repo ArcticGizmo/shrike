@@ -206,11 +206,15 @@ public sealed class ZoomLane : Control
                 ctx.FillRectangle(grip, new Rect(rect.Right - 4, rect.Y + 3, 2, rect.Height - 6));
             }
 
-            // Label: the zoom factor.
-            var label = ev.Zoom.ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture) + "×";
-            var ft = new FormattedText(label, System.Globalization.CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight, Typeface.Default, 11, new SolidColorBrush(Color.Parse("#EDE5D6")));
-            if (rect.Width > ft.Width + 10)
+            // Label: zoom factor + how long the zoom runs (falls back to just the factor when the block is narrow).
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var zoomText = ev.Zoom.ToString("0.0#", inv) + "×";
+            var full = zoomText + " · " + (ev.DurationMs / 1000.0).ToString("0.0#", inv) + "s";
+            var brush = new SolidColorBrush(Color.Parse("#EDE5D6"));
+            var ft = new FormattedText(full, inv, FlowDirection.LeftToRight, Typeface.Default, 11, brush);
+            if (rect.Width <= ft.Width + 10)
+                ft = new FormattedText(zoomText, inv, FlowDirection.LeftToRight, Typeface.Default, 11, brush);
+            if (rect.Width > ft.Width + 8)
                 ctx.DrawText(ft, new Point(rect.X + (rect.Width - ft.Width) / 2, rect.Y + (rect.Height - ft.Height) / 2));
         }
 

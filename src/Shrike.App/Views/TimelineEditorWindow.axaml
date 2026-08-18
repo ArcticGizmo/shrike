@@ -35,7 +35,7 @@
     </Window.Styles>
 
     <Grid ColumnDefinitions="*,Auto">
-        <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="14">
+        <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" Margin="14">
         <!-- Preview -->
         <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
             <controls:PreviewSurface Name="Preview" />
@@ -73,11 +73,14 @@
             </StackPanel>
         </Border>
 
+        <!-- Time axis (source time), aligned with the scrubber + zoom lane below it. -->
+        <controls:TimeRuler Grid.Row="3" Name="TimeRuler" Margin="0,0,0,2" />
+
         <!-- Scrubber -->
-        <controls:TimelineStrip Grid.Row="3" Name="Strip" Margin="0,0,0,10" />
+        <controls:TimelineStrip Grid.Row="4" Name="Strip" Margin="0,0,0,10" />
 
         <!-- Zoom lane (shown + wired from code-behind when a track is present). -->
-        <StackPanel Grid.Row="4" Name="ZoomPanel" IsVisible="False" Spacing="6" Margin="0,0,0,10">
+        <StackPanel Grid.Row="5" Name="ZoomPanel" IsVisible="False" Spacing="6" Margin="0,0,0,10">
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                 <TextBlock Text="✦ Zoom" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
                 <Button Name="AddZoomButton" Classes="tool" Content="+ Add zoom" />
@@ -88,7 +91,7 @@
         </StackPanel>
 
         <!-- Toolbar -->
-        <Grid Grid.Row="5" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
+        <Grid Grid.Row="6" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
             <Button Grid.Column="0" Classes="tool" Content="Mark In"   Click="OnMarkIn"    Margin="0,0,6,0" />
             <Button Grid.Column="1" Classes="tool" Content="Mark Out"  Click="OnMarkOut"   Margin="0,0,6,0" />
             <Button Grid.Column="2" Classes="tool" Content="Cut"       Click="OnCut"       Margin="0,0,6,0" />
