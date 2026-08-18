@@ -1,10 +1,10 @@
 namespace Shrike.Core.Recording;
 
 /// <summary>
-/// One authored zoom on the edited timeline: hold the framing at <see cref="Zoom"/>× centred on
-/// (<see cref="CenterX"/>, <see cref="CenterY"/>) — normalised [0..1] focus point — over
-/// [<see cref="StartMs"/>, <see cref="EndMs"/>], easing in over <see cref="EaseInMs"/> and out over
-/// <see cref="EaseOutMs"/> (the ramp length is the "zoom speed"; the middle is a steady hold). The target is
+/// One authored zoom, positioned in <b>source</b> time so it stays pinned to its content across cuts: hold
+/// the framing at <see cref="Zoom"/>× centred on (<see cref="CenterX"/>, <see cref="CenterY"/>) — normalised
+/// [0..1] focus point — over [<see cref="StartMs"/>, <see cref="EndMs"/>], easing in over <see cref="EaseInMs"/>
+/// and out over <see cref="EaseOutMs"/> (the ramp length is the "zoom speed"; the middle is a steady hold). The target is
 /// a focus point + factor rather than a raw rect so the crop stays aspect-correct and reuses
 /// <see cref="AutoZoom.Viewport"/>; a drag-a-box UI converts a box to this. Only the factor eases — at 1× the
 /// viewport is the full frame regardless of centre, so easing 1→Zoom naturally shrinks the crop onto the focus.
@@ -64,13 +64,16 @@ public sealed class ZoomTrack
     public bool IsEmpty => Events.Count == 0;
 
     /// <summary>One <see cref="ZoomViewport"/> per output frame for a <paramref name="width"/>×<paramref name="height"/>
-    /// export at <paramref name="fps"/>. A frame with no active zoom gets the full-frame viewport (a no-op).</summary>
-    public ZoomViewport[] Resolve(int frameCount, int fps, int width, int height)
+    /// export at <paramref name="fps"/>. Each output frame's edited time is mapped back to source time through
+    /// <paramref name="timeline"/> (so events resolve against the content that plays there, and events inside a
+    /// cut simply never show). A frame with no active zoom gets the full-frame viewport (a no-op).</summary>
+    public ZoomViewport[] Resolve(Timeline timeline, int frameCount, int fps, int width, int height)
     {
         var vps = new ZoomViewport[Math.Max(0, frameCount)];
         for (var i = 0; i < vps.Length; i++)
         {
-            var tMs = fps > 0 ? (long)(i * 1000.0 / fps) : 0;
+            var editedMs = fps > 0 ? (long)(i * 1000.0 / fps) : 0;
+            var tMs = timeline.EditedToSourceMs(editedMs); // evaluate events in source time
 
             // Pick the event contributing the most zoom at this frame (deterministic on overlap).
             double bestZoom = 1.0; double cx = 0.5, cy = 0.5;

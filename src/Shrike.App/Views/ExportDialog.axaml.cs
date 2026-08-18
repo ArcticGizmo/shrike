@@ -239,7 +239,7 @@ public partial class ExportDialog : Window
         // Compose the effect chain: the zoom transform first (only when there are authored events), the
         // cursor + ripple overlay on top (each an IFrameCompositor). Adding effects = extending this chain.
         var style = CursorStyle.ForExport(h, _cursorSize, _cursorRipple);
-        ZoomViewport[]? viewports = _authoredZoom.IsEmpty ? null : _authoredZoom.Resolve(smoothed.Frames.Count, fps, w, h);
+        ZoomViewport[]? viewports = _authoredZoom.IsEmpty ? null : _authoredZoom.Resolve(_timeline, smoothed.Frames.Count, fps, w, h);
         var compositor = viewports is null
             ? new CompositorChain(new CursorCompositor(smoothed, style, null))
             : new CompositorChain(new ZoomCompositor(viewports), new CursorCompositor(smoothed, style, viewports));

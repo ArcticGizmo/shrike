@@ -175,7 +175,7 @@ public partial class TimelineEditorWindow : Window
         _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height, _smoothing);
         _zoomViewports = _authoredZoom.IsEmpty
             ? null // no authored zoom → full frame throughout
-            : _authoredZoom.Resolve(_smoothed.Frames.Count, _smoothed.Fps, _source.Width, _source.Height);
+            : _authoredZoom.Resolve(_timeline, _smoothed.Frames.Count, _smoothed.Fps, _source.Width, _source.Height);
         UpdateCursorOverlay();
     }
 

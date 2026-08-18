@@ -6,13 +6,16 @@ public class ZoomTrackTests
 {
     private const int Fps = 10, W = 1000, H = 1000; // 100ms/frame, square frame for easy centre maths
 
+    // A no-cut timeline: edited time == source time, so frame i is at source ms i*100.
+    private static Timeline NoCuts(long durationMs = 2000) => new(durationMs);
+
     // Ease-in 300ms, hold 300ms->700ms, ease-out to 1000ms; 2x centred at (0.6, 0.4).
     private static ZoomEvent Event() => new(StartMs: 0, EndMs: 1000, CenterX: 0.6, CenterY: 0.4, Zoom: 2.0, EaseInMs: 300, EaseOutMs: 300);
 
     [Fact]
     public void Empty_track_is_all_full_frame()
     {
-        var vps = ZoomTrack.Empty.Resolve(frameCount: 5, Fps, W, H);
+        var vps = ZoomTrack.Empty.Resolve(NoCuts(), frameCount: 5, Fps, W, H);
         Assert.Equal(5, vps.Length);
         Assert.All(vps, vp => Assert.Equal(new ZoomViewport(0, 0, W, H), vp));
     }
@@ -21,7 +24,7 @@ public class ZoomTrackTests
     public void Hold_reaches_peak_zoom_centred_on_the_focus()
     {
         var track = new ZoomTrack([Event()]);
-        var vps = track.Resolve(frameCount: 10, Fps, W, H); // frames at 0,100,...,900ms
+        var vps = track.Resolve(NoCuts(), frameCount: 10, Fps, W, H); // frames at 0,100,...,900ms
 
         var hold = vps[5]; // t=500ms, inside the hold
         Assert.Equal(W / 2.0, hold.Width, precision: 6);   // 2x → half-width crop
@@ -34,7 +37,7 @@ public class ZoomTrackTests
     public void Outside_the_span_is_full_frame()
     {
         var track = new ZoomTrack([new ZoomEvent(300, 700, 0.5, 0.5, 2.0, 100, 100)]);
-        var vps = track.Resolve(frameCount: 10, Fps, W, H);
+        var vps = track.Resolve(NoCuts(), frameCount: 10, Fps, W, H);
         Assert.Equal(new ZoomViewport(0, 0, W, H), vps[0]); // t=0, before start
         Assert.Equal(new ZoomViewport(0, 0, W, H), vps[9]); // t=900, after end
         Assert.True(vps[5].Width < W); // t=500, inside → zoomed
@@ -71,7 +74,7 @@ public class ZoomTrackTests
     {
         var small = new ZoomEvent(0, 1000, 0.5, 0.5, 1.5, 0, 0);
         var big = new ZoomEvent(0, 1000, 0.2, 0.8, 2.5, 0, 0);
-        var vps = new ZoomTrack([small, big]).Resolve(frameCount: 10, Fps, W, H);
+        var vps = new ZoomTrack([small, big]).Resolve(NoCuts(), frameCount: 10, Fps, W, H);
 
         // At the hold, the 2.5x event wins: crop width = W/2.5, centred on (0.2,0.8).
         Assert.Equal(W / 2.5, vps[5].Width, precision: 4);
@@ -79,10 +82,28 @@ public class ZoomTrackTests
     }
 
     [Fact]
+    public void Events_are_anchored_in_source_time_across_a_cut()
+    {
+        // Source 0..2000ms; cut out 0..1000ms so edited time 0 == source 1000. A zoom event pinned to source
+        // [1000,2000] should therefore appear from the very first edited frame.
+        var tl = new Timeline(2000);
+        tl.Cut(0, 1000);
+        var track = new ZoomTrack([new ZoomEvent(950, 2000, 0.5, 0.5, 2.0, 0, 0)]);
+
+        var vps = track.Resolve(tl, frameCount: 10, Fps, W, H); // 10 edited frames = the kept 1000ms
+        Assert.True(vps[0].Width < W, "event should be active at the first edited frame (source 1000ms)");
+        Assert.True(vps[5].Width < W);
+
+        // The same event evaluated against a no-cut timeline is NOT active in the first second (source 0..900).
+        var vpsNoCut = track.Resolve(new Timeline(2000), frameCount: 10, Fps, W, H);
+        Assert.Equal(new ZoomViewport(0, 0, W, H), vpsNoCut[0]);
+    }
+
+    [Fact]
     public void Resolved_viewports_feed_the_zoom_compositor()
     {
         // End-to-end shape check: the resolver's output drives ZoomCompositor like AutoZoom.Viewports does.
-        var vps = new ZoomTrack([Event()]).Resolve(frameCount: 10, Fps, 120, 90);
+        var vps = new ZoomTrack([Event()]).Resolve(NoCuts(), frameCount: 10, Fps, 120, 90);
         var buf = new byte[120 * 90 * 4];
         for (var i = 0; i < buf.Length; i += 4) { buf[i] = buf[i + 1] = buf[i + 2] = 128; buf[i + 3] = 255; }
         var before = (byte[])buf.Clone();
