@@ -34,6 +34,7 @@ public partial class TimelineEditorWindow : Window
     private const int PlayHeightCap = 540;   // playback frames are softer/lighter; stills stay full-res
 
     private TimelineStrip _strip = null!;
+    private TimeRuler? _ruler;
     private PreviewSurface _preview = null!;
     private TextBlock _timeLabel = null!;
     private TextBlock _keptLabel = null!;
@@ -69,10 +70,14 @@ public partial class TimelineEditorWindow : Window
     private TextBlock? _sizeValue;
     private CheckBox? _rippleToggle;
 
-    // Unified effects lane + (zoom) inspector.
+    // Unified effects lane + the always-present properties pane.
     private readonly List<EffectEvent> _effects = new();
     private EffectsLane? _effectsLane;
-    private Border? _zoomPropsPane;
+    private Border? _propsPane;
+    private TextBlock? _paneHeader;
+    private TextBlock? _paneEmpty;
+    private Control? _zoomEditor;
+    private Button? _deleteButton;
     private NumericUpDown? _zoomAmountInput;
     private NumericUpDown? _easeInInput;
     private NumericUpDown? _easeOutInput;
@@ -98,7 +103,13 @@ public partial class TimelineEditorWindow : Window
         _playTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _playTimer.Tick += (_, _) => AdvancePlayback();
 
-        if (this.FindControl<TimeRuler>("TimeRuler") is { } ruler) ruler.Timeline = _timeline;
+        _ruler = this.FindControl<TimeRuler>("TimeRuler");
+        if (_ruler is not null)
+        {
+            _ruler.Timeline = _timeline;
+            _ruler.Scrubbing += OnScrub;   // the ruler is draggable to scrub, like the filmstrip
+            _ruler.Seeked += OnSeek;
+        }
 
         _strip.Timeline = _timeline;
         _strip.Seeked += OnSeek;
@@ -185,10 +196,14 @@ public partial class TimelineEditorWindow : Window
             _effectsLane.Refresh();
         }
 
-        // The tuning panel + effects lane only make sense for a clip that actually carries a track.
+        // The tuning panel + effects lane + properties pane only make sense for a clip that carries a track.
+        // The pane stays visible for the whole session then (empty until a selection), so selecting an effect
+        // never widens the window / reflows the editor.
         var hasTrack = _smoothTrack is not null;
         if (this.FindControl<Border>("SmoothingPanel") is { } panel) panel.IsVisible = hasTrack;
         if (this.FindControl<StackPanel>("EffectsPanel") is { } effectsPanel) effectsPanel.IsVisible = hasTrack;
+        if (_propsPane is not null) _propsPane.IsVisible = hasTrack;
+        OnEffectSelectionChanged(-1); // seed the pane's empty state
 
         ReprojectSmoothTrack();
     }
@@ -210,7 +225,11 @@ public partial class TimelineEditorWindow : Window
     private void SetupEffectsLane()
     {
         _effectsLane = this.FindControl<EffectsLane>("EffectsLane");
-        _zoomPropsPane = this.FindControl<Border>("ZoomPropsPane");
+        _propsPane = this.FindControl<Border>("PropsPane");
+        _paneHeader = this.FindControl<TextBlock>("PaneHeader");
+        _paneEmpty = this.FindControl<TextBlock>("PaneEmpty");
+        _zoomEditor = this.FindControl<StackPanel>("ZoomEditor");
+        _deleteButton = this.FindControl<Button>("DeleteZoomButton");
         _zoomAmountInput = this.FindControl<NumericUpDown>("ZoomAmountInput");
         _easeInInput = this.FindControl<NumericUpDown>("EaseInInput");
         _easeOutInput = this.FindControl<NumericUpDown>("EaseOutInput");
@@ -251,12 +270,25 @@ public partial class TimelineEditorWindow : Window
 
     private void OnEffectSelectionChanged(int index)
     {
-        var zoom = index >= 0 && index < _effects.Count ? _effects[index] as ZoomEffect : null;
-        // The inspector + aim box are zoom-only today; other kinds have no editor yet (their milestone adds one).
-        if (_zoomPropsPane is not null) _zoomPropsPane.IsVisible = zoom is not null;
+        var effect = index >= 0 && index < _effects.Count ? _effects[index] : null;
+        var zoom = effect as ZoomEffect;
+
+        // The pane is always present; only its content swaps. Zoom has the inspector; other kinds show the
+        // empty-state note (their editor lands in a later milestone). Delete is offered for any selection.
+        if (_paneHeader is not null) _paneHeader.Text = "✦ " + (effect is null ? "Effect" : KindName(effect.Kind));
+        if (_zoomEditor is not null) _zoomEditor.IsVisible = zoom is not null;
+        if (_deleteButton is not null) _deleteButton.IsVisible = effect is not null;
+        if (_paneEmpty is not null)
+        {
+            _paneEmpty.IsVisible = zoom is null;
+            _paneEmpty.Text = effect is null
+                ? "Select an effect on the timeline to edit it, or right-click the timeline to add one."
+                : "No adjustable properties yet — drag to move / resize, or delete.";
+        }
+
+        // Aim box + inspector are zoom-only today.
         _preview.AimMode = zoom is not null;
         _preview.SetTargetBox(zoom is not null ? EventBox(zoom) : null);
-
         if (zoom is not null)
         {
             _suppressZoomInspector = true;
@@ -267,6 +299,16 @@ public partial class TimelineEditorWindow : Window
         }
         UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
     }
+
+    private static string KindName(EffectKind kind) => kind switch
+    {
+        EffectKind.Zoom => "Zoom",
+        EffectKind.Spotlight => "Spotlight",
+        EffectKind.Ripple => "Click ripple",
+        EffectKind.Visibility => "Mouse visibility",
+        EffectKind.Canvas => "Canvas",
+        _ => "Effect",
+    };
 
     // The selected event's target as a normalised box (a square in normalised coords: side = 1/zoom).
     private static Rect EventBox(ZoomEffect ev)
@@ -549,6 +591,7 @@ public partial class TimelineEditorWindow : Window
         _playheadSourceMs = sourceMs;
         _currentEditedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
         _effectsLane?.SetPlayhead(sourceMs);
+        _ruler?.SetPlayhead(sourceMs);
         RequestPreview(sourceMs);
         UpdateLabels();
         UpdateCursorOverlay();
@@ -703,6 +746,7 @@ public partial class TimelineEditorWindow : Window
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
         _effectsLane?.SetPlayhead(_playheadSourceMs);
+        _ruler?.SetPlayhead(_playheadSourceMs);
         UpdateLabels();
         UpdateCursorOverlay();
     }

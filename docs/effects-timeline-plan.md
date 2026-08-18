@@ -141,14 +141,16 @@ relaunch the dev exe on every change (kill running Shrike first).
   *(Zoom still persists via the v1 edit doc; other kinds are **session-only** until the v2 format lands in
   M3. Interactive multi-kind pass pending, like the codebase's existing Avalonia-wiring convention.)*
 
-### M2 · Draggable ruler playhead + permanent properties pane
-- `TimeRuler` gains a playhead marker and becomes draggable to scrub (raises `Scrubbing`/`Seeked` like
-  the strip); filmstrip drag retained.
-- Properties pane: **always visible**, fixed reserved column (no window reflow), **empty state** when
-  nothing is selected, content region **swaps per selected effect kind**. Move the existing zoom
-  inspector (amount / ease-in / ease-out + delete) into this framework as the first per-kind editor.
-- **Exit / demo:** scrub from the ruler; select/deselect a zoom — the pane stays put and swaps content;
-  layout never shifts.
+### ✅ M2 · Draggable ruler playhead + permanent properties pane
+- ✅ `TimeRuler` now carries the **playhead** (amber line + a downward tab) and is **draggable to scrub**
+  (raises `Scrubbing`/`Seeked` like the filmstrip; hand cursor); the strip drag is retained. Window feeds
+  the ruler's playhead from both scrub and playback.
+- ✅ Properties pane is **always visible** for a track-carrying clip (fixed 248px column), so selecting an
+  effect never widens the window / reflows the editor. Content **swaps by selection**: an **empty-state**
+  hint when nothing's selected, the **zoom inspector** (amount / ease-in / ease-out) for a zoom, and a
+  "timing/delete only" note + **Delete** for kinds without an editor yet. Header names the selected kind.
+- ✅ **Exit / demo:** scrub from the ruler; select/deselect any effect — the pane stays put and only its
+  content changes; layout never shifts. Build clean, **262 passed**.
 
 ### M3 · Mouse effects as ranged effects  *(spotlight · ripple · visibility)*
 - **Spotlight:** net-new `SpotlightCompositor : IFrameCompositor` (eased glow under the smoothed cursor

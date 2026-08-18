@@ -105,24 +105,35 @@
         </Grid>
         </Grid>
 
-        <!-- Right pane: properties of the selected zoom event (shown from code-behind on selection). -->
-        <Border Grid.Column="1" Name="ZoomPropsPane" IsVisible="False" Width="232"
+        <!-- Right pane: always present (fixed column, so selecting an effect never reflows the editor). Its
+             content swaps to the selected effect's editor, or an empty-state hint when nothing is selected. -->
+        <Border Grid.Column="1" Name="PropsPane" IsVisible="False" Width="248"
                 Background="#1A150E" BorderBrush="#322A1E" BorderThickness="1,0,0,0" Padding="16">
             <StackPanel Spacing="16">
-                <TextBlock Text="✦ Zoom event" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" />
-                <StackPanel Spacing="5">
-                    <TextBlock Text="Zoom (×)" Classes="hint" />
-                    <NumericUpDown Name="ZoomAmountInput" Minimum="1.1" Maximum="3.0" Increment="0.1" FormatString="0.0#" />
+                <TextBlock Name="PaneHeader" Text="✦ Effect" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" />
+
+                <!-- Empty / no-editor-yet state. -->
+                <TextBlock Name="PaneEmpty" Classes="hint" TextWrapping="Wrap"
+                           Text="Select an effect on the timeline to edit it, or right-click the timeline to add one." />
+
+                <!-- Zoom editor. -->
+                <StackPanel Name="ZoomEditor" Spacing="16" IsVisible="False">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Zoom (×)" Classes="hint" />
+                        <NumericUpDown Name="ZoomAmountInput" Minimum="1.1" Maximum="3.0" Increment="0.1" FormatString="0.0#" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Ease in (s)" Classes="hint" />
+                        <NumericUpDown Name="EaseInInput" Minimum="0" Maximum="3" Increment="0.1" FormatString="0.0#" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Ease out (s)" Classes="hint" />
+                        <NumericUpDown Name="EaseOutInput" Minimum="0" Maximum="3" Increment="0.1" FormatString="0.0#" />
+                    </StackPanel>
                 </StackPanel>
-                <StackPanel Spacing="5">
-                    <TextBlock Text="Ease in (s)" Classes="hint" />
-                    <NumericUpDown Name="EaseInInput" Minimum="0" Maximum="3" Increment="0.1" FormatString="0.0#" />
-                </StackPanel>
-                <StackPanel Spacing="5">
-                    <TextBlock Text="Ease out (s)" Classes="hint" />
-                    <NumericUpDown Name="EaseOutInput" Minimum="0" Maximum="3" Increment="0.1" FormatString="0.0#" />
-                </StackPanel>
-                <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect" HorizontalAlignment="Stretch" />
+
+                <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"
+                        HorizontalAlignment="Stretch" IsVisible="False" />
             </StackPanel>
         </Border>
     </Grid>

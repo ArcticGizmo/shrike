@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Shrike.Core.Recording;
 
@@ -8,7 +9,9 @@ namespace Shrike.App.Controls;
 /// <summary>
 /// A thin time axis above the scrubber, sharing the same source-time x-axis (0..<see cref="Timeline"/>.DurationMs).
 /// Ticks land on a "nice" round interval — 0.1s, 0.5s, 1s, 5s, 10s, 30s, 1m, … — picked so the labels stay
-/// readable (≥ a minimum pixel spacing) for the clip's length and the control's current width. Pure view.
+/// readable (≥ a minimum pixel spacing) for the clip's length and the control's current width. It also carries
+/// the <b>playhead</b> and is draggable to scrub (raising <see cref="Scrubbing"/> as you drag and
+/// <see cref="Seeked"/> on release, exactly like the filmstrip), so you can grab the time position right here.
 /// </summary>
 public sealed class TimeRuler : Control
 {
@@ -19,12 +22,52 @@ public sealed class TimeRuler : Control
     private const double MinLabelPx = 64;
 
     public Timeline? Timeline { get; set; }
+    public long PlayheadMs { get; private set; }
+
+    /// <summary>Raised continuously while dragging the ruler — the window moves the preview to this source ms.</summary>
+    public event Action<long>? Scrubbing;
+    /// <summary>Raised when the drag ends (or a single click lands) — the final seek target in source ms.</summary>
+    public event Action<long>? Seeked;
+
+    private bool _dragging;
 
     public TimeRuler()
     {
         Height = 20;
         Focusable = false;
         ClipToBounds = true;
+        Cursor = new Cursor(StandardCursorType.Hand);
+    }
+
+    public void SetPlayhead(long sourceMs) { PlayheadMs = sourceMs; InvalidateVisual(); }
+
+    private double Dur => Timeline is { DurationMs: > 0 } tl ? tl.DurationMs : 1;
+    private long MsAt(double x) => (long)Math.Clamp(x / Math.Max(1, Bounds.Width) * Dur, 0, Dur);
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (Timeline is null || Bounds.Width <= 0) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        _dragging = true;
+        e.Pointer.Capture(this);
+        Scrubbing?.Invoke(MsAt(e.GetPosition(this).X));
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (!_dragging) return;
+        Scrubbing?.Invoke(MsAt(e.GetPosition(this).X));
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (!_dragging) return;
+        _dragging = false;
+        e.Pointer.Capture(null);
+        Seeked?.Invoke(MsAt(e.GetPosition(this).X));
     }
 
     public override void Render(DrawingContext ctx)
@@ -54,6 +97,20 @@ public sealed class TimeRuler : Control
         }
 
         ctx.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#322A1E"))), new Point(0, h - 0.5), new Point(w, h - 0.5));
+
+        // Playhead: an amber line with a downward-pointing tab at the top, matching the scrubber's.
+        var amber = new SolidColorBrush(Color.Parse("#F5A524"));
+        var px = PlayheadMs / dur * w;
+        ctx.DrawLine(new Pen(amber, 1), new Point(px, 0), new Point(px, h));
+        var tab = new StreamGeometry();
+        using (var g = tab.Open())
+        {
+            g.BeginFigure(new Point(px - 4, 0), true);
+            g.LineTo(new Point(px + 4, 0));
+            g.LineTo(new Point(px, 6));
+            g.EndFigure(true);
+        }
+        ctx.DrawGeometry(amber, null, tab);
     }
 
     // Absolute time at a tick, formatted to match the chosen interval's granularity.
