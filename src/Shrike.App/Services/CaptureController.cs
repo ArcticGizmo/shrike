@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Shrike.App.Native;
 using Shrike.App.Views;
+using Shrike.Core;
 using Shrike.Core.Capture;
 using Shrike.Core.Interop;
 using Shrike.Core.Recording;
@@ -36,6 +37,13 @@ internal sealed class CaptureController
     private RecordingRegionWindow? _regionWindow;
     private CursorSpotlightWindow? _spotlight;
     private Task<Recorder?>? _buildTask;
+
+    // Smooth-cursor (experimental): when on for a recording, we log the pointer track live and hide the
+    // real cursor so export can composite a smoothed synthetic one.
+    private MouseTrackRecorder? _trackRecorder;
+    private MouseHook? _mouseHook;
+    private bool _smoothCursor;
+    private PixelBounds _pendingRegion;
 
     /// <summary>The last capture mode the user ran, so the editor's "New capture" button can repeat it.</summary>
     private CaptureMenuChoice _lastCaptureChoice = CaptureMenuChoice.Region;
@@ -384,9 +392,10 @@ internal sealed class CaptureController
         // independent, so both can be on at once.
         var spotlightOn = _settings?.Current.SpotlightCursorEnabled ?? false;
         var style = CurrentSpotlightStyle();
+        _smoothCursor = false; // experimental, opt-in per recording
 
         var regionWindow = new RecordingRegionWindow(region, MonitorsOrFallback());
-        var hud = new RecordingHudWindow(region, spotlightOn, style, cursorOn);
+        var hud = new RecordingHudWindow(region, spotlightOn, style, cursorOn, smoothCursorOn: false);
 
         // The spotlight is a real on-screen overlay (captured naturally), so it previews during setup and
         // simply carries into the recording — one source of truth for "what's being recorded".
@@ -400,6 +409,7 @@ internal sealed class CaptureController
         hud.SpotlightToggled += OnSpotlightToggled;
         hud.SpotlightStyleChanged += OnSpotlightStyleChanged;
         hud.CursorInRecordingToggled += OnCursorInRecordingToggled;
+        hud.SmoothCursorToggled += OnSmoothCursorToggled;
         hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
 
         regionWindow.RegionChanged += hud.FollowRegion;
@@ -441,6 +451,18 @@ internal sealed class CaptureController
             _settings.Update(_settings.Current with { CursorInRecording = inRecording });
     }
 
+    /// <summary>Experimental: turning smooth-cursor on logs the pointer track and draws a smoothed cursor
+    /// in post. It needs a clean plate, so it hides the real cursor and turns the live spotlight off (a
+    /// baked spotlight would follow the hidden real cursor and misalign with the synthetic one).</summary>
+    private void OnSmoothCursorToggled(bool on)
+    {
+        _smoothCursor = on;
+        if (on)
+            _spotlight?.SetActive(false);
+        else
+            _spotlight?.SetActive(_settings?.Current.SpotlightCursorEnabled ?? false);
+    }
+
     private void OnSpotlightStyleChanged(SpotlightStyle style)
     {
         _spotlight?.UpdateStyle(style);
@@ -468,9 +490,13 @@ internal sealed class CaptureController
         }
 
         var region = _regionWindow.Region;
+        _pendingRegion = region;
         const int fps = 30;
-        var captureCursor = _settings?.Current.CursorInRecording ?? true;
-        var path = Path.Combine(Path.GetTempPath(),
+        // Smooth cursor needs a clean plate, so it forces the real cursor off regardless of the setting.
+        var captureCursor = !_smoothCursor && (_settings?.Current.CursorInRecording ?? true);
+        // A stable per-profile working folder (not %TEMP%, which the OS can purge) so the source MP4 and
+        // its *.track.json sidecar survive to be edited / re-exported.
+        var path = Path.Combine(AppStorage.RecordingsDirectory(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
 
         _buildTask = Task.Run(() => BuildRecorder(region, path, fps, captureCursor));
@@ -504,6 +530,32 @@ internal sealed class CaptureController
         _regionWindow.EnterRecordingMode();
         _hud.BeginRecording(recorder);
         recorder.Start();
+        StartTrackCapture(recorder);
+    }
+
+    /// <summary>Arm the smooth-cursor track for this recording: install the mouse hook and stamp each event
+    /// with the recorder's pause-excluded clock. No-op unless smooth-cursor is on for this take.</summary>
+    private void StartTrackCapture(Recorder recorder)
+    {
+        if (!_smoothCursor) return;
+        try
+        {
+            // The recorded rectangle is the region origin with the source's even-trimmed size.
+            var region = new PixelBounds(_pendingRegion.X, _pendingRegion.Y, recorder.Width, recorder.Height);
+            var track = new MouseTrackRecorder(region, recorder.CaptureTimeMs);
+            var hook = new MouseHook();
+            hook.Moved += track.Move;
+            hook.Clicked += track.Click;
+            hook.Install();
+            _trackRecorder = track;
+            _mouseHook = hook;
+        }
+        catch
+        {
+            // If the hook can't install, the recording still proceeds — just without a track.
+            DisposeMouseHook();
+            _trackRecorder = null;
+        }
     }
 
     /// <summary>Tear down the setup surfaces without recording (Cancel, Esc, or a failed pipeline build).</summary>
@@ -513,6 +565,8 @@ internal sealed class CaptureController
         Dispatcher.UIThread.Post(() =>
         {
             _buildTask = null;
+            DisposeMouseHook();
+            _trackRecorder = null;
             _hud?.Close();
             _hud = null;
             _regionWindow?.Close();
@@ -548,6 +602,43 @@ internal sealed class CaptureController
         _spotlight = null;
     }
 
+    /// <summary>Tear down the mouse hook and, if a track was captured for a saved recording, write it as a
+    /// <c>*.track.json</c> sidecar next to the MP4. Best-effort — the recording is fine without it.</summary>
+    private void WriteMouseTrackSidecar(string? savedPath)
+    {
+        var track = _trackRecorder;
+        _trackRecorder = null;
+        DisposeMouseHook();
+
+        if (track is null || savedPath is null || !File.Exists(savedPath)) return;
+        try
+        {
+            track.Build().Save(AppStorage.SidecarFor(savedPath));
+        }
+        catch
+        {
+            // best effort — a missing track just means no smoothing is available for this clip
+        }
+    }
+
+    /// <summary>Keep the recordings working folder bounded — run off the UI thread after a recording lands.
+    /// The just-saved clip is the newest, so it's always kept (and may be open in the editor).</summary>
+    private static void SweepRecordingsInBackground()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        Task.Run(() =>
+        {
+            try { RecordingsRetention.Sweep(AppStorage.RecordingsDirectory(), RecordingRetention.Default, DateTimeOffset.UtcNow); }
+            catch { /* best effort */ }
+        });
+    }
+
+    private void DisposeMouseHook()
+    {
+        _mouseHook?.Dispose();
+        _mouseHook = null;
+    }
+
     private void OnRecordingFinished(string? savedPath)
     {
         // The HUD closes itself; drop the region frame (which doubled as the recording border) and the
@@ -557,6 +648,13 @@ internal sealed class CaptureController
         CloseSpotlight();
         var recorder = _recorder;
         _recorder = null;
+
+        // Finalise the smooth-cursor track (if any) as a sidecar next to the MP4 before we hand off.
+        WriteMouseTrackSidecar(savedPath);
+
+        // Reclaim old working recordings now that this one has landed (newest is always kept).
+        SweepRecordingsInBackground();
+
         if (savedPath is null || !File.Exists(savedPath)) return;
 
         // Hand the source to the timeline editor to trim and export (M5). Too-short clips (or a missing

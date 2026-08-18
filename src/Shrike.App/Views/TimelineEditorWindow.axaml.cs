@@ -54,6 +54,20 @@ public partial class TimelineEditorWindow : Window
     private bool _extracting;
     private Bitmap? _currentFrame;
 
+    // Smooth-cursor preview overlay + tuning: watch and dial in the smoothing/zoom the export renders.
+    private MouseTrack? _smoothTrack;
+    private SmoothedCursorTrack? _smoothed;
+    private CursorSmoothing _smoothing = CursorSmoothing.Default;
+    private ZoomConfig _zoom = ZoomConfig.Default;
+    private double[]? _zoomCurve;
+    private Slider? _minCutoffSlider;
+    private Slider? _betaSlider;
+    private TextBlock? _minCutoffValue;
+    private TextBlock? _betaValue;
+    private CheckBox? _zoomToggle;
+    private Slider? _zoomSlider;
+    private TextBlock? _zoomValue;
+
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
 
@@ -79,11 +93,43 @@ public partial class TimelineEditorWindow : Window
         _strip.Scrubbing += OnScrub;
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
+        // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
+        _timeline.Changed += ReprojectSmoothTrack;
+        SetupSmoothingPanel();
 
         Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
+
+#if DEBUG
+        // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
+        if (this.FindControl<Button>("RevealButton") is { } reveal)
+        {
+            reveal.IsVisible = true;
+            reveal.Click += (_, _) => RevealSourceFiles();
+        }
+#endif
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+#if DEBUG
+    /// <summary>Debug-only: open Explorer with this recording selected, so its <c>.track.json</c> sidecar is
+    /// visible right beside it (falls back to opening the working folder if the file has since gone).</summary>
+    private void RevealSourceFiles()
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(_source.Path)) return;
+        try
+        {
+            var arg = File.Exists(_source.Path)
+                ? $"/select,\"{_source.Path}\""
+                : $"\"{Shrike.Core.AppStorage.RecordingsDirectory()}\"";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", arg)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch { /* best effort — dev convenience only */ }
+    }
+#endif
 
     protected override void OnOpened(EventArgs e)
     {
@@ -91,6 +137,142 @@ public partial class TimelineEditorWindow : Window
         UpdateLabels();
         RequestPreview(0);
         _ = LoadThumbnailsAsync(_cts.Token);
+        LoadSmoothTrack();
+    }
+
+    // ---- smooth-cursor preview overlay + tuning ----
+
+    private void LoadSmoothTrack()
+    {
+        try
+        {
+            var path = Shrike.Core.AppStorage.SidecarFor(_source.Path);
+            _smoothTrack = File.Exists(path) ? MouseTrack.Load(path) : null;
+        }
+        catch { _smoothTrack = null; }
+
+        // The tuning panel only makes sense for a clip that actually carries a track.
+        if (this.FindControl<Border>("SmoothingPanel") is { } panel)
+            panel.IsVisible = _smoothTrack is not null;
+
+        ReprojectSmoothTrack();
+    }
+
+    private void ReprojectSmoothTrack()
+    {
+        if (_smoothTrack is null || _source.Width <= 0 || _source.Height <= 0)
+        {
+            _smoothed = null;
+            _preview.SetCursor(null);
+            return;
+        }
+        _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height, _smoothing);
+        _zoomCurve = AutoZoom.ZoomCurve(_smoothed.Clicks, _smoothed.Frames.Count, _smoothed.Fps, _zoom);
+        UpdateCursorOverlay();
+    }
+
+    private void UpdateCursorOverlay()
+    {
+        if (_smoothed is null || _smoothed.IsEmpty) { _preview.SetCursor(null); _preview.SetViewport(null); return; }
+        var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
+        var s = _smoothed.Frames[i];
+
+        var z = _zoomCurve is { } zc && i < zc.Length ? zc[i] : 1.0;
+        if (z > 1.0001)
+        {
+            // Crop the preview to the zoom viewport and place the cursor within that crop (0..1).
+            var vp = AutoZoom.Viewport(z, s.X, s.Y, _source.Width, _source.Height);
+            _preview.SetViewport(new Rect(vp.X / _source.Width, vp.Y / _source.Height, vp.Width / _source.Width, vp.Height / _source.Height));
+            _preview.SetCursor(new Point((s.X - vp.X) / vp.Width, (s.Y - vp.Y) / vp.Height));
+        }
+        else
+        {
+            _preview.SetViewport(null);
+            _preview.SetCursor(new Point(s.X / _source.Width, s.Y / _source.Height));
+        }
+    }
+
+    private void SetupSmoothingPanel()
+    {
+        _minCutoffSlider = this.FindControl<Slider>("MinCutoffSlider");
+        _betaSlider = this.FindControl<Slider>("BetaSlider");
+        _minCutoffValue = this.FindControl<TextBlock>("MinCutoffValue");
+        _betaValue = this.FindControl<TextBlock>("BetaValue");
+
+        if (_minCutoffSlider is not null)
+        {
+            _minCutoffSlider.Value = _smoothing.MinCutoff;
+            _minCutoffSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
+            };
+        }
+        if (_betaSlider is not null)
+        {
+            _betaSlider.Value = _smoothing.Beta;
+            _betaSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
+            };
+        }
+        _zoomToggle = this.FindControl<CheckBox>("ZoomToggle");
+        _zoomSlider = this.FindControl<Slider>("ZoomSlider");
+        _zoomValue = this.FindControl<TextBlock>("ZoomValue");
+        if (_zoomToggle is not null)
+        {
+            _zoomToggle.IsChecked = _zoom.Enabled;
+            _zoomToggle.IsCheckedChanged += (_, _) => OnZoomChanged();
+        }
+        if (_zoomSlider is not null)
+        {
+            _zoomSlider.Value = _zoom.MaxZoom;
+            _zoomSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomChanged();
+            };
+        }
+        if (this.FindControl<Button>("SmoothingReset") is { } reset)
+            reset.Click += (_, _) => ResetSmoothing();
+
+        UpdateSmoothingLabels();
+    }
+
+    private void OnSmoothingChanged()
+    {
+        var minCutoff = Math.Max(0.1, _minCutoffSlider?.Value ?? _smoothing.MinCutoff);
+        var beta = Math.Max(0.0, _betaSlider?.Value ?? _smoothing.Beta);
+        _smoothing = new CursorSmoothing(minCutoff, beta);
+        UpdateSmoothingLabels();
+        ReprojectSmoothTrack();
+    }
+
+    private void OnZoomChanged()
+    {
+        var enabled = _zoomToggle?.IsChecked ?? false;
+        var max = Math.Max(1.0, _zoomSlider?.Value ?? _zoom.MaxZoom);
+        _zoom = _zoom with { Enabled = enabled, MaxZoom = max };
+        UpdateSmoothingLabels();
+        ReprojectSmoothTrack();
+    }
+
+    private void ResetSmoothing()
+    {
+        _smoothing = CursorSmoothing.Default;
+        _zoom = ZoomConfig.Default;
+        if (_minCutoffSlider is not null) _minCutoffSlider.Value = _smoothing.MinCutoff;
+        if (_betaSlider is not null) _betaSlider.Value = _smoothing.Beta;
+        if (_zoomToggle is not null) _zoomToggle.IsChecked = _zoom.Enabled;
+        if (_zoomSlider is not null) _zoomSlider.Value = _zoom.MaxZoom;
+        UpdateSmoothingLabels();
+        ReprojectSmoothTrack();
+    }
+
+    private void UpdateSmoothingLabels()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (_minCutoffValue is not null) _minCutoffValue.Text = _smoothing.MinCutoff.ToString("0.0#", inv);
+        if (_betaValue is not null) _betaValue.Text = _smoothing.Beta.ToString("0.00#", inv);
+        if (_zoomValue is not null) _zoomValue.Text = _zoom.MaxZoom.ToString("0.0#", inv) + "×";
     }
 
     // ---- scrubbing / preview ----
@@ -102,6 +284,7 @@ public partial class TimelineEditorWindow : Window
         _currentEditedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
         RequestPreview(sourceMs);
         UpdateLabels();
+        UpdateCursorOverlay();
     }
 
     private void OnSeek(long sourceMs) => OnScrub(sourceMs);
@@ -160,8 +343,8 @@ public partial class TimelineEditorWindow : Window
     private void StartPlayback()
     {
         if (_timeline.KeptDurationMs <= 0) return;
-        // Resume from the current spot; if we're sitting in a cut (or at the end), start over.
-        _currentEditedMs = _timeline.SourceToEditedMs(_playheadSourceMs) ?? _currentEditedMs;
+        // Resume from the current edited position (kept authoritative by scrub + playback). Once we've
+        // reached the end, Play restarts from the top rather than resuming on the final frame.
         if (_currentEditedMs >= _timeline.KeptDurationMs) _currentEditedMs = 0;
 
         var ranges = _timeline.KeptRangesFrom(_currentEditedMs);
@@ -209,6 +392,7 @@ public partial class TimelineEditorWindow : Window
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
         UpdateLabels();
+        UpdateCursorOverlay();
     }
 
     private void EnsurePlayBitmap(int w, int h)
@@ -296,6 +480,7 @@ public partial class TimelineEditorWindow : Window
         StopPlayback();
         if (!_timeline.HasKeptContent) return;
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
+        dlg.ConfigureSmoothCursor(_smoothing, _zoom); // carry the tuned preview settings into the export
         await dlg.ShowDialog(this);
     }
 

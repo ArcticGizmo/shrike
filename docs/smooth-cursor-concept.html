@@ -1,0 +1,704 @@
+<title>Smooth Cursor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    color-scheme: dark;
+    /* Warm, amber-biased dark — inherited from Shrike's own house palette (docs/mockup.html). */
+    --bg:        #14110D;
+    --bg-2:      #100E0A;
+    --panel:     #1E1913;
+    --panel-2:   #201B14;
+    --raised:    #2A2318;
+    --fg:        #EDE6DA;
+    --title:     #FBF6EC;
+    --muted:     #A89A85;
+    --faint:     #6E6353;
+    --accent:    #F5A524;
+    --accent-2:  #FBBF24;
+    --accent-soft: rgba(245,165,36,0.14);
+    --accent-line: rgba(245,165,36,0.40);
+    --border:    #322A1E;
+    --hair:      rgba(255,255,255,0.06);
+    --rec:       #EF4444;
+    --ok:        #4ADE80;
+    --info:      #60A5FA;
+
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "Cascadia Code", ui-monospace, "SF Mono", Consolas, monospace;
+    --maxw: 1080px;
+    --r: 12px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 560px at 84% -12%, rgba(245,165,36,0.10), transparent 62%),
+      radial-gradient(900px 520px at -8% 2%, rgba(96,165,250,0.045), transparent 60%),
+      var(--bg);
+    color: var(--fg);
+    font-family: var(--ui);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 26px; }
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--accent); margin: 0;
+  }
+
+  /* ---------- masthead ---------- */
+  header.top { padding: 54px 0 8px; }
+  .brandrow { display: flex; align-items: center; gap: 14px; margin-bottom: 40px; }
+  .mark { width: 34px; height: 34px; flex: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5)); }
+  .brandname { font-family: var(--mono); font-weight: 600; letter-spacing: 0.16em;
+    text-transform: uppercase; font-size: 14px; color: var(--title); }
+  .brandtag { font-family: var(--mono); font-size: 12px; color: var(--faint); letter-spacing: 0.06em; }
+  .brandrow .spacer { flex: 1; }
+  .pill-note { font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; }
+
+  h1 {
+    font-size: clamp(34px, 5.6vw, 58px); line-height: 1.03; letter-spacing: -0.025em;
+    font-weight: 800; color: var(--title); margin: 10px 0 20px; max-width: 15ch;
+    text-wrap: balance;
+  }
+  h1 .amber { color: var(--accent); }
+  .lede { font-size: clamp(17px, 2.1vw, 20px); color: var(--fg); max-width: 62ch; margin: 0; }
+  .lede b { color: var(--title); font-weight: 600; }
+
+  .metaline {
+    display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 30px;
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  }
+  .metaline span { display: inline-flex; align-items: center; gap: 9px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  /* ---------- the demo card ---------- */
+  .demo {
+    margin: 40px 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: linear-gradient(180deg, var(--panel), var(--bg-2));
+    overflow: hidden;
+    box-shadow: 0 30px 70px -40px #000;
+  }
+  .demo-stage { position: relative; }
+  canvas#stage { display: block; width: 100%; height: auto; aspect-ratio: 16 / 8.5; }
+  .demo-legend {
+    position: absolute; left: 16px; top: 14px;
+    display: flex; gap: 16px; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    pointer-events: none;
+  }
+  .demo-legend i { display: inline-flex; align-items: center; gap: 7px; font-style: normal; }
+  .swatch { width: 16px; height: 3px; border-radius: 2px; }
+  .swatch.raw { background: var(--faint); }
+  .swatch.smooth { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  .demo-controls {
+    display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    padding: 14px 18px; border-top: 1px solid var(--hair);
+    background: var(--panel-2);
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  }
+  .toggle {
+    appearance: none; cursor: pointer; font: inherit; color: var(--title);
+    border: 1px solid var(--accent-line); background: var(--accent-soft);
+    padding: 7px 14px; border-radius: 8px; letter-spacing: 0.02em;
+    display: inline-flex; align-items: center; gap: 9px;
+  }
+  .toggle[aria-pressed="false"] { color: var(--muted); border-color: var(--border); background: transparent; }
+  .toggle .led { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .toggle[aria-pressed="false"] .led { background: var(--faint); box-shadow: none; }
+  .toggle:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+  .ctl { display: inline-flex; align-items: center; gap: 10px; }
+  .ctl label { white-space: nowrap; }
+  input[type=range] { accent-color: var(--accent); width: 150px; }
+  input[type=range]:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+  .ctl .val { color: var(--accent-2); min-width: 3.4ch; font-variant-numeric: tabular-nums; }
+  .demo-cap { padding: 0 2px; margin: 14px 0 0; font-size: 13.5px; color: var(--muted); }
+
+  /* ---------- sections ---------- */
+  section { padding: 46px 0; border-top: 1px solid var(--hair); }
+  .sec-head { margin: 0 0 22px; }
+  .sec-head h2 { font-size: clamp(22px, 3vw, 30px); color: var(--title); margin: 8px 0 0; letter-spacing: -0.01em; }
+  .sec-head p.k { margin: 0; }
+  .prose { max-width: 66ch; color: var(--fg); }
+  .prose p { margin: 0 0 16px; }
+  .prose strong { color: var(--title); }
+
+  /* prior-art chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+  .chip { font-family: var(--mono); font-size: 12.5px; color: var(--fg);
+    border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; background: var(--panel); }
+  .chip b { color: var(--accent-2); font-weight: 600; }
+
+  /* callout */
+  .callout {
+    display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: start;
+    border: 1px solid var(--accent-line); border-radius: 14px;
+    background: var(--accent-soft); padding: 22px 24px;
+  }
+  .callout .big { font-family: var(--mono); font-weight: 700; color: var(--accent);
+    font-size: 30px; line-height: 1; }
+  .callout p { margin: 0; color: var(--fg); max-width: 60ch; }
+  .callout p b { color: var(--title); }
+
+  /* pipeline */
+  .pipe { display: grid; gap: 14px; }
+  .pipe-row { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: stretch; }
+  .pipe-tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--faint); display: flex; align-items: center; }
+  .pipe-tag.cap { color: var(--info); }
+  .pipe-tag.exp { color: var(--accent); }
+  .steps { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .step {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+    padding: 12px 15px; min-width: 0;
+  }
+  .step .t { color: var(--title); font-weight: 600; font-size: 14.5px; }
+  .step .d { color: var(--muted); font-size: 12.5px; font-family: var(--mono); margin-top: 3px; }
+  .step.hot { border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-soft), transparent); }
+  .arrow { color: var(--faint); font-size: 18px; flex: none; }
+  .pipe-note { grid-column: 2; color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  /* two-up cards (the fork) */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .card {
+    border: 1px solid var(--border); border-radius: 14px; background: var(--panel); padding: 20px 22px;
+  }
+  .card.reco { border-color: var(--accent-line); }
+  .card h3 { margin: 0 0 4px; color: var(--title); font-size: 17px; }
+  .card .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .card.reco .tag { color: var(--accent); }
+  .card .tag.alt { color: var(--faint); }
+  .card p { color: var(--fg); font-size: 14.5px; margin: 12px 0 14px; }
+  .pm { list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
+  .pm li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; margin: 7px 0; color: var(--fg); }
+  .pm .p { color: var(--ok); } .pm .m { color: var(--rec); }
+
+  /* hard-parts grid */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .tile { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 18px; }
+  .tile h4 { margin: 0 0 6px; color: var(--title); font-size: 15px; }
+  .tile p { margin: 0; color: var(--muted); font-size: 13px; }
+  .tile .n { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.1em; }
+
+  /* mvp in/out */
+  .scope { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .scope .box { border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; background: var(--panel); }
+  .scope .box.in { border-color: rgba(74,222,128,0.35); }
+  .scope h3 { margin: 0 0 12px; font-size: 15px; letter-spacing: 0.02em; }
+  .scope h3 .k2 { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; }
+  .scope .in h3 { color: var(--ok); }
+  .scope .out h3 { color: var(--faint); }
+  .scope ul { margin: 0; padding-left: 18px; }
+  .scope li { margin: 8px 0; font-size: 14px; }
+  .scope .out li { color: var(--muted); }
+
+  /* footer / next step */
+  .next {
+    margin-top: 8px; border: 1px solid var(--border); border-radius: 16px;
+    background: linear-gradient(180deg, var(--panel), var(--bg-2)); padding: 26px 26px;
+  }
+  .next .eyebrow { margin-bottom: 8px; }
+  .next h2 { margin: 0 0 10px; color: var(--title); font-size: 22px; }
+  .next ol { margin: 6px 0 0; padding-left: 20px; color: var(--fg); }
+  .next li { margin: 8px 0; }
+  .next .await { color: var(--accent-2); font-weight: 600; }
+
+  footer.end { padding: 40px 0 60px; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+
+  @media (max-width: 760px) {
+    .cols, .grid3, .scope { grid-template-columns: 1fr; }
+    .pipe-row { grid-template-columns: 1fr; }
+    .pipe-tag { margin-bottom: -4px; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brandrow">
+      <!-- Shrike mark: a spare amber glyph, matching the house identity. -->
+      <svg class="mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M8 30 L30 8 L40 12 L20 34 Z" fill="#F5A524"/>
+        <circle cx="33" cy="15" r="2.4" fill="#14110D"/>
+        <path d="M18 34 L14 42 L24 36 Z" fill="#FBBF24"/>
+      </svg>
+      <div>
+        <div class="brandname">Shrike</div>
+        <div class="brandtag">recording · experimental</div>
+      </div>
+      <span class="spacer"></span>
+      <span class="pill-note">concept for review</span>
+    </div>
+
+    <p class="eyebrow">Experimental · Motion</p>
+    <h1>A cursor that moves like it <span class="amber">means it</span>.</h1>
+    <p class="lede">
+      Record the real pointer, <b>smooth the path in post</b>, and lay a clean synthetic cursor back
+      over the frames — with a ripple where you click. The Screen&nbsp;Studio look, built on the fact
+      that Shrike never bakes the real cursor into a recording in the first place.
+    </p>
+
+    <div class="metaline">
+      <span><i class="dot"></i> Status: concept</span>
+      <span>Feature: smooth cursor overlay</span>
+      <span>Owner: Jon</span>
+      <span>Depends on: recording (M4/M5)</span>
+    </div>
+  </header>
+
+  <!-- ============ INTERACTIVE DEMO ============ -->
+  <div class="demo">
+    <div class="demo-stage">
+      <canvas id="stage" width="1040" height="552"></canvas>
+      <div class="demo-legend">
+        <i><span class="swatch raw"></span> raw pointer</i>
+        <i><span class="swatch smooth"></span> smoothed</i>
+      </div>
+    </div>
+    <div class="demo-controls">
+      <button class="toggle" id="smoothToggle" aria-pressed="true">
+        <span class="led"></span> Smoothing on
+      </button>
+      <span class="ctl">
+        <label for="strength">Strength</label>
+        <input type="range" id="strength" min="0" max="100" value="72" />
+        <span class="val" id="strengthVal">72</span>
+      </span>
+      <span class="ctl" style="margin-left:auto">
+        <label for="clicks">Click ripples</label>
+        <input type="checkbox" id="clicks" checked style="accent-color:var(--accent);width:16px;height:16px;" />
+      </span>
+    </div>
+  </div>
+  <p class="demo-cap">
+    Live sketch — the faint line is a hand's real jitter; the amber line is the same path after filtering.
+    Flip smoothing off to feel the difference. (Illustrative; the shipped filter is tuned differently.)
+  </p>
+
+  <!-- ============ PROBLEM ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">The problem</p>
+      <h2>Raw pointer motion reads as "rough"</h2>
+    </div>
+    <div class="prose">
+      <p>
+        In a demo recording the mouse is the narrator, and a hand-driven pointer is full of micro-jitter,
+        overshoots and abrupt direction changes. Played back, it looks nervous — the single biggest tell
+        between a raw screen grab and a produced one.
+      </p>
+      <p>
+        The fix the good tools use isn't steadier hands, it's <strong>post-processing</strong>: keep a
+        record of where the pointer actually went, then redraw it along an eased path with a little
+        feedback on each click.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ PRIOR ART ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">Prior art</p>
+      <h2>A proven pattern, not a moonshot</h2>
+    </div>
+    <div class="prose"><p>This is well-trodden ground. The reference is Screen&nbsp;Studio; the same three ingredients recur across the category:</p></div>
+    <div class="chips">
+      <span class="chip"><b>Screen Studio</b> — the reference</span>
+      <span class="chip">Cursorful</span>
+      <span class="chip">Focusee</span>
+      <span class="chip">Tella</span>
+      <span class="chip">Screenity</span>
+    </div>
+    <div class="chips" style="margin-top:14px">
+      <span class="chip">① smoothed / eased motion</span>
+      <span class="chip">② click ripple + press "punch"</span>
+      <span class="chip">③ (bonus) auto-zoom toward clicks</span>
+    </div>
+  </section>
+
+  <!-- ============ WHY SHRIKE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">Why it fits Shrike</p>
+      <h2>We already record a clean plate</h2>
+    </div>
+    <div class="callout">
+      <div class="big">✦</div>
+      <p>
+        Most recorders bake the OS cursor into every frame, so faking a nicer one means erasing the real
+        one first. <b>Shrike doesn't.</b> GDI never captures the hardware cursor — we draw it deliberately —
+        so the frames are already a clean plate. The natural design is simply: for this mode, don't draw the
+        real cursor, <b>log its path instead</b>, and paint the pretty one on at export. It's the hide-cursor
+        toggle we just shipped, turned inside out.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ HOW IT WORKS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">How it works</p>
+      <h2>Two halves: log at capture, draw at export</h2>
+    </div>
+    <div class="pipe">
+      <div class="pipe-row">
+        <div class="pipe-tag cap">Capture</div>
+        <div class="steps">
+          <div class="step"><div class="t">Record frames</div><div class="d">clean plate · no cursor</div></div>
+          <span class="arrow">+</span>
+          <div class="step hot"><div class="t">Log mouse track</div><div class="d">t, x, y + clicks</div></div>
+        </div>
+      </div>
+      <div class="pipe-note">The track is the one thing that can't be added later — it has to be captured live.</div>
+      <div class="pipe-row">
+        <div class="pipe-tag exp">Export</div>
+        <div class="steps">
+          <div class="step"><div class="t">Smooth track</div><div class="d">One-Euro filter</div></div>
+          <span class="arrow">→</span>
+          <div class="step hot"><div class="t">Composite cursor</div><div class="d">+ click ripples</div></div>
+          <span class="arrow">→</span>
+          <div class="step"><div class="t">Encode</div><div class="d">existing ffmpeg path</div></div>
+        </div>
+      </div>
+      <div class="pipe-note">Export-time = non-destructive: strength and effects stay tunable after the take, in the timeline editor.</div>
+    </div>
+  </section>
+
+  <!-- ============ SMOOTHING + CLICK ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">The two effects</p>
+      <h2>Smoothing, and a click you can feel</h2>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <span class="tag alt">Motion</span>
+        <h3>One-Euro filter</h3>
+        <p>
+          An adaptive low-pass: heavy smoothing when the pointer drifts slowly, low lag when it darts.
+          That adaptivity is what stops smoothed cursors feeling like they're wading through syrup — plain
+          averaging can't do both. Resampled to frame times so it lines up with the video.
+        </p>
+      </div>
+      <div class="card">
+        <span class="tag alt">Feedback</span>
+        <h3>Ripple + punch</h3>
+        <p>
+          On a logged click, an expanding ring blooms for ~350&nbsp;ms at the point, optionally paired with
+          a quick cursor scale-down on press. Small, but it reads as intent — the viewer sees <em>where</em>
+          and <em>that</em> you clicked without you narrating it.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ THE FORK ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">One real decision</p>
+      <h2>How the cursor gets composited</h2>
+    </div>
+    <div class="cols">
+      <div class="card">
+        <span class="tag alt">Option A · not chosen</span>
+        <h3>ffmpeg overlay layer</h3>
+        <p>Render a transparent cursor-and-ripple layer from the track; let ffmpeg <code>overlay</code> it onto the base clip.</p>
+        <ul class="pm">
+          <li><span class="p">+</span> Reuses the export path we already have</li>
+          <li><span class="p">+</span> Managed code only draws a mostly-empty layer</li>
+          <li><span class="p">+</span> Fastest route to something demoable</li>
+          <li><span class="m">−</span> Adaptive auto-zoom is brittle as ffmpeg expressions</li>
+        </ul>
+      </div>
+      <div class="card reco">
+        <span class="tag">Option B · chosen</span>
+        <h3>Managed per-frame pass</h3>
+        <p>Decode → draw the cursor + effects in managed code → re-encode, frame by frame.</p>
+        <ul class="pm">
+          <li><span class="p">+</span> Full control; auto-zoom is just a per-frame crop in code</li>
+          <li><span class="p">+</span> One foundation for cursor + zoom — no mid-feature rewrite</li>
+          <li><span class="m">−</span> A render pipeline to build (decode side added to our existing encode pipe)</li>
+        </ul>
+      </div>
+    </div>
+    <p class="demo-cap" style="margin-top:16px">Decided: <b style="color:var(--accent-2)">Option&nbsp;B</b> — auto-zoom is on the roadmap, and eased zoom/pan is natural to compute per frame in code but painful to express as ffmpeg filters. Cursor MVP first, zoom later on the same rails.</p>
+  </section>
+
+  <!-- ============ HARD PARTS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">Eyes open</p>
+      <h2>The genuinely fiddly parts</h2>
+    </div>
+    <div class="grid3">
+      <div class="tile">
+        <div class="n">01</div>
+        <h4>Coordinate mapping</h4>
+        <p>Track is virtual-screen physical px; the region is a sub-rect trimmed to even dims and maybe downscaled, possibly across mixed-DPI monitors. Landing the cursor exactly where it was is the fiddliest bit.</p>
+      </div>
+      <div class="tile">
+        <div class="n">02</div>
+        <h4>Timing &amp; pause</h4>
+        <p>Track timestamps must ride the recorder's own clock so they align to frame PTS — including across pause/resume, which excludes time from the video.</p>
+      </div>
+      <div class="tile">
+        <div class="n">03</div>
+        <h4>Cursor asset</h4>
+        <p>A crisp vector cursor with a correct hotspot beats reusing the OS arrow — and it's what makes the result look intentional rather than pasted.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MVP SCOPE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow k">Proposed MVP</p>
+      <h2>Smallest thing that proves the "wow"</h2>
+    </div>
+    <div class="scope">
+      <div class="box in">
+        <h3><span class="k2">In scope</span></h3>
+        <ul>
+          <li>Log the mouse track at capture (path + clicks)</li>
+          <li>One-Euro smoothing, resampled to frame times</li>
+          <li>A single synthetic cursor drawn over the frames</li>
+          <li>Click ripple effect</li>
+          <li>Composite via Option B (managed per-frame)</li>
+          <li>Sensible fixed defaults — no tuning UI yet</li>
+        </ul>
+      </div>
+      <div class="box out">
+        <h3><span class="k2">Deferred</span></h3>
+        <ul>
+          <li>Auto-zoom toward click clusters</li>
+          <li>Cursor size / press-punch controls</li>
+          <li>A tuning UI in the timeline editor</li>
+          <li>Custom cursor themes</li>
+          <li>Live real-time smoothed preview</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ NEXT STEP ============ -->
+  <div class="next">
+    <p class="eyebrow">Next step</p>
+    <h2>Your call before I plan it</h2>
+    <div class="prose" style="max-width:64ch">
+      <p>This artefact is the thinking, not the plan. Once you've reacted to it:</p>
+    </div>
+    <ol>
+      <li>You comment / approve — especially the <b>Option A vs B</b> fork and the MVP scope.</li>
+      <li>I write a <b>milestone-based, phased implementation plan</b> in the style of <code>docs/implementation-plan.md</code>.</li>
+      <li>I commit it to a <b>new branch</b> (nothing lands on <code>main</code> unprompted).</li>
+    </ol>
+    <p class="demo-cap" style="margin-top:16px"><span class="await">Awaiting your comments.</span></p>
+  </div>
+
+  <footer class="end">
+    Shrike · smooth-cursor concept · dark-native, amber house palette · illustrative demo
+  </footer>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const smoothToggle = document.getElementById('smoothToggle');
+  const strengthEl = document.getElementById('strength');
+  const strengthVal = document.getElementById('strengthVal');
+  const clicksEl = document.getElementById('clicks');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const C = {
+    accent: '#F5A524', accent2: '#FBBF24', faint: '#6E6353',
+    panel: '#1E1913', border: '#322A1E', ground: '#100E0A', title: '#FBF6EC'
+  };
+
+  let W = 1040, H = 552, dpr = 1;
+  function resize() {
+    const cssW = canvas.clientWidth || 1040;
+    const cssH = cssW * (552 / 1040);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    W = cssW; H = cssH;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  let smoothing = true;
+  smoothToggle.addEventListener('click', () => {
+    smoothing = smoothToggle.getAttribute('aria-pressed') !== 'true';
+    smoothToggle.setAttribute('aria-pressed', String(smoothing));
+    smoothToggle.innerHTML = '<span class="led"></span> ' + (smoothing ? 'Smoothing on' : 'Smoothing off');
+  });
+  strengthEl.addEventListener('input', () => strengthVal.textContent = strengthEl.value);
+
+  // Organic wandering base path within a padded frame.
+  function base(t) {
+    const padX = W * 0.16, padY = H * 0.22;
+    const cx = W / 2, cy = H / 2;
+    const ax = (W / 2 - padX), ay = (H / 2 - padY);
+    const x = cx + ax * (0.62 * Math.sin(t * 0.55 + 0.4) + 0.34 * Math.sin(t * 1.37 + 1.1));
+    const y = cy + ay * (0.6 * Math.sin(t * 0.77 + 2.0) + 0.32 * Math.sin(t * 1.83 + 0.3));
+    return { x, y };
+  }
+  // Hand tremor added on top for the "raw" pointer.
+  function tremor(t) {
+    return {
+      x: 5.5 * Math.sin(t * 33.0) + 3.2 * Math.sin(t * 61.0 + 1.0) + (Math.random() - 0.5) * 3.5,
+      y: 5.0 * Math.sin(t * 41.0 + 0.5) + 3.0 * Math.sin(t * 71.0) + (Math.random() - 0.5) * 3.5
+    };
+  }
+
+  const rawTrail = [], smoothTrail = [];
+  const MAXT = 80;
+  let sx = W / 2, sy = H / 2;
+  const ripples = [];
+  let punch = 0;                 // 0..1 press feedback
+  let clickTimer = 0;
+  const CLICK_EVERY = 2.0;       // seconds
+
+  function drawFrameBackdrop() {
+    // faux app window the cursor is moving over
+    ctx.fillStyle = C.ground; ctx.fillRect(0, 0, W, H);
+    const m = 18, r = 12;
+    const x = m, y = m, w = W - m * 2, h = H - m * 2;
+    roundRect(x, y, w, h, r);
+    ctx.fillStyle = C.panel; ctx.fill();
+    ctx.strokeStyle = C.border; ctx.lineWidth = 1; ctx.stroke();
+    // title bar
+    ctx.save(); roundRect(x, y, w, 34, r); ctx.clip();
+    ctx.fillStyle = '#241E16'; ctx.fillRect(x, y, w, 34);
+    ctx.restore();
+    const dots = ['#EF4444', '#F5A524', '#4ADE80'];
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x + 20 + i * 18, y + 17, 4.5, 0, 7); ctx.fillStyle = dots[i]; ctx.fill(); }
+    // faint content lines
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    for (let i = 0; i < 5; i++) ctx.fillRect(x + 24, y + 60 + i * 26, (w - 48) * [0.7,0.9,0.5,0.8,0.4][i], 8);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function trail(points, color, width, glow) {
+    if (points.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    if (glow) { ctx.shadowColor = color; ctx.shadowBlur = 10; } else ctx.shadowBlur = 0;
+    ctx.stroke(); ctx.shadowBlur = 0;
+  }
+
+  function drawCursor(x, y, scale) {
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(scale, scale);
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(0, 17); ctx.lineTo(4.4, 12.6);
+    ctx.lineTo(7.4, 19.4); ctx.lineTo(10.2, 18.1); ctx.lineTo(7.2, 11.4);
+    ctx.lineTo(13, 11); ctx.closePath();
+    ctx.fillStyle = C.title;
+    ctx.strokeStyle = '#14110D'; ctx.lineWidth = 1.4; ctx.lineJoin = 'round';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+    ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.stroke();
+    ctx.restore();
+  }
+
+  function frame(x, y, active) {
+    drawCursor(x, y, active ? (1 - 0.16 * punch) * 1.35 : 1.35);
+  }
+
+  let last = performance.now(), t = 0;
+  function tick(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+
+    const b = base(t), tr = tremor(t);
+    const rawX = b.x + tr.x, rawY = b.y + tr.y;
+
+    // exponential smoothing; alpha from the strength slider (higher strength => smaller alpha => smoother)
+    const strength = strengthEl.value / 100;
+    const alpha = smoothing ? (1 - 0.9 * strength) : 1;
+    sx += (rawX - sx) * alpha; sy += (rawY - sy) * alpha;
+
+    rawTrail.push({ x: rawX, y: rawY }); if (rawTrail.length > MAXT) rawTrail.shift();
+    smoothTrail.push({ x: sx, y: sy }); if (smoothTrail.length > MAXT) smoothTrail.shift();
+
+    // clicks
+    clickTimer += dt;
+    if (clickTimer >= CLICK_EVERY) {
+      clickTimer = 0;
+      if (clicksEl.checked) { ripples.push({ x: sx, y: sy, age: 0 }); punch = 1; }
+    }
+    punch = Math.max(0, punch - dt * 3.2);
+    for (const r of ripples) r.age += dt;
+    for (let i = ripples.length - 1; i >= 0; i--) if (ripples[i].age > 0.75) ripples.splice(i, 1);
+
+    render(true);
+    raf = requestAnimationFrame(tick);
+  }
+
+  function render(animated) {
+    drawFrameBackdrop();
+    // trails
+    trail(rawTrail, 'rgba(110,99,83,0.75)', 1.4, false);
+    if (smoothing) trail(smoothTrail, C.accent, 2.6, true);
+
+    // ripples
+    for (const r of ripples) {
+      const p = r.age / 0.75;
+      const rad = 6 + p * 46;
+      ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, 7);
+      ctx.strokeStyle = 'rgba(245,165,36,' + (0.5 * (1 - p)).toFixed(3) + ')';
+      ctx.lineWidth = 2.5 * (1 - p) + 0.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(r.x, r.y, rad * 0.4, 0, 7);
+      ctx.fillStyle = 'rgba(251,191,36,' + (0.16 * (1 - p)).toFixed(3) + ')'; ctx.fill();
+    }
+
+    // cursor follows smoothed when smoothing on, else raw
+    const cx = smoothing ? sx : rawTrail[rawTrail.length - 1]?.x ?? sx;
+    const cy = smoothing ? sy : rawTrail[rawTrail.length - 1]?.y ?? sy;
+    frame(cx, cy, true);
+  }
+
+  let raf = 0;
+  function start() {
+    resize();
+    if (reduce) {
+      // static illustrative frame: a smoothed path with one ripple
+      for (let i = 0; i < MAXT; i++) { const b = base(i * 0.06), tr = tremor(i * 0.06);
+        rawTrail.push({ x: b.x + tr.x, y: b.y + tr.y });
+        sx += ((b.x) - sx) * 0.2; sy += ((b.y) - sy) * 0.2; smoothTrail.push({ x: sx, y: sy }); }
+      ripples.push({ x: sx, y: sy, age: 0.3 });
+      render(false);
+      return;
+    }
+    last = performance.now();
+    raf = requestAnimationFrame(tick);
+  }
+
+  window.addEventListener('resize', () => { cancelAnimationFrame(raf); resize(); if (!reduce) { last = performance.now(); raf = requestAnimationFrame(tick); } else render(false); });
+  start();
+})();
+</script>

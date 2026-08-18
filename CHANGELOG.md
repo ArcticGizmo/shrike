@@ -8,6 +8,15 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.2.0] - 2026-08-18
+
+- Experimental smooth cursor for recordings (opt-in) — smoothed synthetic pointer with click ripples
+- Auto-zoom toward clicks, tunable live in the timeline editor
+- Recordings kept in a managed folder and auto-pruned (no longer lost to temp cleanup)
+- Timeline: Play restarts from the start after reaching the end
+
+---
+
 ## [v0.1.3] - 2026-08-14
 
 - Colour pipette — sample any on-screen pixel and copy its HEX, RGB or HSL
