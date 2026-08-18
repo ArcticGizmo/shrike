@@ -17,24 +17,26 @@ public readonly record struct ZoomEvent(
 {
     public long DurationMs => Math.Max(0, EndMs - StartMs);
 
-    /// <summary>The eased magnification (1..Zoom) this event contributes at edited time <paramref name="tMs"/>;
-    /// 1 (no zoom) outside its span. Ease-in/out are clamped to fit the span (they scale down to a triangle
-    /// rather than overlap).</summary>
-    public double ZoomAt(long tMs)
+    /// <summary>The eased 0..1 ramp this event is at for edited time <paramref name="tMs"/> — 0 outside its
+    /// span and at the ends, 1 across the hold, smoothstepped through the ease-in/out (clamped to fit the span,
+    /// scaling to a triangle rather than overlapping). This drives a whole-rectangle lerp so every crop edge
+    /// moves together (no clamp-induced pan/overshoot).</summary>
+    public double RampAt(long tMs)
     {
-        if (tMs <= StartMs || tMs >= EndMs || Zoom <= 1) return 1.0;
+        if (tMs <= StartMs || tMs >= EndMs || Zoom <= 1) return 0.0;
         double dur = DurationMs;
         double ein = Math.Clamp(EaseInMs, 0, dur);
         double eout = Math.Clamp(EaseOutMs, 0, dur);
         if (ein + eout > dur && ein + eout > 0) { var k = dur / (ein + eout); ein *= k; eout *= k; }
 
         double local = tMs - StartMs;
-        double ramp;
-        if (ein > 0 && local < ein) ramp = Smoothstep(local / ein);
-        else if (eout > 0 && local > dur - eout) ramp = Smoothstep((dur - local) / eout);
-        else ramp = 1.0;
-        return 1.0 + (Zoom - 1.0) * ramp;
+        if (ein > 0 && local < ein) return Smoothstep(local / ein);
+        if (eout > 0 && local > dur - eout) return Smoothstep((dur - local) / eout);
+        return 1.0;
     }
+
+    /// <summary>The eased magnification (1..Zoom) this event contributes at <paramref name="tMs"/>.</summary>
+    public double ZoomAt(long tMs) => 1.0 + (Zoom - 1.0) * RampAt(tMs);
 
     private static double Smoothstep(double x)
     {
@@ -70,23 +72,38 @@ public sealed class ZoomTrack
     public ZoomViewport[] Resolve(Timeline timeline, int frameCount, int fps, int width, int height)
     {
         var vps = new ZoomViewport[Math.Max(0, frameCount)];
+        var full = new ZoomViewport(0, 0, width, height);
         for (var i = 0; i < vps.Length; i++)
         {
             var editedMs = fps > 0 ? (long)(i * 1000.0 / fps) : 0;
             var tMs = timeline.EditedToSourceMs(editedMs); // evaluate events in source time
 
             // Pick the event contributing the most zoom at this frame (deterministic on overlap).
-            double bestZoom = 1.0; double cx = 0.5, cy = 0.5;
+            ZoomEvent? best = null; double bestZoom = 1.0;
             foreach (var e in Events)
             {
                 var z = e.ZoomAt(tMs);
-                if (z > bestZoom) { bestZoom = z; cx = e.CenterX; cy = e.CenterY; }
+                if (z > bestZoom) { bestZoom = z; best = e; }
             }
 
-            vps[i] = bestZoom > 1.0001
-                ? AutoZoom.Viewport(bestZoom, cx * width, cy * height, width, height)
-                : new ZoomViewport(0, 0, width, height);
+            // Lerp the whole crop from the full frame to the event's final (clamped) target by its eased ramp —
+            // so every edge moves together and the framing never overshoots and slides back.
+            if (best is { } ev && bestZoom > 1.0001)
+            {
+                var target = AutoZoom.Viewport(ev.Zoom, ev.CenterX * width, ev.CenterY * height, width, height);
+                vps[i] = Lerp(full, target, ev.RampAt(tMs));
+            }
+            else
+            {
+                vps[i] = full;
+            }
         }
         return vps;
     }
+
+    private static ZoomViewport Lerp(ZoomViewport a, ZoomViewport b, double t) => new(
+        a.X + (b.X - a.X) * t,
+        a.Y + (b.Y - a.Y) * t,
+        a.Width + (b.Width - a.Width) * t,
+        a.Height + (b.Height - a.Height) * t);
 }

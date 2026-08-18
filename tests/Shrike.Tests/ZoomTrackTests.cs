@@ -34,6 +34,27 @@ public class ZoomTrackTests
     }
 
     [Fact]
+    public void Ease_in_moves_every_edge_monotonically_toward_the_target()
+    {
+        // Off-centre focus is where the old (clamp-per-frame) approach overshot: the crop pinned to an edge
+        // then slid across. Lerping the whole rectangle means width shrinks and the origin moves toward the
+        // target monotonically — no reversal.
+        var track = new ZoomTrack([new ZoomEvent(0, 2000, 0.85, 0.5, 2.0, 800, 800)]);
+        var vps = track.Resolve(NoCuts(), frameCount: 8, Fps, W, H); // frames 0..700ms, within the 800ms ease-in
+
+        var target = AutoZoom.Viewport(2.0, 0.85 * W, 0.5 * H, W, H);
+        double prevW = double.MaxValue, prevX = -1;
+        foreach (var vp in vps)
+        {
+            Assert.True(vp.Width <= prevW + 1e-6, "width should never grow during ease-in");
+            Assert.True(vp.X >= prevX - 1e-6, "origin should move toward the (right-of-centre) target, not back");
+            Assert.InRange(vp.X, 0, target.X + 1e-6);      // never past the target origin
+            Assert.InRange(vp.Width, target.Width - 1e-6, W); // between target and full frame
+            prevW = vp.Width; prevX = vp.X;
+        }
+    }
+
+    [Fact]
     public void Outside_the_span_is_full_frame()
     {
         var track = new ZoomTrack([new ZoomEvent(300, 700, 0.5, 0.5, 2.0, 100, 100)]);
