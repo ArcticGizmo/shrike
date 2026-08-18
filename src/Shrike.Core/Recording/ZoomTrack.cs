@@ -72,33 +72,34 @@ public sealed class ZoomTrack
     public ZoomViewport[] Resolve(Timeline timeline, int frameCount, int fps, int width, int height)
     {
         var vps = new ZoomViewport[Math.Max(0, frameCount)];
-        var full = new ZoomViewport(0, 0, width, height);
         for (var i = 0; i < vps.Length; i++)
         {
             var editedMs = fps > 0 ? (long)(i * 1000.0 / fps) : 0;
-            var tMs = timeline.EditedToSourceMs(editedMs); // evaluate events in source time
-
-            // Pick the event contributing the most zoom at this frame (deterministic on overlap).
-            ZoomEvent? best = null; double bestZoom = 1.0;
-            foreach (var e in Events)
-            {
-                var z = e.ZoomAt(tMs);
-                if (z > bestZoom) { bestZoom = z; best = e; }
-            }
-
-            // Lerp the whole crop from the full frame to the event's final (clamped) target by its eased ramp —
-            // so every edge moves together and the framing never overshoots and slides back.
-            if (best is { } ev && bestZoom > 1.0001)
-            {
-                var target = AutoZoom.Viewport(ev.Zoom, ev.CenterX * width, ev.CenterY * height, width, height);
-                vps[i] = Lerp(full, target, ev.RampAt(tMs));
-            }
-            else
-            {
-                vps[i] = full;
-            }
+            vps[i] = ViewportAt(timeline.EditedToSourceMs(editedMs), width, height); // source time
         }
         return vps;
+    }
+
+    /// <summary>The zoom framing at a single <b>source</b>-time instant — the per-frame body of
+    /// <see cref="Resolve"/>, exposed so the editor can resolve just the current frame during a live drag
+    /// (rather than rebuilding the whole array). Picks the event contributing the most zoom (deterministic on
+    /// overlap) and lerps the whole crop from the full frame to its final clamped target by the eased ramp, so
+    /// every edge moves together and the framing never overshoots and slides back.</summary>
+    public ZoomViewport ViewportAt(long sourceMs, int width, int height)
+    {
+        var full = new ZoomViewport(0, 0, width, height);
+        ZoomEvent? best = null; double bestZoom = 1.0;
+        foreach (var e in Events)
+        {
+            var z = e.ZoomAt(sourceMs);
+            if (z > bestZoom) { bestZoom = z; best = e; }
+        }
+        if (best is { } ev && bestZoom > 1.0001)
+        {
+            var target = AutoZoom.Viewport(ev.Zoom, ev.CenterX * width, ev.CenterY * height, width, height);
+            return Lerp(full, target, ev.RampAt(sourceMs));
+        }
+        return full;
     }
 
     private static ZoomViewport Lerp(ZoomViewport a, ZoomViewport b, double t) => new(

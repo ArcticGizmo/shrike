@@ -37,31 +37,6 @@ public class CompositorChainTests
         Assert.All(buf, b => Assert.Equal(0, b));
     }
 
-    // ---- AutoZoom.Viewports resolver ----
-
-    [Fact]
-    public void Viewports_are_full_frame_when_not_zoomed()
-    {
-        var frames = new[] { new CursorSample(10, 10), new CursorSample(20, 20) };
-        var vps = AutoZoom.Viewports(frames, zoomCurve: null, W, H);
-
-        Assert.Equal(2, vps.Length);
-        Assert.All(vps, vp => Assert.Equal(new ZoomViewport(0, 0, W, H), vp));
-    }
-
-    [Fact]
-    public void Viewports_centre_a_zoom_crop_on_the_cursor()
-    {
-        var frames = new[] { new CursorSample(60, 45) };
-        var vps = AutoZoom.Viewports(frames, zoomCurve: [2.0], W, H);
-
-        // 2× crop is half the frame, centred on (60,45) → origin (30, 22.5).
-        Assert.Equal(W / 2.0, vps[0].Width, precision: 6);
-        Assert.Equal(H / 2.0, vps[0].Height, precision: 6);
-        Assert.Equal(30.0, vps[0].X, precision: 6);
-        Assert.Equal(22.5, vps[0].Y, precision: 6);
-    }
-
     // ---- ZoomCompositor (frame transform) + cursor overlay via the chain ----
 
     private static byte[] Gradient()
@@ -91,7 +66,7 @@ public class CompositorChainTests
     {
         // Same expectation as the old monolithic CursorCompositor zoom test, now via the split chain.
         var frames = new[] { new CursorSample(30, 20) };
-        var vps = AutoZoom.Viewports(frames, zoomCurve: [2.0], W, H);
+        var vps = new[] { AutoZoom.Viewport(2.0, 30, 20, W, H) }; // 2× crop centred on the cursor
         var chain = new CompositorChain(new ZoomCompositor(vps), new CursorCompositor(Track(frames), null, vps));
 
         var buf = Gradient();

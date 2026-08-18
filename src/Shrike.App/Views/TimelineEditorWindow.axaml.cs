@@ -59,7 +59,6 @@ public partial class TimelineEditorWindow : Window
     private SmoothedCursorTrack? _smoothed;
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
     private ZoomTrack _authoredZoom = ZoomTrack.Empty;          // user-placed zoom events (the edit document)
-    private ZoomViewport[]? _zoomViewports;                     // resolved per-frame framing (null = no zoom)
     private double _cursorSize = 1.0;
     private bool _cursorRipple = true;
     private bool _showCursor = true;              // per-clip: draw the synthetic cursor (default from capture)
@@ -200,19 +199,6 @@ public partial class TimelineEditorWindow : Window
             return;
         }
         _smoothed = SmoothCursor.Project(_smoothTrack, _timeline, _source.Fps, _source.Width, _source.Height, _smoothing);
-        _zoomViewports = _authoredZoom.IsEmpty
-            ? null // no authored zoom → full frame throughout
-            : _authoredZoom.Resolve(_timeline, _smoothed.Frames.Count, _smoothed.Fps, _source.Width, _source.Height);
-        UpdateCursorOverlay();
-    }
-
-    /// <summary>Re-resolve just the zoom viewports after a zoom edit — cheap, skips re-running the smoothing.</summary>
-    private void RefreshZoomViewports()
-    {
-        if (_smoothed is null) return;
-        _zoomViewports = _authoredZoom.IsEmpty
-            ? null
-            : _authoredZoom.Resolve(_timeline, _smoothed.Frames.Count, _smoothed.Fps, _source.Width, _source.Height);
         UpdateCursorOverlay();
     }
 
@@ -247,11 +233,11 @@ public partial class TimelineEditorWindow : Window
             { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomInspectorChanged(); };
     }
 
-    // The lane edited an event's timing (drag/resize) — rebuild the track and re-resolve the preview.
+    // The lane edited an event's timing (drag/resize) — rebuild the track and refresh the current-frame preview.
     private void OnZoomEventsChanged()
     {
         _authoredZoom = new ZoomTrack(_zoomEvents);
-        RefreshZoomViewports();
+        UpdateCursorOverlay();
     }
 
     private void OnZoomSelectionChanged(int index)
@@ -378,10 +364,13 @@ public partial class TimelineEditorWindow : Window
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
         var s = _smoothed.Frames[i];
 
-        // The resolved zoom viewport (crop) at this frame; the full frame when there's no zoom — and always
-        // the full frame while aiming a selected event, so the whole picture is visible to box a target on.
+        // The zoom crop at this frame — resolved for just this frame (cheap; no whole-clip array). The full
+        // frame when there's no zoom, and always the full frame while aiming a selected event so the whole
+        // picture is visible to box a target on.
         var aiming = _zoomLane is { SelectedIndex: >= 0 };
-        var vp = (!aiming && _zoomViewports is { } v && i < v.Length) ? v[i] : new ZoomViewport(0, 0, _source.Width, _source.Height);
+        var vp = !aiming && !_authoredZoom.IsEmpty
+            ? _authoredZoom.ViewportAt(_timeline.EditedToSourceMs((long)(i * 1000.0 / _smoothed.Fps)), _source.Width, _source.Height)
+            : new ZoomViewport(0, 0, _source.Width, _source.Height);
         var zoomed = vp.Width < _source.Width - 0.5 || vp.Height < _source.Height - 0.5;
 
         // Position a point (export px) as a fraction of the displayed crop — matches the export's viewport map.

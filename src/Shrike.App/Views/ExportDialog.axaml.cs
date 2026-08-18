@@ -200,12 +200,14 @@ public partial class ExportDialog : Window
     private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
         IProgress<double> progress, CancellationToken ct)
     {
-        // Composite in post only when there's something to draw: the cursor (if shown) or authored zoom.
-        // Both need the logged pointer track; without it — or with nothing to render — it's a plain transcode.
-        var wantsComposite = _showCursor || !_authoredZoom.IsEmpty;
-        if (wantsComposite && LoadTrack() is { Points.Count: > 0 } track)
+        // Composite in post when there's something to draw. The cursor overlay needs the logged pointer track;
+        // authored zoom is a pure frame transform that needs no track, so it composites on its own too.
+        var track = LoadTrack();
+        var wantsCursor = _showCursor && track is { Points.Count: > 0 };
+        var wantsZoom = !_authoredZoom.IsEmpty;
+        if (wantsCursor || wantsZoom)
         {
-            await CompositeCursorExport(profile, hardware, track, outputPath, progress, ct);
+            await CompositeExport(profile, hardware, wantsCursor ? track : null, outputPath, progress, ct);
             return;
         }
 
@@ -222,31 +224,31 @@ public partial class ExportDialog : Window
     }
 
     /// <summary>
-    /// Two stages, for full preset parity: (1) composite the smoothed cursor + auto-zoom into a
-    /// high-quality intermediate at the target size, then (2) run the normal export on that intermediate,
-    /// so every preset (H.265 / hardware / GIF / WebP / Source) ships with the cursor baked in.
+    /// Two stages, for full preset parity: (1) composite the effect chain (authored zoom transform + the
+    /// smoothed cursor overlay) into a high-quality intermediate at the target size, then (2) run the normal
+    /// export on that intermediate, so every preset (H.265 / hardware / GIF / WebP / Source) ships the effects
+    /// baked in. <paramref name="track"/> is null when the cursor isn't drawn (zoom-only) — zoom needs no track.
     /// </summary>
-    private async Task CompositeCursorExport(ExportProfile profile, HwEncoder? hardware, MouseTrack track,
+    private async Task CompositeExport(ExportProfile profile, HwEncoder? hardware, MouseTrack? track,
         string outputPath, IProgress<double> progress, CancellationToken ct)
     {
         var probe = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware: null, outputPath);
         int w = probe.TargetWidth, h = probe.TargetHeight, fps = probe.TargetFps;
 
-        var smoothed = SmoothCursor.Project(track, _timeline, fps, w, h, _smoothing);
-        if (smoothed.IsEmpty)
-        {
-            var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
-            await new VideoExporter(_ffmpegPath).ExportAsync(plain, _timeline.KeptDurationMs, progress, ct);
-            return;
-        }
+        // The cursor overlay (when drawn) supplies the per-output-frame positions; zoom just needs the frame
+        // count, which we derive from the kept duration when there's no cursor.
+        var smoothed = track is not null ? SmoothCursor.Project(track, _timeline, fps, w, h, _smoothing) : null;
+        var frameCount = smoothed is not null && !smoothed.IsEmpty
+            ? smoothed.Frames.Count
+            : (int)Math.Max(1, Math.Round(_timeline.KeptDurationMs / 1000.0 * fps));
 
-        // Compose the effect chain: the zoom transform first (only when there are authored events), then the
-        // cursor + ripple overlay (only when the cursor is shown). Each is an IFrameCompositor; adding an
-        // effect = appending to this chain.
-        ZoomViewport[]? viewports = _authoredZoom.IsEmpty ? null : _authoredZoom.Resolve(_timeline, smoothed.Frames.Count, fps, w, h);
+        // Compose the effect chain: the zoom transform first (only with authored events), then the cursor +
+        // ripple overlay (only when a track is present). Each is an IFrameCompositor — adding an effect appends here.
+        ZoomViewport[]? viewports = _authoredZoom.IsEmpty ? null : _authoredZoom.Resolve(_timeline, frameCount, fps, w, h);
         var effects = new List<IFrameCompositor>();
         if (viewports is not null) effects.Add(new ZoomCompositor(viewports));
-        if (_showCursor) effects.Add(new CursorCompositor(smoothed, CursorStyle.ForExport(h, _cursorSize, _cursorRipple), viewports));
+        if (smoothed is not null && !smoothed.IsEmpty)
+            effects.Add(new CursorCompositor(smoothed, CursorStyle.ForExport(h, _cursorSize, _cursorRipple), viewports));
         if (effects.Count == 0)
         {
             var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);

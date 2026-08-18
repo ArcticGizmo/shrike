@@ -45,25 +45,6 @@ public static class AutoZoom
         return z;
     }
 
-    /// <summary>
-    /// Resolve the per-frame zoom framing shared by the whole compositor chain: one <see cref="ZoomViewport"/>
-    /// per output frame, each centred on that frame's (already-smoothed) cursor position. A frame whose zoom is
-    /// ≈1 gets the full-frame viewport (a no-op for the <see cref="ZoomCompositor"/>). This is the "per-frame
-    /// input" the zoom transform and the cursor/ripple overlays both read, so they agree on the framing.
-    /// </summary>
-    public static ZoomViewport[] Viewports(IReadOnlyList<CursorSample> frames, double[]? zoomCurve, int width, int height)
-    {
-        var vps = new ZoomViewport[frames.Count];
-        for (var i = 0; i < vps.Length; i++)
-        {
-            var z = zoomCurve is { } zc && i < zc.Length ? zc[i] : 1.0;
-            vps[i] = z > 1.0001
-                ? Viewport(z, frames[i].X, frames[i].Y, width, height)
-                : new ZoomViewport(0, 0, width, height);
-        }
-        return vps;
-    }
-
     /// <summary>The crop rectangle for a given zoom factor centred on (<paramref name="centerX"/>,
     /// <paramref name="centerY"/>), clamped to stay within the frame.</summary>
     public static ZoomViewport Viewport(double zoom, double centerX, double centerY, int width, int height)

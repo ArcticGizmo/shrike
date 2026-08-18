@@ -126,19 +126,21 @@ public sealed class PreviewSurface : Control
         else
         {
             // New / resize: an aspect-locked square anchored at _aimAnchor, growing toward the pointer.
+            var rawSize = Math.Max(Math.Abs(np.X - _aimAnchor.X), Math.Abs(np.Y - _aimAnchor.Y));
+            // A brand-new drag shorter than the minimum is a stray click, not a box — ignore it (checked on the
+            // raw distance, before the clamp below floors it to MinBoxNorm).
+            if (_aim == AimDrag.New && rawSize < MinBoxNorm) return;
+
             var dirX = np.X >= _aimAnchor.X ? 1 : -1;
             var dirY = np.Y >= _aimAnchor.Y ? 1 : -1;
             var maxX = dirX > 0 ? 1 - _aimAnchor.X : _aimAnchor.X;
             var maxY = dirY > 0 ? 1 - _aimAnchor.Y : _aimAnchor.Y;
-            var size = Math.Clamp(Math.Max(Math.Abs(np.X - _aimAnchor.X), Math.Abs(np.Y - _aimAnchor.Y)),
-                MinBoxNorm, Math.Max(MinBoxNorm, Math.Min(maxX, maxY)));
+            var size = Math.Clamp(rawSize, MinBoxNorm, Math.Max(MinBoxNorm, Math.Min(maxX, maxY)));
             var x = dirX > 0 ? _aimAnchor.X : _aimAnchor.X - size;
             var y = dirY > 0 ? _aimAnchor.Y : _aimAnchor.Y - size;
             box = new Rect(x, y, size, size);
         }
 
-        // A too-small brand-new drag is a click, not a box — ignore until it's a real region.
-        if (_aim == AimDrag.New && box.Width < MinBoxNorm) return;
         TargetBoxDrawn?.Invoke(box);
     }
 
