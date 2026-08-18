@@ -37,12 +37,14 @@ public sealed record CursorStyle(
 }
 
 /// <summary>
-/// The SC4/SC5 payoff: an <see cref="IFrameCompositor"/> that draws the smoothed synthetic cursor — and an
-/// expanding ripple on each click — onto export frames, and (SC5) applies auto-zoom by cropping+scaling each
-/// frame to a per-frame <see cref="ZoomViewport"/>. Positions come from a <see cref="SmoothedCursorTrack"/>
-/// (already in export pixels) and are mapped through the viewport, so the cursor stays glued to the pointer
-/// while the framing zooms; the cursor and ripples keep a constant on-screen size. Pure software raster (no
-/// UI deps, headless-testable): an anti-aliased arrow sprite is baked once, and zoom uses a bilinear resample.
+/// One effect in the compositor chain: an <see cref="IFrameCompositor"/> that draws the smoothed synthetic
+/// cursor and an expanding ripple on each click onto export frames. Positions come from a
+/// <see cref="SmoothedCursorTrack"/> (already in export pixels) and are mapped through the shared per-frame
+/// <see cref="ZoomViewport"/> (see <see cref="AutoZoom.Viewports"/>), so when a <see cref="ZoomCompositor"/>
+/// runs before it in the chain the cursor stays glued to the pointer while the framing zooms — and the cursor
+/// and ripples keep a constant on-screen size. Pure software raster (no UI deps, headless-testable): an
+/// anti-aliased arrow sprite is baked once. The frame transform (crop + resample) now lives in
+/// <see cref="ZoomCompositor"/>; this compositor only draws.
 /// </summary>
 public sealed class CursorCompositor : IFrameCompositor
 {
@@ -61,16 +63,15 @@ public sealed class CursorCompositor : IFrameCompositor
 
     private readonly SmoothedCursorTrack _track;
     private readonly CursorStyle _style;
-    private readonly double[]? _zoom;   // per-frame zoom factor (≥1), or null for no zoom
+    private readonly ZoomViewport[]? _viewports;  // shared per-frame zoom framing (null = no zoom)
     private readonly byte[] _mask;      // arrow coverage, 0..255
     private readonly int _mw, _mh;
-    private byte[]? _temp;              // scratch for the zoom resample (reused across frames)
 
-    public CursorCompositor(SmoothedCursorTrack track, CursorStyle? style = null, double[]? zoomCurve = null)
+    public CursorCompositor(SmoothedCursorTrack track, CursorStyle? style = null, ZoomViewport[]? viewports = null)
     {
         _track = track;
         _style = style ?? CursorStyle.Default;
-        _zoom = zoomCurve;
+        _viewports = viewports;
         _mask = BakeArrow(_style.Height, out _mw, out _mh);
     }
 
@@ -80,12 +81,12 @@ public sealed class CursorCompositor : IFrameCompositor
         var frames = _track.Frames;
         var pos = frames[Math.Clamp(frameIndex, 0, frames.Count - 1)];
 
-        // Auto-zoom: crop to the viewport (centred on the cursor) and scale back up.
-        var z = _zoom is { } zc && frameIndex >= 0 && frameIndex < zc.Length ? zc[frameIndex] : 1.0;
-        var vp = z > 1.0001
-            ? AutoZoom.Viewport(z, pos.X, pos.Y, width, height)
+        // The zoom framing for this frame — shared with the ZoomCompositor that resampled the pixels — or the
+        // full frame when there's no zoom. Cursor + ripples are mapped through it so they stay glued to the
+        // pointer while the framing follows, at a constant on-screen size.
+        var vp = _viewports is { } vps && vps.Length > 0
+            ? vps[Math.Clamp(frameIndex, 0, vps.Length - 1)]
             : new ZoomViewport(0, 0, width, height);
-        if (z > 1.0001) Resample(bgra, width, height, vp);
 
         // Ripples first (under the cursor), anchored where the click landed — mapped through the viewport.
         var rippleFrames = Math.Max(1, (int)Math.Round(_style.RippleSeconds * _track.Fps));
@@ -147,46 +148,6 @@ public sealed class CursorCompositor : IFrameCompositor
                 var d = Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
                 var cov = 1 - Math.Min(1, Math.Abs(d - radius) / thickness);
                 if (cov > 0) Blend(bgra, (y * w + x) * 4, c, cov * alpha);
-            }
-        }
-    }
-
-    // Crop `bgra` to `vp` and bilinear-scale it back to width×height, in place (via a reused scratch copy).
-    private void Resample(byte[] bgra, int w, int h, ZoomViewport vp)
-    {
-        var need = w * h * 4;
-        if (_temp is null || _temp.Length != need) _temp = new byte[need];
-        Array.Copy(bgra, _temp, need);
-
-        var sxStep = vp.Width / w;
-        var syStep = vp.Height / h;
-        for (var oy = 0; oy < h; oy++)
-        {
-            var srcY = vp.Y + (oy + 0.5) * syStep - 0.5;
-            var y0 = (int)Math.Floor(srcY);
-            var fy = srcY - y0;
-            var y0c = Math.Clamp(y0, 0, h - 1);
-            var y1c = Math.Clamp(y0 + 1, 0, h - 1);
-            for (var ox = 0; ox < w; ox++)
-            {
-                var srcX = vp.X + (ox + 0.5) * sxStep - 0.5;
-                var x0 = (int)Math.Floor(srcX);
-                var fx = srcX - x0;
-                var x0c = Math.Clamp(x0, 0, w - 1);
-                var x1c = Math.Clamp(x0 + 1, 0, w - 1);
-
-                var i00 = (y0c * w + x0c) * 4;
-                var i01 = (y0c * w + x1c) * 4;
-                var i10 = (y1c * w + x0c) * 4;
-                var i11 = (y1c * w + x1c) * 4;
-                var d = (oy * w + ox) * 4;
-                for (var ch = 0; ch < 3; ch++)
-                {
-                    var top = _temp[i00 + ch] * (1 - fx) + _temp[i01 + ch] * fx;
-                    var bot = _temp[i10 + ch] * (1 - fx) + _temp[i11 + ch] * fx;
-                    bgra[d + ch] = (byte)(top * (1 - fy) + bot * fy + 0.5);
-                }
-                bgra[d + 3] = 255;
             }
         }
     }

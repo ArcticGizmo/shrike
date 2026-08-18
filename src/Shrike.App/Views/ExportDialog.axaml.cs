@@ -236,9 +236,15 @@ public partial class ExportDialog : Window
             return;
         }
 
+        // Resolve the shared per-frame zoom framing, then compose the effect chain: the zoom transform
+        // first, the cursor + ripple overlay on top (each an IFrameCompositor). Adding effects = extending
+        // this chain.
         var zoomCurve = AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, fps, _zoom);
+        var viewports = AutoZoom.Viewports(smoothed.Frames, zoomCurve, w, h);
         var style = CursorStyle.ForExport(h, _cursorSize, _cursorRipple);
-        var compositor = new CursorCompositor(smoothed, style, zoomCurve);
+        var compositor = new CompositorChain(
+            new ZoomCompositor(viewports),
+            new CursorCompositor(smoothed, style, viewports));
 
         var intermediate = Path.Combine(Path.GetTempPath(), "shrike-cursor-" + Guid.NewGuid().ToString("N") + ".mp4");
         var interBitrate = (int)Math.Clamp((long)w * h * fps / 3, 8_000_000, 80_000_000); // generous → near-transparent
