@@ -3,10 +3,42 @@ using Shrike.Core.Capture;
 namespace Shrike.Core.Recording;
 
 /// <summary>Smoothing strength for the synthetic cursor. Lower <see cref="MinCutoff"/> = smoother/laggier;
-/// <see cref="Beta"/> controls how much it loosens with speed. See <see cref="OneEuroFilter"/>.</summary>
+/// <see cref="Beta"/> controls how much it loosens with speed. See <see cref="OneEuroFilter"/>.
+///
+/// <para>The two raw 1€ params read like a dev tool, so the UI exposes a single 0..1 <see cref="Smoothness"/>
+/// knob instead (higher = smoother) and maps it to both via <see cref="FromSmoothness"/>. The mapping is
+/// anchored so <see cref="DefaultSmoothness"/> reproduces the shipped <see cref="Default"/> look, keeping
+/// export behaviour unchanged for anyone who never touches the slider.</para></summary>
 public sealed record CursorSmoothing(double MinCutoff, double Beta, double DCutoff = 1.0)
 {
     public static CursorSmoothing Default { get; } = new(MinCutoff: 0.8, Beta: 0.35);
+
+    // Smoothness→params curve endpoints. MinCutoff dominates the feel and moves geometrically (responsive
+    // 4.0 → very smooth 0.3); Beta eases down linearly (0.5 → 0.25) so more smoothing also tames overshoot
+    // on fast moves. Chosen so FromSmoothness(DefaultSmoothness) ≈ Default (0.8, 0.35).
+    private const double MinCutoffResponsive = 4.0;
+    private const double MinCutoffSmooth = 0.3;
+    private const double BetaResponsive = 0.5;
+    private const double BetaSmooth = 0.25;
+
+    /// <summary>The single 0..1 knob that reproduces <see cref="Default"/> — where the UI/settings start.</summary>
+    public const double DefaultSmoothness = 0.62;
+
+    /// <summary>Build smoothing params from a single 0..1 knob (0 = responsive/minimal, 1 = very smooth).</summary>
+    public static CursorSmoothing FromSmoothness(double smoothness)
+    {
+        var s = Math.Clamp(smoothness, 0.0, 1.0);
+        var minCutoff = MinCutoffResponsive * Math.Pow(MinCutoffSmooth / MinCutoffResponsive, s);
+        var beta = BetaResponsive + (BetaSmooth - BetaResponsive) * s;
+        return new CursorSmoothing(minCutoff, beta);
+    }
+
+    /// <summary>The 0..1 knob position for these params (inverse of <see cref="FromSmoothness"/>, read off the
+    /// dominant <see cref="MinCutoff"/> axis) — used to seed the slider from a persisted/Default value.</summary>
+    public double Smoothness =>
+        Math.Clamp(
+            Math.Log(MinCutoff / MinCutoffResponsive) / Math.Log(MinCutoffSmooth / MinCutoffResponsive),
+            0.0, 1.0);
 }
 
 /// <summary>Maps a captured pointer position into the exported frame's pixel space.</summary>

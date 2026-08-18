@@ -60,10 +60,8 @@ public partial class TimelineEditorWindow : Window
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
     private ZoomConfig _zoom = ZoomConfig.Default;
     private double[]? _zoomCurve;
-    private Slider? _minCutoffSlider;
-    private Slider? _betaSlider;
-    private TextBlock? _minCutoffValue;
-    private TextBlock? _betaValue;
+    private Slider? _smoothnessSlider;
+    private TextBlock? _smoothnessValue;
     private CheckBox? _zoomToggle;
     private Slider? _zoomSlider;
     private TextBlock? _zoomValue;
@@ -95,9 +93,10 @@ public partial class TimelineEditorWindow : Window
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
         // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
         _timeline.Changed += ReprojectSmoothTrack;
+        SeedTuningFromSettings();
         SetupSmoothingPanel();
 
-        Closed += (_, _) => { _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
+        Closed += (_, _) => { PersistTuning(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -192,25 +191,38 @@ public partial class TimelineEditorWindow : Window
         }
     }
 
+    /// <summary>Start the editor from the persisted tuning so a dialled-in look carries across sessions.</summary>
+    private void SeedTuningFromSettings()
+    {
+        var s = Services.SettingsService.Instance?.Current ?? Shrike.Core.Settings.AppSettings.Default;
+        _smoothing = CursorSmoothing.FromSmoothness(s.CursorSmoothness);
+        _zoom = ZoomConfig.Default with { Enabled = s.CursorZoomEnabled, MaxZoom = s.CursorZoomMax };
+    }
+
+    /// <summary>Save the current smoothing/zoom back to settings (on close), but only for a clip that actually
+    /// carries a track — so editing a plain recording never rewrites the smooth-cursor defaults.</summary>
+    private void PersistTuning()
+    {
+        if (_smoothTrack is null) return;
+        var svc = Services.SettingsService.Instance;
+        if (svc is null) return;
+        svc.Update(svc.Current with
+        {
+            CursorSmoothness = _smoothing.Smoothness,
+            CursorZoomEnabled = _zoom.Enabled,
+            CursorZoomMax = _zoom.MaxZoom,
+        });
+    }
+
     private void SetupSmoothingPanel()
     {
-        _minCutoffSlider = this.FindControl<Slider>("MinCutoffSlider");
-        _betaSlider = this.FindControl<Slider>("BetaSlider");
-        _minCutoffValue = this.FindControl<TextBlock>("MinCutoffValue");
-        _betaValue = this.FindControl<TextBlock>("BetaValue");
+        _smoothnessSlider = this.FindControl<Slider>("SmoothnessSlider");
+        _smoothnessValue = this.FindControl<TextBlock>("SmoothnessValue");
 
-        if (_minCutoffSlider is not null)
+        if (_smoothnessSlider is not null)
         {
-            _minCutoffSlider.Value = _smoothing.MinCutoff;
-            _minCutoffSlider.PropertyChanged += (_, e) =>
-            {
-                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
-            };
-        }
-        if (_betaSlider is not null)
-        {
-            _betaSlider.Value = _smoothing.Beta;
-            _betaSlider.PropertyChanged += (_, e) =>
+            _smoothnessSlider.Value = _smoothing.Smoothness * 100.0;
+            _smoothnessSlider.PropertyChanged += (_, e) =>
             {
                 if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSmoothingChanged();
             };
@@ -239,9 +251,8 @@ public partial class TimelineEditorWindow : Window
 
     private void OnSmoothingChanged()
     {
-        var minCutoff = Math.Max(0.1, _minCutoffSlider?.Value ?? _smoothing.MinCutoff);
-        var beta = Math.Max(0.0, _betaSlider?.Value ?? _smoothing.Beta);
-        _smoothing = new CursorSmoothing(minCutoff, beta);
+        var smoothness = (_smoothnessSlider?.Value ?? _smoothing.Smoothness * 100.0) / 100.0;
+        _smoothing = CursorSmoothing.FromSmoothness(smoothness);
         UpdateSmoothingLabels();
         ReprojectSmoothTrack();
     }
@@ -257,10 +268,9 @@ public partial class TimelineEditorWindow : Window
 
     private void ResetSmoothing()
     {
-        _smoothing = CursorSmoothing.Default;
+        _smoothing = CursorSmoothing.FromSmoothness(CursorSmoothing.DefaultSmoothness);
         _zoom = ZoomConfig.Default;
-        if (_minCutoffSlider is not null) _minCutoffSlider.Value = _smoothing.MinCutoff;
-        if (_betaSlider is not null) _betaSlider.Value = _smoothing.Beta;
+        if (_smoothnessSlider is not null) _smoothnessSlider.Value = _smoothing.Smoothness * 100.0;
         if (_zoomToggle is not null) _zoomToggle.IsChecked = _zoom.Enabled;
         if (_zoomSlider is not null) _zoomSlider.Value = _zoom.MaxZoom;
         UpdateSmoothingLabels();
@@ -270,8 +280,8 @@ public partial class TimelineEditorWindow : Window
     private void UpdateSmoothingLabels()
     {
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        if (_minCutoffValue is not null) _minCutoffValue.Text = _smoothing.MinCutoff.ToString("0.0#", inv);
-        if (_betaValue is not null) _betaValue.Text = _smoothing.Beta.ToString("0.00#", inv);
+        if (_smoothnessValue is not null)
+            _smoothnessValue.Text = Math.Round(_smoothing.Smoothness * 100.0).ToString("0", inv) + "%";
         if (_zoomValue is not null) _zoomValue.Text = _zoom.MaxZoom.ToString("0.0#", inv) + "×";
     }
 

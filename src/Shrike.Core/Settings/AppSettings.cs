@@ -60,6 +60,18 @@ public sealed record AppSettings
     /// <summary>The app version that last ran here — drives which changelog entries are "new". Null = fresh install.</summary>
     public string? LastSeenVersion { get; init; }
 
+    // ---- Smooth cursor (experimental): the editor's tuning, persisted so it carries across sessions. ----
+
+    /// <summary>Synthetic-cursor smoothing strength, 0..1 (higher = smoother). Maps to the 1€ params via
+    /// <see cref="Shrike.Core.Recording.CursorSmoothing.FromSmoothness"/>. Default reproduces the shipped look.</summary>
+    public double CursorSmoothness { get; init; } = Recording.CursorSmoothing.DefaultSmoothness;
+
+    /// <summary>Ease the framing toward click activity (auto-zoom). On by default within the opt-in feature.</summary>
+    public bool CursorZoomEnabled { get; init; } = true;
+
+    /// <summary>Maximum auto-zoom factor at a click cluster (1 = no zoom).</summary>
+    public double CursorZoomMax { get; init; } = 1.6;
+
     public static AppSettings Default { get; } = new();
 
     /// <summary>Clamp any out-of-range values a hand-edited or corrupt file might carry.</summary>
@@ -70,5 +82,7 @@ public sealed record AppSettings
         SpotlightOpacity = Math.Clamp(SpotlightOpacity, 0.1, 1.0),
         SpotlightRadius = Math.Clamp(SpotlightRadius, 12, 160),
         SpotlightColor = string.IsNullOrWhiteSpace(SpotlightColor) ? "#FFD24A" : SpotlightColor,
+        CursorSmoothness = Math.Clamp(CursorSmoothness, 0.0, 1.0),
+        CursorZoomMax = Math.Clamp(CursorZoomMax, 1.0, 2.5),
     };
 }

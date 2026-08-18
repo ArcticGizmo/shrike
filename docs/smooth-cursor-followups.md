@@ -39,20 +39,26 @@ fidelity items below.
 **Exit:** ✅ `main` carries the feature; `v0.2.0` released. *(Real fresh-install record→export verification
 rolls into the §C hardware pass.)*
 
-## B · Release-facing tuning UX  *(P2)*
+## B · Release-facing tuning UX  *(P2 · in progress)*
 
 *The tuning panel works but reads like a dev tool (`Min cutoff` / `Beta`). Make it presentable.*
 
-- **Relabel** the smoothing control to a single **Smoothness** slider (0–100, higher = smoother), mapping
-  internally to `MinCutoff`/`Beta` — hide the raw 1€ params. Keep **Zoom on/off + amount**.
+- ✅ **Relabel** the smoothing control to a single **Smoothness** slider (0–100, higher = smoother), mapping
+  internally to `MinCutoff`/`Beta` — hide the raw 1€ params. Kept **Zoom on/off + amount**.
+  *(`CursorSmoothing.FromSmoothness`/`Smoothness` + `DefaultSmoothness`, anchored so the default reproduces the
+  shipped `(0.8, 0.35)` look; `CursorSmoothingTests` cover the mapping.)*
+- ✅ **Persist** the chosen smoothing/zoom to `AppSettings` (`CursorSmoothness`, `CursorZoomEnabled`,
+  `CursorZoomMax`) so they carry across sessions — the editor seeds from settings on open and saves on close
+  (only for clips that carry a track). *(Was: opened at `CursorSmoothing.Default` / `ZoomConfig.Default` each time.)*
 - **Cursor size** control (wire `CursorStyle.Height`), and a **click ripple on/off** toggle; optionally the
-  press **"punch"** (already in `CursorStyle`, off by default).
-- **Persist** the chosen smoothing/zoom/size to `AppSettings` so they carry across sessions (today the
-  editor opens at `CursorSmoothing.Default` / `ZoomConfig.Default` each time).
+  press **"punch"**. *(Net-new: `CursorStyle` today has `Height` + ripple params but no ripple-enable flag and
+  no punch field; also never threaded through `ConfigureSmoothCursor` → `CursorCompositor`, which always uses
+  `CursorStyle.Default`. Both the type and the plumbing need extending.)*
 - Make the cursor **size scale with export resolution** (fixed 24px looks small on 1080p, large on 480p) —
   or expose it and pick a sensible default per height.
 
-**Exit:** a non-developer can dial in the look from the editor, and it sticks.
+**Exit:** a non-developer can dial in the look from the editor, and it sticks. *(Smoothness + zoom now stick;
+cursor-size/ripple controls remain.)*
 
 ## C · Fidelity & correctness QA  *(P2)*
 
