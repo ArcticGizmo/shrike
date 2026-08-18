@@ -72,6 +72,12 @@ public sealed record AppSettings
     /// <summary>Maximum auto-zoom factor at a click cluster (1 = no zoom).</summary>
     public double CursorZoomMax { get; init; } = 1.6;
 
+    /// <summary>Relative synthetic-cursor size (1 = the resolution-scaled default; 0.5 = half, 2 = double).</summary>
+    public double CursorSize { get; init; } = 1.0;
+
+    /// <summary>Draw the expanding ring on each click.</summary>
+    public bool CursorRippleEnabled { get; init; } = true;
+
     public static AppSettings Default { get; } = new();
 
     /// <summary>Clamp any out-of-range values a hand-edited or corrupt file might carry.</summary>
@@ -84,5 +90,6 @@ public sealed record AppSettings
         SpotlightColor = string.IsNullOrWhiteSpace(SpotlightColor) ? "#FFD24A" : SpotlightColor,
         CursorSmoothness = Math.Clamp(CursorSmoothness, 0.0, 1.0),
         CursorZoomMax = Math.Clamp(CursorZoomMax, 1.0, 2.5),
+        CursorSize = Math.Clamp(CursorSize, 0.5, 2.0),
     };
 }

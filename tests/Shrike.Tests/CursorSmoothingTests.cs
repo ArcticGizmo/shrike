@@ -64,14 +64,16 @@ public class CursorSmoothingTests
     [Fact]
     public void Settings_sanitise_clamps_cursor_tuning()
     {
-        var wild = AppSettings.Default with { CursorSmoothness = 5.0, CursorZoomMax = 99.0 };
+        var wild = AppSettings.Default with { CursorSmoothness = 5.0, CursorZoomMax = 99.0, CursorSize = 9.0 };
         var s = wild.Sanitised();
         Assert.Equal(1.0, s.CursorSmoothness);
         Assert.Equal(2.5, s.CursorZoomMax);
+        Assert.Equal(2.0, s.CursorSize);
 
-        var low = AppSettings.Default with { CursorSmoothness = -1.0, CursorZoomMax = 0.5 };
+        var low = AppSettings.Default with { CursorSmoothness = -1.0, CursorZoomMax = 0.5, CursorSize = 0.1 };
         var t = low.Sanitised();
         Assert.Equal(0.0, t.CursorSmoothness);
         Assert.Equal(1.0, t.CursorZoomMax);
+        Assert.Equal(0.5, t.CursorSize);
     }
 }

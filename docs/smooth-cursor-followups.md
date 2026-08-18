@@ -39,7 +39,7 @@ fidelity items below.
 **Exit:** ✅ `main` carries the feature; `v0.2.0` released. *(Real fresh-install record→export verification
 rolls into the §C hardware pass.)*
 
-## B · Release-facing tuning UX  *(P2 · in progress)*
+## B · Release-facing tuning UX  *(P2)* ✅
 
 *The tuning panel works but reads like a dev tool (`Min cutoff` / `Beta`). Make it presentable.*
 
@@ -47,18 +47,21 @@ rolls into the §C hardware pass.)*
   internally to `MinCutoff`/`Beta` — hide the raw 1€ params. Kept **Zoom on/off + amount**.
   *(`CursorSmoothing.FromSmoothness`/`Smoothness` + `DefaultSmoothness`, anchored so the default reproduces the
   shipped `(0.8, 0.35)` look; `CursorSmoothingTests` cover the mapping.)*
-- ✅ **Persist** the chosen smoothing/zoom to `AppSettings` (`CursorSmoothness`, `CursorZoomEnabled`,
-  `CursorZoomMax`) so they carry across sessions — the editor seeds from settings on open and saves on close
-  (only for clips that carry a track). *(Was: opened at `CursorSmoothing.Default` / `ZoomConfig.Default` each time.)*
-- **Cursor size** control (wire `CursorStyle.Height`), and a **click ripple on/off** toggle; optionally the
-  press **"punch"**. *(Net-new: `CursorStyle` today has `Height` + ripple params but no ripple-enable flag and
-  no punch field; also never threaded through `ConfigureSmoothCursor` → `CursorCompositor`, which always uses
-  `CursorStyle.Default`. Both the type and the plumbing need extending.)*
-- Make the cursor **size scale with export resolution** (fixed 24px looks small on 1080p, large on 480p) —
-  or expose it and pick a sensible default per height.
+- ✅ **Persist** the chosen smoothing/zoom/size/ripple to `AppSettings` (`CursorSmoothness`, `CursorZoomEnabled`,
+  `CursorZoomMax`, `CursorSize`, `CursorRippleEnabled`) so they carry across sessions — the editor seeds from
+  settings on open and saves on close (only for clips that carry a track).
+- ✅ **Cursor size** control + **click ripple on/off** toggle in the panel. `CursorStyle` gained a
+  `RippleEnabled` flag and a resolution-aware `CursorStyle.ForExport(exportHeight, sizeScale, rippleEnabled)`
+  factory; both are threaded through `ConfigureSmoothCursor` → `CursorCompositor` (which previously always used
+  `CursorStyle.Default`). The preview scales its overlay cursor to match (`PreviewSurface.SetCursorScale`), so
+  size stays WYSIWYG. *(Ripples still aren't drawn in the live preview — a pre-existing gap — so the ripple
+  toggle only shows in the export; noted for §C look review. Press **"punch"** stays deferred: it's genuine
+  net-new compositor logic, not just a flag.)*
+- ✅ Cursor **size scales with export resolution** — `ForExport` bases the cursor on the frame height
+  (~24px at 1080p, clamped [14,64]), so a fixed size no longer looks large on 480p / tiny on 4K; the user
+  `CursorSize` (0.5–2×) multiplies that base.
 
-**Exit:** a non-developer can dial in the look from the editor, and it sticks. *(Smoothness + zoom now stick;
-cursor-size/ripple controls remain.)*
+**Exit:** ✅ a non-developer can dial in smoothness / zoom / cursor size / ripple from the editor, and it sticks.
 
 ## C · Fidelity & correctness QA  *(P2)*
 

@@ -107,4 +107,43 @@ public class CursorCompositorTests
 
         Assert.Equal(NonZero(plain), NonZero(late)); // only the cursor remains in both
     }
+
+    [Fact]
+    public void Ripple_disabled_draws_no_ring()
+    {
+        var frames = new[] { new CursorSample(60, 45) };
+        var clicked = Track(frames, [new CursorClickMark(0, MouseButtonKind.Left)]);
+
+        // Same click, same frame within the ripple's lifetime — but ripples off.
+        var withRipple = new byte[W * H * 4];
+        new CursorCompositor(clicked, CursorStyle.Default).Compose(withRipple, W, H, 5);
+
+        var noRipple = new byte[W * H * 4];
+        new CursorCompositor(clicked, CursorStyle.Default with { RippleEnabled = false }).Compose(noRipple, W, H, 5);
+
+        // Off means only the cursor is drawn — fewer touched pixels, and it matches the no-click cursor.
+        var cursorOnly = new byte[W * H * 4];
+        new CursorCompositor(Track(frames)).Compose(cursorOnly, W, H, 5);
+
+        Assert.True(NonZero(noRipple) < NonZero(withRipple));
+        Assert.Equal(NonZero(cursorOnly), NonZero(noRipple));
+    }
+
+    [Fact]
+    public void ForExport_scales_the_cursor_with_frame_height()
+    {
+        // ~24px at 1080p; smaller frames get a smaller cursor, larger frames a larger one (clamped).
+        Assert.Equal(24, CursorStyle.BaseHeightFor(1080));
+        Assert.True(CursorStyle.ForExport(480).Height < CursorStyle.ForExport(1080).Height);
+        Assert.True(CursorStyle.ForExport(2160).Height > CursorStyle.ForExport(1080).Height);
+
+        // Size scale multiplies it, and the ripple geometry scales in proportion.
+        var small = CursorStyle.ForExport(1080, 0.5);
+        var large = CursorStyle.ForExport(1080, 2.0);
+        Assert.True(large.Height > small.Height);
+        Assert.True(large.RippleEndRadius > small.RippleEndRadius);
+
+        // Ripple flag is carried through.
+        Assert.False(CursorStyle.ForExport(1080, 1.0, rippleEnabled: false).RippleEnabled);
+    }
 }

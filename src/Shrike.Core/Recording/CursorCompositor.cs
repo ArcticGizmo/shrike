@@ -7,9 +7,33 @@ public sealed record CursorStyle(
     double RippleStartRadius = 6,
     double RippleEndRadius = 42,
     double RippleThickness = 2.5,
-    double RipplePeakAlpha = 0.5)
+    double RipplePeakAlpha = 0.5,
+    bool RippleEnabled = true)
 {
     public static CursorStyle Default { get; } = new();
+
+    /// <summary>The cursor height (px) a given export frame height gets at <see cref="ForExport"/> size 1.0 —
+    /// tied to the frame so it reads the same on 480p and 1080p (a fixed 24px looks large on 480p, small on
+    /// 4K). ~24px at 1080p; clamped so tiny/huge frames stay sensible.</summary>
+    public static int BaseHeightFor(int exportHeight) =>
+        (int)Math.Round(Math.Clamp(exportHeight / 45.0, 14.0, 64.0));
+
+    /// <summary>Build a style for a target frame height: cursor size scales with the frame (see
+    /// <see cref="BaseHeightFor"/>) times <paramref name="sizeScale"/> (1.0 = default), with the ripple
+    /// geometry scaled to match so proportions hold. <paramref name="rippleEnabled"/> gates the click ripple.</summary>
+    public static CursorStyle ForExport(int exportHeight, double sizeScale = 1.0, bool rippleEnabled = true)
+    {
+        var height = BaseHeightFor(exportHeight) * Math.Clamp(sizeScale, 0.25, 4.0);
+        var k = height / Default.Height;   // scale ripple radii/thickness in proportion to the cursor
+        return new CursorStyle(
+            Height: Math.Max(1, (int)Math.Round(height)),
+            RippleSeconds: Default.RippleSeconds,
+            RippleStartRadius: Default.RippleStartRadius * k,
+            RippleEndRadius: Default.RippleEndRadius * k,
+            RippleThickness: Default.RippleThickness * k,
+            RipplePeakAlpha: Default.RipplePeakAlpha,
+            RippleEnabled: rippleEnabled);
+    }
 }
 
 /// <summary>
@@ -65,6 +89,7 @@ public sealed class CursorCompositor : IFrameCompositor
 
         // Ripples first (under the cursor), anchored where the click landed — mapped through the viewport.
         var rippleFrames = Math.Max(1, (int)Math.Round(_style.RippleSeconds * _track.Fps));
+        if (_style.RippleEnabled)
         foreach (var click in _track.Clicks)
         {
             var age = frameIndex - click.FrameIndex;

@@ -181,13 +181,17 @@ public partial class ExportDialog : Window
 
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
     private ZoomConfig _zoom = ZoomConfig.Default;
+    private double _cursorSize = 1.0;
+    private bool _cursorRipple = true;
 
-    /// <summary>Carry the editor's tuned smoothing + zoom into the export so what you saw in the preview is
-    /// what gets rendered.</summary>
-    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, ZoomConfig zoom)
+    /// <summary>Carry the editor's tuned smoothing + zoom + cursor look into the export so what you saw in the
+    /// preview is what gets rendered.</summary>
+    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, ZoomConfig zoom, double cursorSize, bool cursorRipple)
     {
         _smoothing = smoothing;
         _zoom = zoom;
+        _cursorSize = cursorSize;
+        _cursorRipple = cursorRipple;
     }
 
     private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
@@ -233,7 +237,8 @@ public partial class ExportDialog : Window
         }
 
         var zoomCurve = AutoZoom.ZoomCurve(smoothed.Clicks, smoothed.Frames.Count, fps, _zoom);
-        var compositor = new CursorCompositor(smoothed, style: null, zoomCurve);
+        var style = CursorStyle.ForExport(h, _cursorSize, _cursorRipple);
+        var compositor = new CursorCompositor(smoothed, style, zoomCurve);
 
         var intermediate = Path.Combine(Path.GetTempPath(), "shrike-cursor-" + Guid.NewGuid().ToString("N") + ".mp4");
         var interBitrate = (int)Math.Clamp((long)w * h * fps / 3, 8_000_000, 80_000_000); // generous → near-transparent

@@ -60,11 +60,16 @@ public partial class TimelineEditorWindow : Window
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
     private ZoomConfig _zoom = ZoomConfig.Default;
     private double[]? _zoomCurve;
+    private double _cursorSize = 1.0;
+    private bool _cursorRipple = true;
     private Slider? _smoothnessSlider;
     private TextBlock? _smoothnessValue;
     private CheckBox? _zoomToggle;
     private Slider? _zoomSlider;
     private TextBlock? _zoomValue;
+    private Slider? _sizeSlider;
+    private TextBlock? _sizeValue;
+    private CheckBox? _rippleToggle;
 
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
@@ -197,6 +202,8 @@ public partial class TimelineEditorWindow : Window
         var s = Services.SettingsService.Instance?.Current ?? Shrike.Core.Settings.AppSettings.Default;
         _smoothing = CursorSmoothing.FromSmoothness(s.CursorSmoothness);
         _zoom = ZoomConfig.Default with { Enabled = s.CursorZoomEnabled, MaxZoom = s.CursorZoomMax };
+        _cursorSize = s.CursorSize;
+        _cursorRipple = s.CursorRippleEnabled;
     }
 
     /// <summary>Save the current smoothing/zoom back to settings (on close), but only for a clip that actually
@@ -211,6 +218,8 @@ public partial class TimelineEditorWindow : Window
             CursorSmoothness = _smoothing.Smoothness,
             CursorZoomEnabled = _zoom.Enabled,
             CursorZoomMax = _zoom.MaxZoom,
+            CursorSize = _cursorSize,
+            CursorRippleEnabled = _cursorRipple,
         });
     }
 
@@ -243,10 +252,43 @@ public partial class TimelineEditorWindow : Window
                 if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnZoomChanged();
             };
         }
+        _sizeSlider = this.FindControl<Slider>("SizeSlider");
+        _sizeValue = this.FindControl<TextBlock>("SizeValue");
+        _rippleToggle = this.FindControl<CheckBox>("RippleToggle");
+        if (_sizeSlider is not null)
+        {
+            _sizeSlider.Value = _cursorSize;
+            _sizeSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnCursorLookChanged();
+            };
+        }
+        if (_rippleToggle is not null)
+        {
+            _rippleToggle.IsChecked = _cursorRipple;
+            _rippleToggle.IsCheckedChanged += (_, _) => OnCursorLookChanged();
+        }
         if (this.FindControl<Button>("SmoothingReset") is { } reset)
             reset.Click += (_, _) => ResetSmoothing();
 
         UpdateSmoothingLabels();
+        UpdateCursorScale();
+    }
+
+    private void OnCursorLookChanged()
+    {
+        _cursorSize = Math.Clamp(_sizeSlider?.Value ?? _cursorSize, 0.5, 2.0);
+        _cursorRipple = _rippleToggle?.IsChecked ?? true;
+        UpdateSmoothingLabels();
+        UpdateCursorScale();
+    }
+
+    /// <summary>Keep the previewed cursor the same relative size as the export renders it (WYSIWYG).</summary>
+    private void UpdateCursorScale()
+    {
+        if (_source.Height <= 0) return;
+        var frac = CursorStyle.ForExport(_source.Height, _cursorSize, _cursorRipple).Height / (double)_source.Height;
+        _preview.SetCursorScale(frac);
     }
 
     private void OnSmoothingChanged()
@@ -270,10 +312,15 @@ public partial class TimelineEditorWindow : Window
     {
         _smoothing = CursorSmoothing.FromSmoothness(CursorSmoothing.DefaultSmoothness);
         _zoom = ZoomConfig.Default;
+        _cursorSize = 1.0;
+        _cursorRipple = true;
         if (_smoothnessSlider is not null) _smoothnessSlider.Value = _smoothing.Smoothness * 100.0;
         if (_zoomToggle is not null) _zoomToggle.IsChecked = _zoom.Enabled;
         if (_zoomSlider is not null) _zoomSlider.Value = _zoom.MaxZoom;
+        if (_sizeSlider is not null) _sizeSlider.Value = _cursorSize;
+        if (_rippleToggle is not null) _rippleToggle.IsChecked = _cursorRipple;
         UpdateSmoothingLabels();
+        UpdateCursorScale();
         ReprojectSmoothTrack();
     }
 
@@ -283,6 +330,7 @@ public partial class TimelineEditorWindow : Window
         if (_smoothnessValue is not null)
             _smoothnessValue.Text = Math.Round(_smoothing.Smoothness * 100.0).ToString("0", inv) + "%";
         if (_zoomValue is not null) _zoomValue.Text = _zoom.MaxZoom.ToString("0.0#", inv) + "×";
+        if (_sizeValue is not null) _sizeValue.Text = _cursorSize.ToString("0.0#", inv) + "×";
     }
 
     // ---- scrubbing / preview ----
@@ -490,7 +538,7 @@ public partial class TimelineEditorWindow : Window
         StopPlayback();
         if (!_timeline.HasKeptContent) return;
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
-        dlg.ConfigureSmoothCursor(_smoothing, _zoom); // carry the tuned preview settings into the export
+        dlg.ConfigureSmoothCursor(_smoothing, _zoom, _cursorSize, _cursorRipple); // carry the tuned preview settings into the export
         await dlg.ShowDialog(this);
     }
 

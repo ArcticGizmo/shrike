@@ -15,6 +15,7 @@ public sealed class PreviewSurface : Control
     private IImage? _image;
     private Point? _cursor;   // optional overlay cursor, normalised [0..1] within the displayed (cropped) frame
     private Rect? _viewport;  // optional normalised source crop [0..1] — the zoom framing
+    private double _cursorHeightFrac = 1.0 / 45.0; // overlay cursor height as a fraction of the drawn frame height
 
     /// <summary>Set (or refresh) the frame to display and repaint immediately.</summary>
     public void Show(IImage image)
@@ -42,6 +43,14 @@ public sealed class PreviewSurface : Control
         InvalidateVisual();
     }
 
+    /// <summary>Set the overlay cursor's height as a fraction of the drawn frame height, so the previewed cursor
+    /// matches the export's resolution-scaled size (see <c>CursorStyle.ForExport</c>). Keeps preview WYSIWYG.</summary>
+    public void SetCursorScale(double heightFraction)
+    {
+        _cursorHeightFrac = heightFraction;
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext ctx)
     {
         base.Render(ctx);
@@ -64,7 +73,7 @@ public sealed class PreviewSurface : Control
         ctx.DrawImage(img, srcRect, rect);
 
         if (_cursor is { } c)
-            DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height));
+            DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height), _cursorHeightFrac * rect.Height);
     }
 
     private static readonly IBrush CursorFill = new SolidColorBrush(Color.FromRgb(0xFB, 0xF6, 0xEC));
@@ -87,9 +96,12 @@ public sealed class PreviewSurface : Control
         return g;
     }
 
-    private static void DrawCursor(DrawingContext ctx, Point at)
+    private const double ArrowGeometryHeight = 19.4; // the BuildArrow() figure's height, in geometry units
+
+    private static void DrawCursor(DrawingContext ctx, Point at, double heightPx)
     {
-        using (ctx.PushTransform(Matrix.CreateTranslation(at.X, at.Y)))
+        var scale = Math.Max(0.1, heightPx / ArrowGeometryHeight);
+        using (ctx.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(at.X, at.Y)))
             ctx.DrawGeometry(CursorFill, CursorPen, CursorArrow);
     }
 }
