@@ -81,6 +81,23 @@ public sealed class ClipEdit
         catch { return Empty; }
     }
 
+    /// <summary>
+    /// Project this (v1-shaped) edit onto the unified <see cref="EffectTrack"/> the effects timeline consumes —
+    /// the forward migration. Zoom events become <see cref="ZoomEffect"/>s unchanged; the clip-wide
+    /// <see cref="ShowCursor"/> becomes a single <b>full-length</b> <see cref="VisibilityEffect"/> (Visible =
+    /// ShowCursor) so the default shows up as an editable block on the lane. <paramref name="clipDurationMs"/> is
+    /// the clip's source length, used as the full-length seed's end; a non-positive duration omits the seed
+    /// (nothing to span). Deterministic and UI-free — the single home of the v1→effects mapping, unit-tested.
+    /// </summary>
+    public EffectTrack ToEffectTrack(long clipDurationMs)
+    {
+        var events = new List<EffectEvent>();
+        foreach (var z in Zoom.Events) events.Add(ZoomEffect.FromZoomEvent(z));
+        if (clipDurationMs > 0)
+            events.Add(new VisibilityEffect(0, clipDurationMs, ShowCursor));
+        return new EffectTrack(events);
+    }
+
     private sealed class Dto
     {
         public int V { get; set; } = SchemaVersion;

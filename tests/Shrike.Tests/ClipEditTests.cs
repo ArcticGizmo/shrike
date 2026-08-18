@@ -89,4 +89,51 @@ public class ClipEditTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
+    // --- Forward migration to the unified effects model (M0) ----------------------------------------------
+
+    [Fact]
+    public void ToEffectTrack_carries_zoom_events_unchanged()
+    {
+        var edit = new ClipEdit(new ZoomTrack([new ZoomEvent(0, 1200, 0.6, 0.4, 1.8, 300, 300)]));
+        var effects = edit.ToEffectTrack(clipDurationMs: 5000);
+
+        var zoom = Assert.Single(effects.OfKind<ZoomEffect>());
+        Assert.Equal(new ZoomEvent(0, 1200, 0.6, 0.4, 1.8, 300, 300), zoom.ToZoomEvent());
+    }
+
+    [Fact]
+    public void ToEffectTrack_seeds_a_full_length_visibility_effect_from_show_cursor()
+    {
+        // Default (cursor shown) → a full-length Visible=true block spanning the whole clip.
+        var shown = new ClipEdit(ZoomTrack.Empty, showCursor: true).ToEffectTrack(clipDurationMs: 8000);
+        var vShown = Assert.Single(shown.OfKind<VisibilityEffect>());
+        Assert.Equal(0, vShown.StartMs);
+        Assert.Equal(8000, vShown.EndMs);
+        Assert.True(vShown.Visible);
+
+        // Hidden clip → the same full-length block, Visible=false.
+        var hidden = new ClipEdit(ZoomTrack.Empty, showCursor: false).ToEffectTrack(clipDurationMs: 8000);
+        Assert.False(Assert.Single(hidden.OfKind<VisibilityEffect>()).Visible);
+    }
+
+    [Fact]
+    public void ToEffectTrack_omits_the_visibility_seed_when_duration_is_unknown()
+    {
+        // No positive duration → nothing to span, so no seed (rather than a zero-length block).
+        Assert.Empty(new ClipEdit(ZoomTrack.Empty, showCursor: true).ToEffectTrack(clipDurationMs: 0)
+            .OfKind<VisibilityEffect>());
+    }
+
+    [Fact]
+    public void ToEffectTrack_migrates_a_loaded_v1_document()
+    {
+        // The whole point: an existing on-disk (v1) edit projects onto the effects model.
+        var v1Json = new ClipEdit(new ZoomTrack([new ZoomEvent(500, 1500, 0.5, 0.5, 2.0, 200, 200)]),
+            showCursor: false).ToJson();
+        var effects = ClipEdit.FromJson(v1Json).ToEffectTrack(clipDurationMs: 3000);
+
+        Assert.Single(effects.OfKind<ZoomEffect>());
+        Assert.False(Assert.Single(effects.OfKind<VisibilityEffect>()).Visible);
+    }
 }
