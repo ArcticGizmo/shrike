@@ -86,6 +86,18 @@ editor needs authored zoom: place it, shape it, time it. That's a real editing s
 Pan-only moves without zoom, keyframed cursor-size/opacity, multi-lane effects beyond zoom, motion
 blur on the zoom move. Revisit after the core authored-zoom experience lands.
 
+## Future — global crop & aspect ratio (note only, not built)
+
+> A **global crop / aspect** stage, distinct from per-event zoom: pick the **recorded** aspect (what the
+> region capture is framed to) and a **desired export** aspect (e.g. reframe a 16:9 capture to 9:16 for
+> shorts, or 1:1 for social), with a crop rectangle to choose what's kept. This is a clip-wide transform
+> that sits *before* the per-frame zoom in the compositor chain (crop → zoom → cursor), so zoom viewports and
+> cursor mapping compose on top of the reframed picture. Likely surfaces as an export/setup control plus a
+> crop overlay on the preview (reusing the aim-box handle mechanics). Design implications to work through:
+> how zoom focus/viewport coordinates relate to the cropped frame, letterbox vs. fill, and whether the crop
+> is authored per-clip in the edit document like zoom. **No effect today** — captured here so the aim-box
+> handle work and the compositor-chain ordering leave room for it.
+
 ## Interim
 
 Until this ships, the existing automatic `AutoZoom` (on/off + max-zoom in the tuning panel) stays as

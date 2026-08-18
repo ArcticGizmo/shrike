@@ -24,17 +24,24 @@ public sealed class PreviewSurface : Control
     private double _cursorHeightFrac = 1.0 / 45.0; // overlay cursor height as a fraction of the drawn frame height
     private IReadOnlyList<PreviewRipple> _ripples = [];
 
-    // Zoom-aim: draw a box on the frame to define a zoom event's focus + factor.
+    // Zoom-aim: draw / move / resize a box on the frame to define a zoom event's focus + factor. The box is a
+    // normalised square (the crop is always the frame's aspect ratio, so a square in normalised space), and
+    // corner handles resize it aspect-locked with the opposite corner anchored.
+    private enum AimDrag { None, New, Move, ResizeTL, ResizeTR, ResizeBL, ResizeBR }
+
+    private const double HandlePx = 9;         // corner-handle hit/render radius
+    private const double MinBoxNorm = 1.0 / 3.0; // smallest square = the 3× max zoom (1/zoom)
+
     private Rect? _targetBox;      // the selected event's current target, normalised [0..1]
     private Rect _fitRect;         // where the frame was last drawn (control coords) — for pointer↔normalised maths
-    private bool _drawingBox;
-    private Point _boxStart;       // control coords
-    private Rect? _liveBox;        // in-progress box, control coords
+    private AimDrag _aim = AimDrag.None;
+    private Point _aimAnchor;      // normalised fixed corner (resize) or start corner (new)
+    private Point _aimGrab;        // normalised offset pointer→box.TopLeft (move)
 
-    /// <summary>When true, dragging on the preview draws a target box (raising <see cref="TargetBoxDrawn"/>).</summary>
+    /// <summary>When true, dragging on the preview draws / moves / resizes the target box.</summary>
     public bool AimMode { get; set; }
 
-    /// <summary>Raised with a normalised [0..1] rectangle when the user finishes dragging a target box.</summary>
+    /// <summary>Raised (continuously during a drag) with the normalised [0..1] target square.</summary>
     public event Action<Rect>? TargetBoxDrawn;
 
     /// <summary>Set (or refresh) the frame to display and repaint immediately.</summary>
@@ -89,43 +96,87 @@ public sealed class PreviewSurface : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (!AimMode) return;
-        _drawingBox = true;
-        _boxStart = e.GetPosition(this);
-        _liveBox = null;
+        if (!AimMode || _fitRect.Width <= 0) return;
+        var pos = e.GetPosition(this);
+        var np = ToNorm(pos);
+
+        _aim = AimDrag.New;
+        _aimAnchor = np;
+        if (_targetBox is { } b)
+        {
+            var corner = HitCorner(pos, b);
+            if (corner != AimDrag.None) { _aim = corner; _aimAnchor = OppositeCorner(b, corner); }
+            else if (ControlRectOf(b).Contains(pos)) { _aim = AimDrag.Move; _aimGrab = new Point(np.X - b.X, np.Y - b.Y); }
+        }
         e.Pointer.Capture(this);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!_drawingBox) return;
-        var p = e.GetPosition(this);
-        _liveBox = new Rect(
-            Math.Min(_boxStart.X, p.X), Math.Min(_boxStart.Y, p.Y),
-            Math.Abs(p.X - _boxStart.X), Math.Abs(p.Y - _boxStart.Y));
-        InvalidateVisual();
+        if (_aim == AimDrag.None) return;
+        var np = ToNorm(e.GetPosition(this));
+
+        Rect box;
+        if (_aim == AimDrag.Move && _targetBox is { } cur)
+        {
+            var size = cur.Width;
+            box = new Rect(Math.Clamp(np.X - _aimGrab.X, 0, 1 - size), Math.Clamp(np.Y - _aimGrab.Y, 0, 1 - size), size, size);
+        }
+        else
+        {
+            // New / resize: an aspect-locked square anchored at _aimAnchor, growing toward the pointer.
+            var dirX = np.X >= _aimAnchor.X ? 1 : -1;
+            var dirY = np.Y >= _aimAnchor.Y ? 1 : -1;
+            var maxX = dirX > 0 ? 1 - _aimAnchor.X : _aimAnchor.X;
+            var maxY = dirY > 0 ? 1 - _aimAnchor.Y : _aimAnchor.Y;
+            var size = Math.Clamp(Math.Max(Math.Abs(np.X - _aimAnchor.X), Math.Abs(np.Y - _aimAnchor.Y)),
+                MinBoxNorm, Math.Max(MinBoxNorm, Math.Min(maxX, maxY)));
+            var x = dirX > 0 ? _aimAnchor.X : _aimAnchor.X - size;
+            var y = dirY > 0 ? _aimAnchor.Y : _aimAnchor.Y - size;
+            box = new Rect(x, y, size, size);
+        }
+
+        // A too-small brand-new drag is a click, not a box — ignore until it's a real region.
+        if (_aim == AimDrag.New && box.Width < MinBoxNorm) return;
+        TargetBoxDrawn?.Invoke(box);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (!_drawingBox) return;
-        _drawingBox = false;
+        if (_aim == AimDrag.None) return;
+        _aim = AimDrag.None;
         e.Pointer.Capture(null);
-
-        if (_liveBox is { } box && _fitRect.Width > 0 && _fitRect.Height > 0)
-        {
-            // Control coords → normalised frame coords, clamped to the frame.
-            var nx = Math.Clamp((box.X - _fitRect.X) / _fitRect.Width, 0, 1);
-            var ny = Math.Clamp((box.Y - _fitRect.Y) / _fitRect.Height, 0, 1);
-            var nw = Math.Clamp(box.Width / _fitRect.Width, 0, 1 - nx);
-            var nh = Math.Clamp(box.Height / _fitRect.Height, 0, 1 - ny);
-            if (nw > 0.04 && nh > 0.04) TargetBoxDrawn?.Invoke(new Rect(nx, ny, nw, nh));
-        }
-        _liveBox = null;
-        InvalidateVisual();
     }
+
+    // ---- aim maths ----
+    private Point ToNorm(Point p) => new(
+        Math.Clamp((p.X - _fitRect.X) / _fitRect.Width, 0, 1),
+        Math.Clamp((p.Y - _fitRect.Y) / _fitRect.Height, 0, 1));
+
+    private Rect ControlRectOf(Rect norm) => new(
+        _fitRect.X + norm.X * _fitRect.Width, _fitRect.Y + norm.Y * _fitRect.Height,
+        norm.Width * _fitRect.Width, norm.Height * _fitRect.Height);
+
+    private AimDrag HitCorner(Point p, Rect norm)
+    {
+        var r = ControlRectOf(norm);
+        if (Near(p, r.TopLeft)) return AimDrag.ResizeTL;
+        if (Near(p, r.TopRight)) return AimDrag.ResizeTR;
+        if (Near(p, r.BottomLeft)) return AimDrag.ResizeBL;
+        if (Near(p, r.BottomRight)) return AimDrag.ResizeBR;
+        return AimDrag.None;
+        static bool Near(Point a, Point b) => Math.Abs(a.X - b.X) <= HandlePx && Math.Abs(a.Y - b.Y) <= HandlePx;
+    }
+
+    private static Point OppositeCorner(Rect b, AimDrag corner) => corner switch
+    {
+        AimDrag.ResizeTL => new Point(b.Right, b.Bottom),
+        AimDrag.ResizeTR => new Point(b.X, b.Bottom),
+        AimDrag.ResizeBL => new Point(b.Right, b.Y),
+        _ => new Point(b.X, b.Y), // ResizeBR
+    };
 
     public override void Render(DrawingContext ctx)
     {
@@ -163,18 +214,18 @@ public sealed class PreviewSurface : Control
         if (_cursor is { } c)
             DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height), _cursorHeightFrac * rect.Height);
 
-        // Zoom-aim overlay: the selected event's target (dashed) + any in-progress drag (solid), dimming outside.
-        if (AimMode)
+        // Zoom-aim overlay: dim outside the target square, outline it, and draw aspect-locked corner handles.
+        if (AimMode && _targetBox is { } tb)
         {
-            if (_targetBox is { } tb)
-            {
-                var box = new Rect(rect.X + tb.X * rect.Width, rect.Y + tb.Y * rect.Height, tb.Width * rect.Width, tb.Height * rect.Height);
-                DimOutside(ctx, rect, box);
-                ctx.DrawRectangle(null, new Pen(new SolidColorBrush(Color.Parse("#F5A524")), 1.6, DashStyle.Dash), box);
-            }
-            if (_liveBox is { } lb)
-                ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(30, 0xF5, 0xA5, 0x24)),
-                    new Pen(new SolidColorBrush(Color.Parse("#F5A524")), 1.6), lb);
+            var box = new Rect(rect.X + tb.X * rect.Width, rect.Y + tb.Y * rect.Height, tb.Width * rect.Width, tb.Height * rect.Height);
+            var amber = Color.Parse("#F5A524");
+            DimOutside(ctx, rect, box);
+            ctx.DrawRectangle(null, new Pen(new SolidColorBrush(amber), 1.6), box);
+
+            var fill = new SolidColorBrush(amber);
+            var stroke = new Pen(new SolidColorBrush(Color.Parse("#140F0A")), 1);
+            foreach (var corner in new[] { box.TopLeft, box.TopRight, box.BottomLeft, box.BottomRight })
+                ctx.DrawRectangle(fill, stroke, new Rect(corner.X - 4, corner.Y - 4, 8, 8), 2, 2);
         }
     }
 
