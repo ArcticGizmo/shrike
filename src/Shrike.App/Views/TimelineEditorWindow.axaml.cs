@@ -223,8 +223,7 @@ public partial class TimelineEditorWindow : Window
         // The pane stays visible for the whole session then (empty until a selection), so selecting an effect
         // never widens the window / reflows the editor.
         var hasTrack = _smoothTrack is not null;
-        if (this.FindControl<Border>("SmoothingPanel") is { } panel) panel.IsVisible = hasTrack;
-        if (this.FindControl<StackPanel>("EffectsPanel") is { } effectsPanel) effectsPanel.IsVisible = hasTrack;
+        if (this.FindControl<Grid>("EffectsPanel") is { } effectsPanel) effectsPanel.IsVisible = hasTrack;
         if (_propsPane is not null) _propsPane.IsVisible = hasTrack;
         OnEffectSelectionChanged(-1); // seed the pane's empty state
 

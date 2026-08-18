@@ -35,75 +35,65 @@
     </Window.Styles>
 
     <Grid ColumnDefinitions="*,Auto">
-        <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" Margin="14">
-        <!-- Preview (with the inline annotation surface overlaid for canvas editing) -->
-        <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
-            <Panel>
-                <controls:PreviewSurface Name="Preview" />
-                <controls:AnnotationSurface Name="CanvasSurface" IsVisible="False" />
-            </Panel>
-        </Border>
+        <Grid Grid.Column="0" RowDefinitions="3*,Auto,2*" Margin="14">
+        <!-- Preview + transport — resizable against the timeline below via the splitter. -->
+        <Grid Grid.Row="0" RowDefinitions="*,Auto" MinHeight="180">
+            <!-- Preview (with the inline annotation surface overlaid for canvas editing) -->
+            <Border Grid.Row="0" Background="#000000" CornerRadius="8" ClipToBounds="True">
+                <Panel>
+                    <controls:PreviewSurface Name="Preview" />
+                    <controls:AnnotationSurface Name="CanvasSurface" IsVisible="False" />
+                </Panel>
+            </Border>
 
-        <!-- Transport -->
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" Margin="2,12,2,8">
-            <Button Grid.Column="0" Name="PlayButton" Classes="tool" Content="▶ Play" Click="OnPlayPause" />
-            <TextBlock Grid.Column="1" Name="TimeLabel" Classes="hint" VerticalAlignment="Center"
-                       Margin="12,0,0,0" FontFamily="Consolas,monospace" Text="00:00 / 00:00" />
-            <TextBlock Grid.Column="3" Name="KeptLabel" Classes="hint" VerticalAlignment="Center" />
+            <!-- Transport (Play button fixed-width so the ▶/❚❚ swap doesn't shift the row) -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto" Margin="2,12,2,4">
+                <Button Grid.Column="0" Name="PlayButton" Classes="tool" Width="96"
+                        HorizontalContentAlignment="Center" Content="▶ Play" Click="OnPlayPause" />
+                <TextBlock Grid.Column="1" Name="TimeLabel" Classes="hint" VerticalAlignment="Center"
+                           Margin="12,0,0,0" FontFamily="Consolas,monospace" Text="00:00 / 00:00" />
+                <TextBlock Grid.Column="3" Name="KeptLabel" Classes="hint" VerticalAlignment="Center" />
+            </Grid>
         </Grid>
 
-        <!-- Smooth-cursor tuning (debug-only; shown + wired from code-behind when a track is present). -->
-        <Border Grid.Row="2" Name="SmoothingPanel" IsVisible="False"
-                Background="#1C1710" BorderBrush="#322A1E" BorderThickness="1" CornerRadius="7"
-                Padding="10,7" Margin="0,0,0,10">
-            <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                <TextBlock Text="✦ Cursor" Foreground="#F5A524" FontFamily="Consolas,monospace"
-                           FontSize="12" VerticalAlignment="Center" />
-                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <TextBlock Text="Smoothness" Classes="hint" VerticalAlignment="Center" />
-                    <Slider Name="SmoothnessSlider" Width="150" Minimum="0" Maximum="100" VerticalAlignment="Center" />
-                    <TextBlock Name="SmoothnessValue" Classes="hint" Width="34" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
+        <!-- Draggable divider: trade preview height for more room to see the effects timeline. -->
+        <GridSplitter Grid.Row="1" Height="6" ResizeDirection="Rows" HorizontalAlignment="Stretch"
+                      Background="#241C12" ShowsPreview="False" />
+
+        <!-- Timeline: ruler, scrubber, the effects lane (scrolls when tall), toolbar. -->
+        <Grid Grid.Row="2" RowDefinitions="Auto,Auto,*,Auto" MinHeight="150">
+            <!-- Time axis (source time), aligned with the scrubber + effects lane below it. -->
+            <controls:TimeRuler Grid.Row="0" Name="TimeRuler" Margin="0,4,0,2" />
+
+            <!-- Scrubber -->
+            <controls:TimelineStrip Grid.Row="1" Name="Strip" Margin="0,0,0,10" />
+
+            <!-- Effects lane (shown + wired from code-behind when a track is present); scrolls when it grows tall. -->
+            <Grid Grid.Row="2" Name="EffectsPanel" IsVisible="False" RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,0,6">
+                    <TextBlock Text="✦ Effects" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
+                    <Button Name="AddEffectButton" Classes="tool" Content="+ Add effect" />
+                    <TextBlock Name="EffectsHint" Classes="hint" VerticalAlignment="Center"
+                               Text="right-click the lane to add an effect · drag to move / resize · double-click adds a zoom" />
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <TextBlock Text="Size" Classes="hint" VerticalAlignment="Center" />
-                    <Slider Name="SizeSlider" Width="104" Minimum="0.5" Maximum="2.0" VerticalAlignment="Center" />
-                    <TextBlock Name="SizeValue" Classes="hint" Width="42" FontFamily="Consolas,monospace" VerticalAlignment="Center" />
-                </StackPanel>
-                <TextBlock Classes="hint" VerticalAlignment="Center"
-                           Text="cursor / ripple / spotlight are now timeline effects — right-click the lane" />
-                <Button Name="SmoothingReset" Classes="tool" Content="Reset" />
-            </StackPanel>
-        </Border>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <controls:EffectsLane Name="EffectsLane" VerticalAlignment="Top" />
+                </ScrollViewer>
+            </Grid>
 
-        <!-- Time axis (source time), aligned with the scrubber + zoom lane below it. -->
-        <controls:TimeRuler Grid.Row="3" Name="TimeRuler" Margin="0,0,0,2" />
-
-        <!-- Scrubber -->
-        <controls:TimelineStrip Grid.Row="4" Name="Strip" Margin="0,0,0,10" />
-
-        <!-- Effects lane (shown + wired from code-behind when a track is present). -->
-        <StackPanel Grid.Row="5" Name="EffectsPanel" IsVisible="False" Spacing="6" Margin="0,0,0,10">
-            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                <TextBlock Text="✦ Effects" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
-                <Button Name="AddEffectButton" Classes="tool" Content="+ Add effect" />
-                <TextBlock Name="EffectsHint" Classes="hint" VerticalAlignment="Center"
-                           Text="right-click the lane to add an effect · drag to move / resize · double-click adds a zoom · select a zoom to edit it on the right" />
-            </StackPanel>
-            <controls:EffectsLane Name="EffectsLane" />
-        </StackPanel>
-
-        <!-- Toolbar -->
-        <Grid Grid.Row="6" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
-            <Button Grid.Column="0" Classes="tool" Content="Mark In"   Click="OnMarkIn"    Margin="0,0,6,0" />
-            <Button Grid.Column="1" Classes="tool" Content="Mark Out"  Click="OnMarkOut"   Margin="0,0,6,0" />
-            <Button Grid.Column="2" Classes="tool" Content="Cut"       Click="OnCut"       Margin="0,0,6,0" />
-            <Button Grid.Column="3" Classes="tool" Content="Keep only" Click="OnKeepOnly"  Margin="0,0,6,0" />
-            <Button Grid.Column="4" Classes="tool" Content="Restore"   Click="OnRestoreAt" Margin="0,0,6,0" />
-            <Button Grid.Column="5" Classes="tool" Content="Reset"     Click="OnResetAll"  Margin="0,0,6,0" />
-            <!-- Debug-only: shown + wired in code-behind (#if DEBUG). Reveals this recording + its .track.json. -->
-            <Button Grid.Column="6" Name="RevealButton" Classes="tool" Content="Reveal files (debug)"
-                    HorizontalAlignment="Left" IsVisible="False" />
-            <Button Grid.Column="7" Classes="tool accent" Content="Export…" Click="OnExport" />
+            <!-- Toolbar -->
+            <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" Margin="0,8,0,0">
+                <Button Grid.Column="0" Classes="tool" Content="Mark In"   Click="OnMarkIn"    Margin="0,0,6,0" />
+                <Button Grid.Column="1" Classes="tool" Content="Mark Out"  Click="OnMarkOut"   Margin="0,0,6,0" />
+                <Button Grid.Column="2" Classes="tool" Content="Cut"       Click="OnCut"       Margin="0,0,6,0" />
+                <Button Grid.Column="3" Classes="tool" Content="Keep only" Click="OnKeepOnly"  Margin="0,0,6,0" />
+                <Button Grid.Column="4" Classes="tool" Content="Restore"   Click="OnRestoreAt" Margin="0,0,6,0" />
+                <Button Grid.Column="5" Classes="tool" Content="Reset"     Click="OnResetAll"  Margin="0,0,6,0" />
+                <!-- Debug-only: shown + wired in code-behind (#if DEBUG). Reveals this recording + its .track.json. -->
+                <Button Grid.Column="6" Name="RevealButton" Classes="tool" Content="Reveal files (debug)"
+                        HorizontalAlignment="Left" IsVisible="False" />
+                <Button Grid.Column="7" Classes="tool accent" Content="Export…" Click="OnExport" />
+            </Grid>
         </Grid>
         </Grid>
 
@@ -150,11 +140,24 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Visibility editor. -->
-                <StackPanel Name="VisibilityEditor" Spacing="8" IsVisible="False">
+                <!-- Visibility (cursor) editor — also home to the cursor's global smoothness/size tuning. -->
+                <StackPanel Name="VisibilityEditor" Spacing="14" IsVisible="False">
                     <CheckBox Name="VisibilityInput" Content="Cursor shown" Foreground="#B8AE9C" />
                     <TextBlock Classes="hint" TextWrapping="Wrap"
                                Text="Uncheck to hide the cursor for this span. The default full-length block keeps the cursor shown." />
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Smoothness" Classes="hint" />
+                        <Slider Name="SmoothnessSlider" Minimum="0" Maximum="100" />
+                        <TextBlock Name="SmoothnessValue" Classes="hint" FontFamily="Consolas,monospace" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Cursor size" Classes="hint" />
+                        <Slider Name="SizeSlider" Minimum="0.5" Maximum="2.0" />
+                        <TextBlock Name="SizeValue" Classes="hint" FontFamily="Consolas,monospace" />
+                    </StackPanel>
+                    <Button Name="SmoothingReset" Classes="tool" Content="Reset cursor look" HorizontalAlignment="Stretch" />
+                    <TextBlock Classes="hint" TextWrapping="Wrap"
+                               Text="Smoothness and size apply to the cursor throughout the clip." />
                 </StackPanel>
 
                 <!-- Canvas editor. -->
