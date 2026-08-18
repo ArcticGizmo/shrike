@@ -69,9 +69,9 @@ public partial class TimelineEditorWindow : Window
     private TextBlock? _sizeValue;
     private CheckBox? _rippleToggle;
 
-    // Zoom authoring lane + inspector.
-    private readonly List<ZoomEvent> _zoomEvents = new();
-    private ZoomLane? _zoomLane;
+    // Unified effects lane + (zoom) inspector.
+    private readonly List<EffectEvent> _effects = new();
+    private EffectsLane? _effectsLane;
     private Border? _zoomPropsPane;
     private NumericUpDown? _zoomAmountInput;
     private NumericUpDown? _easeInInput;
@@ -109,7 +109,7 @@ public partial class TimelineEditorWindow : Window
         _timeline.Changed += ReprojectSmoothTrack;
         SeedTuningFromSettings();
         SetupSmoothingPanel();
-        SetupZoomLane();
+        SetupEffectsLane();
 
         Closed += (_, _) => { PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
@@ -171,22 +171,24 @@ public partial class TimelineEditorWindow : Window
         _showCursor = edit.ShowCursor;
         if (_cursorToggle is not null) _cursorToggle.IsChecked = _showCursor;
 
-        // Seed the lane's editable list from the loaded events, and mark where clicks fired (snap targets).
-        _zoomEvents.Clear();
-        _zoomEvents.AddRange(_authoredZoom.Events);
-        if (_zoomLane is not null)
+        // Seed the lane's editable list from the loaded zoom events (the only kind persisted so far), and mark
+        // where clicks fired (snap targets). Other effect kinds are placeable but session-only until the v2
+        // edit-doc format (M3) stores them.
+        _effects.Clear();
+        _effects.AddRange(_authoredZoom.Events.Select(ZoomEffect.FromZoomEvent));
+        if (_effectsLane is not null)
         {
-            _zoomLane.Timeline = _timeline;
-            _zoomLane.Events = _zoomEvents;
-            _zoomLane.ClickMarks = _smoothTrack?.Clicks.Where(c => c.Down).Select(c => (long)c.TMs).ToArray() ?? [];
-            _zoomLane.Select(-1);
-            _zoomLane.Refresh();
+            _effectsLane.Timeline = _timeline;
+            _effectsLane.Events = _effects;
+            _effectsLane.ClickMarks = _smoothTrack?.Clicks.Where(c => c.Down).Select(c => (long)c.TMs).ToArray() ?? [];
+            _effectsLane.Select(-1);
+            _effectsLane.Refresh();
         }
 
-        // The tuning panel + zoom lane only make sense for a clip that actually carries a track.
+        // The tuning panel + effects lane only make sense for a clip that actually carries a track.
         var hasTrack = _smoothTrack is not null;
         if (this.FindControl<Border>("SmoothingPanel") is { } panel) panel.IsVisible = hasTrack;
-        if (this.FindControl<StackPanel>("ZoomPanel") is { } zoomPanel) zoomPanel.IsVisible = hasTrack;
+        if (this.FindControl<StackPanel>("EffectsPanel") is { } effectsPanel) effectsPanel.IsVisible = hasTrack;
 
         ReprojectSmoothTrack();
     }
@@ -203,63 +205,71 @@ public partial class TimelineEditorWindow : Window
         UpdateCursorOverlay();
     }
 
-    // ---- zoom authoring ----
+    // ---- effects authoring ----
 
-    private void SetupZoomLane()
+    private void SetupEffectsLane()
     {
-        _zoomLane = this.FindControl<ZoomLane>("ZoomLane");
+        _effectsLane = this.FindControl<EffectsLane>("EffectsLane");
         _zoomPropsPane = this.FindControl<Border>("ZoomPropsPane");
         _zoomAmountInput = this.FindControl<NumericUpDown>("ZoomAmountInput");
         _easeInInput = this.FindControl<NumericUpDown>("EaseInInput");
         _easeOutInput = this.FindControl<NumericUpDown>("EaseOutInput");
 
-        if (_zoomLane is not null)
+        if (_effectsLane is not null)
         {
-            _zoomLane.Timeline = _timeline;
-            _zoomLane.Changed += OnZoomEventsChanged;
-            _zoomLane.SelectionChanged += OnZoomSelectionChanged;
-            _zoomLane.AddRequested += AddZoomAt;
+            _effectsLane.Timeline = _timeline;
+            _effectsLane.Changed += OnEffectsChanged;
+            _effectsLane.SelectionChanged += OnEffectSelectionChanged;
+            _effectsLane.AddRequested += OnAddEffect;
+            _effectsLane.DeleteRequested += DeleteEffectAt;
         }
         _preview.TargetBoxDrawn += OnTargetBoxDrawn;
-        if (this.FindControl<Button>("AddZoomButton") is { } add)
-            add.Click += (_, _) => AddZoomAt(_playheadSourceMs);
+        if (this.FindControl<Button>("AddEffectButton") is { } add)
+            add.Click += (_, _) => _effectsLane?.ShowAddMenu(add, atPointer: false, _playheadSourceMs, hitIndex: -1);
         if (this.FindControl<Button>("DeleteZoomButton") is { } del)
-            del.Click += (_, _) => DeleteSelectedZoom();
+            del.Click += (_, _) => DeleteSelectedEffect();
         if (_zoomAmountInput is not null) _zoomAmountInput.ValueChanged += (_, _) => OnZoomPropsChanged();
         if (_easeInInput is not null) _easeInInput.ValueChanged += (_, _) => OnZoomPropsChanged();
         if (_easeOutInput is not null) _easeOutInput.ValueChanged += (_, _) => OnZoomPropsChanged();
     }
 
-    // The lane edited an event's timing (drag/resize) — rebuild the track and refresh the current-frame preview.
-    private void OnZoomEventsChanged()
+    // The zoom effects, as the track the preview + export consume. Non-zoom effects don't affect framing.
+    private ZoomTrack ZoomTrackFromEffects()
+        => new(_effects.OfType<ZoomEffect>().Select(z => z.ToZoomEvent()).ToList());
+
+    // The selected effect if it's a zoom (the only kind with an inspector + aim box today), else null.
+    private ZoomEffect? SelectedZoomEffect()
+        => _effectsLane is { SelectedIndex: var i } && i >= 0 && i < _effects.Count && _effects[i] is ZoomEffect z
+            ? z : null;
+
+    // The lane edited an effect's timing (drag/resize) — rebuild the zoom track and refresh the preview.
+    private void OnEffectsChanged()
     {
-        _authoredZoom = new ZoomTrack(_zoomEvents);
+        _authoredZoom = ZoomTrackFromEffects();
         UpdateCursorOverlay();
     }
 
-    private void OnZoomSelectionChanged(int index)
+    private void OnEffectSelectionChanged(int index)
     {
-        var has = index >= 0 && index < _zoomEvents.Count;
-        if (_zoomPropsPane is not null) _zoomPropsPane.IsVisible = has;
+        var zoom = index >= 0 && index < _effects.Count ? _effects[index] as ZoomEffect : null;
+        // The inspector + aim box are zoom-only today; other kinds have no editor yet (their milestone adds one).
+        if (_zoomPropsPane is not null) _zoomPropsPane.IsVisible = zoom is not null;
+        _preview.AimMode = zoom is not null;
+        _preview.SetTargetBox(zoom is not null ? EventBox(zoom) : null);
 
-        // Selecting an event enters aim mode (full-frame view + a target box you can redraw); deselecting exits.
-        _preview.AimMode = has;
-        _preview.SetTargetBox(has ? EventBox(_zoomEvents[index]) : null);
-
-        if (has)
+        if (zoom is not null)
         {
-            var ev = _zoomEvents[index];
             _suppressZoomInspector = true;
-            if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)ev.Zoom;
-            if (_easeInInput is not null) _easeInInput.Value = (decimal)(ev.EaseInMs / 1000.0);
-            if (_easeOutInput is not null) _easeOutInput.Value = (decimal)(ev.EaseOutMs / 1000.0);
+            if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)zoom.Zoom;
+            if (_easeInInput is not null) _easeInInput.Value = (decimal)(zoom.EaseInMs / 1000.0);
+            if (_easeOutInput is not null) _easeOutInput.Value = (decimal)(zoom.EaseOutMs / 1000.0);
             _suppressZoomInspector = false;
         }
         UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
     }
 
     // The selected event's target as a normalised box (a square in normalised coords: side = 1/zoom).
-    private static Rect EventBox(ZoomEvent ev)
+    private static Rect EventBox(ZoomEffect ev)
     {
         var side = Math.Clamp(1.0 / Math.Max(1.05, ev.Zoom), 0.05, 1.0);
         var x = Math.Clamp(ev.CenterX - side / 2, 0, 1 - side);
@@ -270,64 +280,77 @@ public partial class TimelineEditorWindow : Window
     // The user dragged a box on the preview → derive focus (centre) + zoom (fit the box), aspect enforced.
     private void OnTargetBoxDrawn(Rect norm)
     {
-        if (_zoomLane is null) return;
-        var i = _zoomLane.SelectedIndex;
-        if (i < 0 || i >= _zoomEvents.Count) return;
+        if (_effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not ZoomEffect ev) return;
 
         var side = Math.Max(norm.Width, norm.Height);
         var zoom = Math.Clamp(1.0 / Math.Max(0.01, side), 1.05, 3.0);
         var cx = Math.Clamp(norm.X + norm.Width / 2, 0, 1);
         var cy = Math.Clamp(norm.Y + norm.Height / 2, 0, 1);
-        _zoomEvents[i] = _zoomEvents[i] with { Zoom = zoom, CenterX = cx, CenterY = cy };
+        _effects[i] = ev with { Zoom = zoom, CenterX = cx, CenterY = cy };
 
         _suppressZoomInspector = true;
         if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)zoom;
         _suppressZoomInspector = false;
-        _preview.SetTargetBox(EventBox(_zoomEvents[i])); // snap the shown box to the aspect-correct square
-        OnZoomEventsChanged();
-        _zoomLane.Refresh();
+        _preview.SetTargetBox(EventBox((ZoomEffect)_effects[i])); // snap the shown box to the aspect-correct square
+        OnEffectsChanged();
+        _effectsLane.Refresh();
     }
 
-    // The right-pane inputs changed — apply zoom + independent ease-in/out to the selected event.
+    // The right-pane inputs changed — apply zoom + independent ease-in/out to the selected zoom effect.
     private void OnZoomPropsChanged()
     {
-        if (_suppressZoomInspector || _zoomLane is null) return;
-        var i = _zoomLane.SelectedIndex;
-        if (i < 0 || i >= _zoomEvents.Count) return;
-        _zoomEvents[i] = _zoomEvents[i] with
+        if (_suppressZoomInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not ZoomEffect ev) return;
+        _effects[i] = ev with
         {
-            Zoom = Math.Max(1.05, (double)(_zoomAmountInput?.Value ?? (decimal)_zoomEvents[i].Zoom)),
+            Zoom = Math.Max(1.05, (double)(_zoomAmountInput?.Value ?? (decimal)ev.Zoom)),
             EaseInMs = (long)Math.Round((double)(_easeInInput?.Value ?? 0) * 1000),
             EaseOutMs = (long)Math.Round((double)(_easeOutInput?.Value ?? 0) * 1000),
         };
-        _preview.SetTargetBox(EventBox(_zoomEvents[i])); // zoom changed → the target box resizes to match
-        OnZoomEventsChanged();
-        _zoomLane.Refresh();
+        _preview.SetTargetBox(EventBox((ZoomEffect)_effects[i])); // zoom changed → the target box resizes to match
+        OnEffectsChanged();
+        _effectsLane.Refresh();
     }
 
-    private void AddZoomAt(long sourceMs)
+    // Add a new effect of a given kind at a source time, with sensible per-kind defaults, and select it.
+    private void OnAddEffect(EffectKind kind, long sourceMs)
     {
-        if (_zoomLane is null) return;
+        if (_effectsLane is null) return;
         var full = _timeline.DurationMs;
-        var dur = Math.Min(1500, full);
+        var wanted = kind == EffectKind.Ripple ? 600 : kind == EffectKind.Zoom || kind == EffectKind.Spotlight ? 1500 : 2000;
+        var dur = Math.Min(wanted, full);
         var start = Math.Clamp(sourceMs, 0, Math.Max(0, full - dur));
         var end = Math.Min(full, start + dur);
-        var (cx, cy) = CursorNormAtSource(sourceMs);
-        _zoomEvents.Add(new ZoomEvent(start, end, cx, cy, 1.8, 400, 400));
-        OnZoomEventsChanged();
-        _zoomLane.Select(_zoomEvents.Count - 1);
-        _zoomLane.Refresh();
+
+        var s = Services.SettingsService.Instance?.Current ?? Shrike.Core.Settings.AppSettings.Default;
+        EffectEvent effect = kind switch
+        {
+            EffectKind.Zoom => new ZoomEffect(start, end, 400, 400,
+                CursorNormAtSource(sourceMs).X, CursorNormAtSource(sourceMs).Y, 1.8),
+            EffectKind.Spotlight => new SpotlightEffect(start, end, 250, 250, s.SpotlightColor, s.SpotlightOpacity, s.SpotlightRadius),
+            EffectKind.Ripple => new RippleEffect(start, end),
+            EffectKind.Visibility => new VisibilityEffect(start, end, Visible: false), // a "hide" span (default is shown)
+            EffectKind.Canvas => new CanvasEffect(start, end, 200, 200, CanvasSpace.Content),
+            _ => new ZoomEffect(start, end, 400, 400, 0.5, 0.5, 1.8),
+        };
+        _effects.Add(effect);
+        OnEffectsChanged();
+        _effectsLane.Refresh();
+        _effectsLane.Select(_effects.Count - 1);
     }
 
-    private void DeleteSelectedZoom()
+    private void DeleteSelectedEffect() => DeleteEffectAt(_effectsLane?.SelectedIndex ?? -1);
+
+    private void DeleteEffectAt(int i)
     {
-        if (_zoomLane is null) return;
-        var i = _zoomLane.SelectedIndex;
-        if (i < 0 || i >= _zoomEvents.Count) return;
-        _zoomEvents.RemoveAt(i);
-        _zoomLane.Select(-1);
-        OnZoomEventsChanged();
-        _zoomLane.Refresh();
+        if (_effectsLane is null || i < 0 || i >= _effects.Count) return;
+        _effects.RemoveAt(i);
+        _effectsLane.Select(-1);
+        OnEffectsChanged();
+        _effectsLane.Refresh();
     }
 
     // Normalised cursor position at a source time — the default focus for a new zoom event.
@@ -353,7 +376,7 @@ public partial class TimelineEditorWindow : Window
         // The zoom crop at this frame — resolved for just this frame (cheap; no whole-clip array). The full
         // frame when there's no zoom, and always the full frame while aiming a selected event so the whole
         // picture is visible to box a target on.
-        var aiming = _zoomLane is { SelectedIndex: >= 0 };
+        var aiming = SelectedZoomEffect() is not null;
         var vp = !aiming && !_authoredZoom.IsEmpty
             ? _authoredZoom.ViewportAt(_timeline.EditedToSourceMs((long)(i * 1000.0 / _smoothed.Fps)), _source.Width, _source.Height)
             : new ZoomViewport(0, 0, _source.Width, _source.Height);
@@ -525,7 +548,7 @@ public partial class TimelineEditorWindow : Window
         StopPlayback();
         _playheadSourceMs = sourceMs;
         _currentEditedMs = _timeline.SourceToEditedMs(sourceMs) ?? _currentEditedMs;
-        _zoomLane?.SetPlayhead(sourceMs);
+        _effectsLane?.SetPlayhead(sourceMs);
         RequestPreview(sourceMs);
         UpdateLabels();
         UpdateCursorOverlay();
@@ -589,14 +612,43 @@ public partial class TimelineEditorWindow : Window
     protected override void OnKeyDown(Avalonia.Input.KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        // Space toggles play/pause — but not while a text field (e.g. a zoom numeric input) has focus, and not
-        // if a focused control (button / checkbox) already handled the key.
-        if (!e.Handled && e.Key == Avalonia.Input.Key.Space
-            && FocusManager?.GetFocusedElement() is not TextBox)
+        if (e.Handled || FocusManager?.GetFocusedElement() is TextBox) return; // don't steal keys from an input
+
+        // Space toggles play/pause.
+        if (e.Key == Avalonia.Input.Key.Space)
         {
             TogglePlayPause();
             e.Handled = true;
+            return;
         }
+
+        // Delete / nudge the selected effect (arrow keys shift it in source time).
+        var sel = _effectsLane?.SelectedIndex ?? -1;
+        if (sel < 0 || sel >= _effects.Count) return;
+        if (e.Key is Avalonia.Input.Key.Delete or Avalonia.Input.Key.Back)
+        {
+            DeleteEffectAt(sel);
+            e.Handled = true;
+        }
+        else if (e.Key is Avalonia.Input.Key.Left or Avalonia.Input.Key.Right)
+        {
+            var step = (e.KeyModifiers & Avalonia.Input.KeyModifiers.Shift) != 0 ? 500 : 100;
+            NudgeEffect(sel, e.Key == Avalonia.Input.Key.Left ? -step : step);
+            e.Handled = true;
+        }
+    }
+
+    // Shift the selected effect by delta ms in source time, clamped to the clip (keeps its duration).
+    private void NudgeEffect(int i, long deltaMs)
+    {
+        if (_effectsLane is null || i < 0 || i >= _effects.Count) return;
+        var ev = _effects[i];
+        var dur = ev.EndMs - ev.StartMs;
+        var start = Math.Clamp(ev.StartMs + deltaMs, 0, Math.Max(0, _timeline.DurationMs - dur));
+        _effects[i] = ev with { StartMs = start, EndMs = start + dur };
+        OnEffectsChanged();
+        _effectsLane.Refresh();
+        if (_effects[i] is ZoomEffect z) _preview.SetTargetBox(EventBox(z));
     }
 
     private void StartPlayback()
@@ -650,7 +702,7 @@ public partial class TimelineEditorWindow : Window
         _currentEditedMs = Math.Min(_currentEditedMs + (long)(1000.0 / player.Fps), _timeline.KeptDurationMs);
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
-        _zoomLane?.SetPlayhead(_playheadSourceMs);
+        _effectsLane?.SetPlayhead(_playheadSourceMs);
         UpdateLabels();
         UpdateCursorOverlay();
     }

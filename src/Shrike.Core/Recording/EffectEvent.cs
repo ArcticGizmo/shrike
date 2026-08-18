@@ -109,3 +109,25 @@ public sealed record VisibilityEffect(long StartMs, long EndMs, bool Visible)
 {
     public override EffectKind Kind => EffectKind.Visibility;
 }
+
+/// <summary>Whether a <see cref="CanvasEffect"/>'s drawing is glued to the recorded content (magnifies/moves
+/// with a zoom) or floats fixed on the output frame (unaffected by zoom).</summary>
+public enum CanvasSpace
+{
+    /// <summary>Composited before zoom — the drawing rides the content it was drawn over.</summary>
+    Content,
+    /// <summary>Composited after zoom — a fixed screen-space overlay.</summary>
+    Screen,
+}
+
+/// <summary>
+/// A drawing-canvas effect — a set of screenshot-style annotations (rectangles, arrows, text, redaction, …)
+/// shown over the frame for its span, in content- or screen-space. The annotation payload + rendering land in
+/// a later milestone; this carries the timing and space so the lane can author it and persistence can store it.
+/// </summary>
+public sealed record CanvasEffect(
+    long StartMs, long EndMs, long EaseInMs, long EaseOutMs, CanvasSpace Space)
+    : EffectEvent(StartMs, EndMs, EaseInMs, EaseOutMs)
+{
+    public override EffectKind Kind => EffectKind.Canvas;
+}

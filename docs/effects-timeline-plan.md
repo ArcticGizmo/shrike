@@ -122,16 +122,24 @@ relaunch the dev exe on every change (kill running Shrike first).
   *(Deferred to when consumed: `FromEffectTrack` / on-disk **v2** format — added in M3 when ranged
   visibility/ripple/spotlight first need persisting. M0 deliberately changes no file format.)*
 
-### M1 · The unified effects lane  *(replaces `ZoomLane` + click ticks)*
-- New `EffectsLane` control: auto-stacking rows, colour-coded blocks per kind, **click-tick mouse strip
-  pinned at the bottom**, playhead line. Generalize `ZoomLane`'s add/select/drag/resize/snap/min-dur.
-- **Right-click context menu → "Add effect ▸ [Zoom · Spotlight · Click ripple · Mouse visibility ·
-  Canvas]"**, placing the new effect at the clicked source-time with a sensible default duration; drag
-  edges to resize. Keyboard **Delete** and arrow-nudge on the selection.
-- Retire `ZoomPanel`/`ZoomLane`; route selection into existing window state.
-- **Exit / demo:** place/drag/resize/delete any effect kind on one lane; overlaps stack into rows;
-  clicks show at the bottom. Zoom still fully works end-to-end via the new lane (others are inert blocks
-  until their milestone).
+### ✅ M1 · The unified effects lane  *(replaces `ZoomLane` + click ticks)*
+- ✅ New `EffectsLane` control (`EffectsLane.cs`): **auto-stacking rows** (greedy first-free-row per block,
+  lane height grows with the stack), colour-coded blocks per kind, **click-tick mouse strip pinned at the
+  bottom**, playhead line. Generalised the old lane's add/select/drag/resize/snap/min-dur; timing edits use
+  polymorphic `record with { StartMs, EndMs }` so one path moves any kind.
+- ✅ **Right-click menu → Zoom · Spotlight · Click ripple · Mouse visibility · Canvas**, placing at the
+  clicked source-time with per-kind default durations; drag to move / resize; double-click still quick-adds
+  a zoom; right-click on a block also offers **Delete**. **Keyboard Delete** and **←/→ nudge** (Shift =
+  larger step) on the selection. The **+ Add effect** button opens the same menu at the playhead.
+- ✅ Retired `ZoomLane`; window rewired from `List<ZoomEvent>` to the unified `List<EffectEvent>` (zoom
+  resolves via `OfKind<ZoomEffect>()`), preview/inspector/aim-box are zoom-only (other kinds have no editor
+  until their milestone). Added a minimal `CanvasEffect`/`CanvasSpace` so Canvas is placeable now.
+- ✅ **Exit / demo:** any kind can be placed/dragged/resized/deleted on one lane; overlaps stack into rows;
+  clicks show at the bottom; **zoom works end-to-end** (authoring, preview, export, persistence) exactly as
+  before. Build- and boot-verified; full suite **262 passed**.
+
+  *(Zoom still persists via the v1 edit doc; other kinds are **session-only** until the v2 format lands in
+  M3. Interactive multi-kind pass pending, like the codebase's existing Avalonia-wiring convention.)*
 
 ### M2 · Draggable ruler playhead + permanent properties pane
 - `TimeRuler` gains a playhead marker and becomes draggable to scrub (raises `Scrubbing`/`Seeked` like
