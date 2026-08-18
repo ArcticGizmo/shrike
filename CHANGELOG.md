@@ -8,6 +8,20 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.0] - 2026-08-18
+
+- Timeline zoom — place, drag and resize zoom events on a clip
+- Aim a zoom by dragging an aspect-locked box on the preview
+- Zoom snaps to where you clicked and eases smoothly in and out
+- Hand-placed zoom events replace the old automatic auto-zoom
+- The cursor is always recorded and drawn in the editor — a single **Show cursor** toggle, per clip
+- Cursor smoothing is one **Smoothness** slider, with **size** and click-**ripple** controls
+- Click ripples now preview live in the editor
+- Cursor look and zoom bake into every export preset
+- Spotlight cursor removed from recording (returning later as an editor effect)
+
+---
+
 ## [v0.2.0] - 2026-08-18
 
 - Experimental smooth cursor for recordings (opt-in) — smoothed synthetic pointer with click ripples
