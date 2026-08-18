@@ -29,4 +29,10 @@ public static class AppStorage
     /// owns this convention so the writer and the retention sweep never disagree.</summary>
     public static string SidecarFor(string recordingPath) =>
         System.IO.Path.ChangeExtension(recordingPath, ".track.json");
+
+    /// <summary>The edit-document path for a recording (<c>name.mp4</c> → <c>name.edit.json</c>). Holds the
+    /// user's authored, non-destructive edit state (zoom events today, more lanes later) — a different
+    /// lifecycle from the capture-time <c>*.track.json</c>, so it's a separate sidecar.</summary>
+    public static string EditDocFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".edit.json");
 }
