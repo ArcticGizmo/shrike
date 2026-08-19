@@ -10,6 +10,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Shrike.App.Controls;
+using Shrike.Audio;
 using Shrike.Core.Annotations;
 using Shrike.Core.Audio;
 using Shrike.Core.Capture;
@@ -55,6 +56,13 @@ public partial class TimelineEditorWindow : Window
     // Streaming playback: one persistent ffmpeg feeds frames into this reused bitmap.
     private FramePlayer? _player;
     private WriteableBitmap? _playBitmap;
+
+    // Preview audio (WYSIWYG): plays the primary capture sidecar in sync with the video playhead. It's an
+    // honest approximation — the mic at unity gain; the export is the accurate mix of every clip. Slaved to
+    // the source playhead and re-synced past the resync threshold, so it stays aligned across cuts.
+    private IAudioPlayer? _audioPlayer;
+    private string? _previewAudioPath;
+    private const long AudioResyncMs = 120;
 
     // Scrub preview pump: coalesces rapid seek requests to one in-flight ffmpeg extraction.
     private long _wantMs = -1;
@@ -173,7 +181,7 @@ public partial class TimelineEditorWindow : Window
         SetupEffectsLane();
         InitTimelineView();
 
-        Closed += (_, _) => { ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
+        Closed += (_, _) => { ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); DisposeAudioPlayer(); };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -249,6 +257,10 @@ public partial class TimelineEditorWindow : Window
             _audioClips.AddRange(edit.Audio.Clips);
         else
             _audioClips.AddRange(SeedAudioFromSidecars());
+
+        // The clip previewed in sync with the video: the first audible live-capture sidecar (usually the mic).
+        _previewAudioPath = _audioClips
+            .FirstOrDefault(c => !c.Muted && c.Origin == AudioOrigin.LiveCapture)?.SidecarPath;
 
         // Seed the lane from the loaded effects, and mark where clicks fired (snap targets).
         if (_effectsLane is not null)
@@ -1182,6 +1194,7 @@ public partial class TimelineEditorWindow : Window
         _playing = true;
         _playButton.Content = "❚❚ Pause";
         _playTimer.Start();
+        StartPreviewAudio();
     }
 
     private void StopPlayback(bool showStill = false)
@@ -1192,7 +1205,44 @@ public partial class TimelineEditorWindow : Window
         _playTimer.Stop();
         _player?.Dispose();
         _player = null;
+        StopPreviewAudio();
         if (showStill) RequestPreview(_playheadSourceMs);   // swap the soft play frame for a crisp still
+    }
+
+    // ---- preview audio (WYSIWYG) ----
+
+    private void StartPreviewAudio()
+    {
+        DisposeAudioPlayer();
+        if (_previewAudioPath is null) return;
+        try
+        {
+            var player = new NAudioPlayer();
+            player.Load(_previewAudioPath);
+            player.Position = TimeSpan.FromMilliseconds(_playheadSourceMs); // sidecar shares the source clock
+            player.Play();
+            _audioPlayer = player;
+        }
+        catch { DisposeAudioPlayer(); } // audio is best-effort — never let it break video playback
+    }
+
+    private void StopPreviewAudio() => DisposeAudioPlayer();
+
+    // Keep the audio aligned to the video's source playhead: it drifts (frame-paced video vs wall-clock audio)
+    // and jumps at cuts, so re-seek only once it diverges past the threshold to avoid per-tick stutter.
+    private void SyncPreviewAudio()
+    {
+        var player = _audioPlayer;
+        if (player is null || !player.IsPlaying) return;
+        var actual = (long)player.Position.TotalMilliseconds;
+        if (Math.Abs(actual - _playheadSourceMs) > AudioResyncMs)
+            player.Position = TimeSpan.FromMilliseconds(_playheadSourceMs);
+    }
+
+    private void DisposeAudioPlayer()
+    {
+        _audioPlayer?.Dispose();
+        _audioPlayer = null;
     }
 
     // One timer tick = consume one streamed frame, advancing the edited clock by exactly one frame.
@@ -1214,6 +1264,7 @@ public partial class TimelineEditorWindow : Window
         _strip.SetPlayhead(_playheadSourceMs);
         _effectsLane?.SetPlayhead(_playheadSourceMs);
         _ruler?.SetPlayhead(_playheadSourceMs);
+        SyncPreviewAudio();
         UpdateLabels();
         UpdateCursorOverlay();
     }
