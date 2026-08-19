@@ -675,16 +675,14 @@ internal sealed class CaptureController
         _audioCapture = null;
         if (audio is null) return;
 
+        // Finalise synchronously so the WAV header (sizes) is patched before the editor opens and reads the
+        // sidecar to seed its audio clip. This is a light stop/close (no ffmpeg flush, unlike the video path).
         var paths = audio.WrittenPaths.ToArray();
-        audio.Stop();
-        var discarded = savedPath is null;
-        Task.Run(() =>
-        {
-            try { audio.Dispose(); } catch { /* best effort */ }
-            if (discarded)
-                foreach (var p in paths)
-                    try { if (File.Exists(p)) File.Delete(p); } catch { /* best effort */ }
-        });
+        try { audio.Stop(); audio.Dispose(); } catch { /* best effort */ }
+
+        if (savedPath is null) // discarded take: no MP4, so the sidecars are orphans — remove them
+            foreach (var p in paths)
+                try { if (File.Exists(p)) File.Delete(p); } catch { /* best effort */ }
     }
 
     private void OnRecordingFinished(string? savedPath)

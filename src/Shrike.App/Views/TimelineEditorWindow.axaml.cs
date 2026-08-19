@@ -11,6 +11,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Shrike.App.Controls;
 using Shrike.Core.Annotations;
+using Shrike.Core.Audio;
 using Shrike.Core.Capture;
 using Shrike.Core.Imaging;
 using Shrike.Core.Recording;
@@ -241,6 +242,14 @@ public partial class TimelineEditorWindow : Window
         }
         _authoredZoom = ZoomTrackFromEffects();
 
+        // Audio: use the persisted track if the edit document already carries one; otherwise seed a
+        // full-length clip from each capture sidecar (.mic.wav / .sys.wav) that exists next to the recording.
+        _audioClips.Clear();
+        if (!edit.Audio.IsEmpty)
+            _audioClips.AddRange(edit.Audio.Clips);
+        else
+            _audioClips.AddRange(SeedAudioFromSidecars());
+
         // Seed the lane from the loaded effects, and mark where clicks fired (snap targets).
         if (_effectsLane is not null)
         {
@@ -254,12 +263,50 @@ public partial class TimelineEditorWindow : Window
         // The tuning panel + effects lane + properties pane only make sense for a clip that carries a track.
         // The pane stays visible for the whole session then (empty until a selection), so selecting an effect
         // never widens the window / reflows the editor.
-        var hasTrack = _smoothTrack is not null;
+        var hasTrack = _smoothTrack is not null || _audioClips.Count > 0;
         if (this.FindControl<Grid>("EffectsPanel") is { } effectsPanel) effectsPanel.IsVisible = hasTrack;
         if (_propsPane is not null) _propsPane.IsVisible = hasTrack;
         OnEffectSelectionChanged(-1); // seed the pane's empty state
 
         ReprojectSmoothTrack();
+    }
+
+    /// <summary>Build a full-length live-capture clip for each capture sidecar present next to the recording.
+    /// The sidecar shares the recording's (pause-excluded) time axis, so the clip spans [0, sidecar length];
+    /// cuts are applied later at export/preview by <see cref="CaptureAudio"/>.</summary>
+    private IEnumerable<AudioClip> SeedAudioFromSidecars()
+    {
+        foreach (var path in new[]
+                 {
+                     Shrike.Core.AppStorage.MicWavFor(_source.Path),
+                     Shrike.Core.AppStorage.SystemWavFor(_source.Path),
+                 })
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+
+            AudioFormat format;
+            long durationMs;
+            try
+            {
+                var (fmt, dataBytes) = WavFile.ReadInfo(path);
+                format = fmt;
+                durationMs = fmt.BytesToMs(dataBytes);
+            }
+            catch { continue; } // unreadable sidecar — skip it
+
+            if (durationMs <= 0) continue;
+
+            yield return new AudioClip
+            {
+                SidecarPath = path, // absolute; used verbatim as an ffmpeg input
+                Format = format,
+                OutputStartMs = 0,
+                SidecarOffsetMs = 0,
+                DurationMs = durationMs,
+                Origin = AudioOrigin.LiveCapture,
+                CaptureLink = new SourceSpan(0, durationMs),
+            };
+        }
     }
 
     private void ReprojectSmoothTrack()
@@ -351,6 +398,11 @@ public partial class TimelineEditorWindow : Window
 
     // The current authored effects as an immutable track — for per-frame preview lookups + export.
     private EffectTrack CurrentEffects => new(_effects);
+
+    // The clip's audio (narration / system sound). Seeded from the .mic.wav/.sys.wav sidecars on first open,
+    // then persisted in the edit document. Anchored in output time; live clips ride the cuts at export/preview.
+    private readonly List<AudioClip> _audioClips = [];
+    private AudioTrack CurrentAudio => new(_audioClips);
 
     // The selected effect if it's a zoom (the only kind with an inspector + aim box today), else null.
     private ZoomEffect? SelectedZoomEffect()
@@ -833,8 +885,9 @@ public partial class TimelineEditorWindow : Window
     /// re-export. Only for a clip that carries a track; an empty edit removes any stale sidecar.</summary>
     private void PersistEdit()
     {
-        if (_smoothTrack is null || string.IsNullOrEmpty(_source.Path)) return;
-        try { new ClipEdit(CurrentEffects).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
+        // Save when the clip carries anything worth persisting — a pointer track (effects) or audio.
+        if (string.IsNullOrEmpty(_source.Path) || (_smoothTrack is null && _audioClips.Count == 0)) return;
+        try { new ClipEdit(CurrentEffects, CurrentAudio).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
         catch { /* best effort — never block closing on a failed save */ }
     }
 
@@ -1355,8 +1408,10 @@ public partial class TimelineEditorWindow : Window
         if (!_timeline.HasKeptContent) return;
         PersistEdit(); // make sure the authored zoom is on disk before we (and the export) read it
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
-        // Carry the tuned smoothing/size + the authored effect track into the export so the file matches the preview.
+        // Carry the tuned smoothing/size + the authored effect track + audio into the export so the file
+        // matches the preview. The dialog maps live audio through the cuts (CaptureAudio) at build time.
         dlg.ConfigureEffects(_smoothing, _cursorSize, CurrentEffects);
+        dlg.ConfigureAudio(CurrentAudio);
         await dlg.ShowDialog(this);
     }
 
