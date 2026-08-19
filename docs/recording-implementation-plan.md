@@ -5,9 +5,26 @@
 > WYSIWYG / off-means-off / non-destructive rules. Scopes **M1a** and **M1b** in detail; **M2 captions**
 > and beyond are referenced, not detailed here.
 
-**Status:** Planned · **Date:** 2026-08-19 · **Owner:** Jon · **Branch:** `feature/recording`
+**Status:** In progress · **Date:** 2026-08-19 · **Owner:** Jon · **Branch:** `feature/recording`
 **Companions:** [`recording-audio-roadmap.md`](recording-audio-roadmap.md) (the feature line & ordering) ·
 [`recording-vision.html`](recording-vision.html) (the M1 UX vision).
+
+## Progress (2026-08-19)
+
+Everything that's pure/unit-testable is built, committed, and green (suite 286 → 337). The remaining
+phases are Avalonia UI + real-microphone verification.
+
+- ✅ **A0 — Core audio foundations** (`Shrike.Core/Audio`): `AudioFormat`, `IAudioSource`,
+  device/player seams, `LevelMeter`, `WavFile`/`WavWriter`, `AudioClip`/`AudioTrack`.
+- ✅ **A1 — Capture plumbing**: new `Shrike.Audio` adapter (NAudio 3.0.1, modern `WasapiRecorderBuilder`
+  API), `Pcm16Converter` + `AudioCaptureRecorder` in Core, `WasapiAudioSource` (mic + loopback),
+  `NAudioDeviceCatalog`. Not yet wired to the record flow (that's A2, behind the mic-check opt-in).
+- ✅ **A3 — Export mux**: `ExportCommand` folds an `AudioTrack` into an ffmpeg `amix` graph; `ExportSize`
+  counts the AAC stream; off-means-off preserved.
+- ✅ **A4 (persistence slice)** — `ClipEdit` v3 carries the audio track; forgiving v1/v2 migration.
+- ⏸️ **A2 — mic-check gate + record-flow wiring** (Avalonia UI, `WasapiAudioPlayer`, `CaptureController`).
+  Needs a real mic to verify + your eyes on the UX. **← next, paused for input.**
+- ⏸️ **A4 (rest)** — editor waveform lane, scrub-synced playback, gain/mute + lip-sync controls.
 
 ---
 
