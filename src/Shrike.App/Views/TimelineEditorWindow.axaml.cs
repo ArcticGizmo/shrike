@@ -49,6 +49,7 @@ public partial class TimelineEditorWindow : Window
     private long _viewEndMs;   // 0 until initialised → full-clip view
     private bool _playing;
     private Border? _selectionBar;
+    private Canvas? _timelineOverlay;
 
     // Streaming playback: one persistent ffmpeg feeds frames into this reused bitmap.
     private FramePlayer? _player;
@@ -157,6 +158,7 @@ public partial class TimelineEditorWindow : Window
         _strip.PanRequested += OnTimelinePan;
 
         _selectionBar = this.FindControl<Border>("SelectionBar");
+        _timelineOverlay = this.FindControl<Canvas>("TimelineOverlay");
         if (this.FindControl<Button>("CutSelectionButton") is { } cutBtn) cutBtn.Click += (_, _) => CutSelection();
         if (this.FindControl<Button>("KeepSelectionButton") is { } keepBtn) keepBtn.Click += (_, _) => KeepSelection();
         if (this.FindControl<Button>("KeepOnlySelectionButton") is { } keepOnlyBtn) keepOnlyBtn.Click += (_, _) => KeepOnlySelection();
@@ -1219,12 +1221,16 @@ public partial class TimelineEditorWindow : Window
     // (so it doesn't cover the selection you're making), centred over the selection.
     private void OnRangeSelected(long a, long b)
     {
-        if (_selectionBar is null) return;
+        if (_selectionBar is null || _timelineOverlay is null) return;
         _selectionBar.IsVisible = true;
-        var mid = (_strip.MsToX(a) + _strip.MsToX(b)) / 2.0;
         var barW = _selectionBar.Bounds.Width > 0 ? _selectionBar.Bounds.Width : 200;
         var barH = _selectionBar.Bounds.Height > 0 ? _selectionBar.Bounds.Height : 30;
-        _selectionBar.Margin = new Thickness(Math.Clamp(mid - barW / 2, 0, Math.Max(0, _strip.Bounds.Width - barW)), -(barH + 4), 0, 0);
+        var mid = (_strip.MsToX(a) + _strip.MsToX(b)) / 2.0;
+        // Position absolutely on the overlay Canvas (no layout feedback), just above the strip.
+        var stripTL = _strip.TranslatePoint(new Point(0, 0), _timelineOverlay) ?? new Point(0, 0);
+        var left = Math.Clamp(stripTL.X + mid - barW / 2, 0, Math.Max(0, _timelineOverlay.Bounds.Width - barW));
+        Canvas.SetLeft(_selectionBar, left);
+        Canvas.SetTop(_selectionBar, stripTL.Y - barH - 4);
     }
 
     private void OnSelectionCleared()

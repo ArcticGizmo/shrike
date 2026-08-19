@@ -60,24 +60,15 @@
         <GridSplitter Grid.Row="1" Height="6" ResizeDirection="Rows" HorizontalAlignment="Stretch"
                       Background="#241C12" ShowsPreview="False" />
 
-        <!-- Timeline: ruler, scrubber, the effects lane (scrolls when tall), toolbar. -->
-        <Grid Grid.Row="2" RowDefinitions="Auto,Auto,*,Auto" MinHeight="150">
+        <!-- Timeline: ruler, scrubber, the effects lane (scrolls when tall), toolbar. A Canvas overlay carries
+             the floating Cut/Keep bar so it can sit above the strip without affecting the timeline's layout. -->
+        <Grid Grid.Row="2" MinHeight="150">
+          <Grid RowDefinitions="Auto,Auto,*,Auto">
             <!-- Time axis (source time), aligned with the scrubber + effects lane below it. -->
             <controls:TimeRuler Grid.Row="0" Name="TimeRuler" Margin="0,4,0,2" />
 
-            <!-- Scrubber / trim lane, with a floating Cut/Keep bar that appears over a drag-selection. -->
-            <Panel Grid.Row="1" Margin="0,0,0,10">
-                <controls:TimelineStrip Name="Strip" />
-                <Border Name="SelectionBar" IsVisible="False" VerticalAlignment="Top" HorizontalAlignment="Left"
-                        Background="#1C1710" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="6" Padding="4,3">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <Button Name="CutSelectionButton" Classes="tool" Content="✂ Cut" />
-                        <Button Name="KeepSelectionButton" Classes="tool" Content="Keep" />
-                        <Button Name="KeepOnlySelectionButton" Classes="tool" Content="Keep only" />
-                        <Button Name="ClearSelectionButton" Classes="tool" Content="✕" />
-                    </StackPanel>
-                </Border>
-            </Panel>
+            <!-- Scrubber / trim lane. -->
+            <controls:TimelineStrip Grid.Row="1" Name="Strip" Margin="0,0,0,10" />
 
             <!-- Effects lane (shown + wired from code-behind when a track is present); scrolls when it grows tall. -->
             <Grid Grid.Row="2" Name="EffectsPanel" IsVisible="False" RowDefinitions="Auto,*">
@@ -102,6 +93,20 @@
                            Text="drag ends to trim · drag a boundary to move it · right-click to split / cut / keep · double-click a span to edit · Ctrl+drag adds a split" />
                 <Button Grid.Column="3" Classes="tool accent" Content="Export…" Click="OnExport" />
             </Grid>
+          </Grid>
+
+          <!-- Overlay: the floating Cut/Keep bar, positioned absolutely (Canvas.Left/Top) above the strip. -->
+          <Canvas Name="TimelineOverlay" ClipToBounds="False">
+              <Border Name="SelectionBar" IsVisible="False"
+                      Background="#1C1710" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="6" Padding="4,3">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                      <Button Name="CutSelectionButton" Classes="tool" Content="✂ Cut" />
+                      <Button Name="KeepSelectionButton" Classes="tool" Content="Keep" />
+                      <Button Name="KeepOnlySelectionButton" Classes="tool" Content="Keep only" />
+                      <Button Name="ClearSelectionButton" Classes="tool" Content="✕" />
+                  </StackPanel>
+              </Border>
+          </Canvas>
         </Grid>
         </Grid>
 
