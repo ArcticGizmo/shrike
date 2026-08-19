@@ -159,6 +159,7 @@ public partial class TimelineEditorWindow : Window
         _selectionBar = this.FindControl<Border>("SelectionBar");
         if (this.FindControl<Button>("CutSelectionButton") is { } cutBtn) cutBtn.Click += (_, _) => CutSelection();
         if (this.FindControl<Button>("KeepSelectionButton") is { } keepBtn) keepBtn.Click += (_, _) => KeepSelection();
+        if (this.FindControl<Button>("KeepOnlySelectionButton") is { } keepOnlyBtn) keepOnlyBtn.Click += (_, _) => KeepOnlySelection();
         if (this.FindControl<Button>("ClearSelectionButton") is { } clrBtn) clrBtn.Click += (_, _) => DropSelection();
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
@@ -1214,14 +1215,16 @@ public partial class TimelineEditorWindow : Window
         else if (ms > end) _timeline.Keep(end, ms);
     }
 
-    // A range was drag-selected on the strip — position + show the floating Cut / Keep bar over it.
+    // A range was drag-selected on the strip — position + show the floating Cut / Keep bar just ABOVE the strip
+    // (so it doesn't cover the selection you're making), centred over the selection.
     private void OnRangeSelected(long a, long b)
     {
         if (_selectionBar is null) return;
         _selectionBar.IsVisible = true;
         var mid = (_strip.MsToX(a) + _strip.MsToX(b)) / 2.0;
-        var barW = _selectionBar.Bounds.Width > 0 ? _selectionBar.Bounds.Width : 150;
-        _selectionBar.Margin = new Thickness(Math.Clamp(mid - barW / 2, 0, Math.Max(0, _strip.Bounds.Width - barW)), 0, 0, 0);
+        var barW = _selectionBar.Bounds.Width > 0 ? _selectionBar.Bounds.Width : 200;
+        var barH = _selectionBar.Bounds.Height > 0 ? _selectionBar.Bounds.Height : 30;
+        _selectionBar.Margin = new Thickness(Math.Clamp(mid - barW / 2, 0, Math.Max(0, _strip.Bounds.Width - barW)), -(barH + 4), 0, 0);
     }
 
     private void OnSelectionCleared()
@@ -1235,7 +1238,15 @@ public partial class TimelineEditorWindow : Window
         DropSelection();
     }
 
+    // Keep: mark the selection kept (restore it), leaving the rest as-is.
     private void KeepSelection()
+    {
+        if (_strip.Selection is { } sel) _timeline.Keep(sel.A, sel.B);
+        DropSelection();
+    }
+
+    // Keep only: keep the selection and cut everything else.
+    private void KeepOnlySelection()
     {
         if (_strip.Selection is { } sel) _timeline.KeepOnly(sel.A, sel.B);
         DropSelection();

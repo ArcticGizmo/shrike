@@ -72,7 +72,8 @@
                         Background="#1C1710" BorderBrush="#F5A524" BorderThickness="1" CornerRadius="6" Padding="4,3">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <Button Name="CutSelectionButton" Classes="tool" Content="✂ Cut" />
-                        <Button Name="KeepSelectionButton" Classes="tool" Content="Keep only" />
+                        <Button Name="KeepSelectionButton" Classes="tool" Content="Keep" />
+                        <Button Name="KeepOnlySelectionButton" Classes="tool" Content="Keep only" />
                         <Button Name="ClearSelectionButton" Classes="tool" Content="✕" />
                     </StackPanel>
                 </Border>
