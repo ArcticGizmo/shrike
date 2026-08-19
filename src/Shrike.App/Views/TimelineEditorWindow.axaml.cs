@@ -62,6 +62,7 @@ public partial class TimelineEditorWindow : Window
     // the source playhead and re-synced past the resync threshold, so it stays aligned across cuts.
     private IAudioPlayer? _audioPlayer;
     private string? _previewAudioPath;
+    private WaveformLane? _waveLane;
     private const long AudioResyncMs = 120;
 
     // Scrub preview pump: coalesces rapid seek requests to one in-flight ffmpeg extraction.
@@ -262,6 +263,12 @@ public partial class TimelineEditorWindow : Window
         _previewAudioPath = _audioClips
             .FirstOrDefault(c => !c.Muted && c.Origin == AudioOrigin.LiveCapture)?.SidecarPath;
 
+        if (_waveLane is not null)
+        {
+            _waveLane.IsVisible = _audioClips.Count > 0;
+            LoadWaveformAsync(_audioClips.FirstOrDefault(c => c.Origin == AudioOrigin.LiveCapture)?.SidecarPath);
+        }
+
         // Seed the lane from the loaded effects, and mark where clicks fired (snap targets).
         if (_effectsLane is not null)
         {
@@ -370,6 +377,14 @@ public partial class TimelineEditorWindow : Window
             _effectsLane.DeleteRequested += DeleteEffectAt;
             _effectsLane.ZoomRequested += OnTimelineZoom;
             _effectsLane.PanRequested += OnTimelinePan;
+        }
+
+        _waveLane = this.FindControl<WaveformLane>("WaveLane");
+        if (_waveLane is not null)
+        {
+            _waveLane.Timeline = _timeline;
+            _waveLane.ZoomRequested += OnTimelineZoom;
+            _waveLane.PanRequested += OnTimelinePan;
         }
         _preview.TargetBoxDrawn += OnTargetBoxDrawn;
         if (this.FindControl<Button>("AddEffectButton") is { } add)
@@ -1010,6 +1025,7 @@ public partial class TimelineEditorWindow : Window
         // strip updates its own during its drag, but the ruler drag needs the strip synced, and vice-versa).
         _strip.SetPlayhead(sourceMs);
         _effectsLane?.SetPlayhead(sourceMs);
+        _waveLane?.SetPlayhead(sourceMs);
         _ruler?.SetPlayhead(sourceMs);
         RequestPreview(sourceMs);
         UpdateLabels();
@@ -1032,6 +1048,7 @@ public partial class TimelineEditorWindow : Window
         _ruler?.SetView(_viewStartMs, _viewEndMs);
         _strip.SetView(_viewStartMs, _viewEndMs);
         _effectsLane?.SetView(_viewStartMs, _viewEndMs);
+        _waveLane?.SetView(_viewStartMs, _viewEndMs);
     }
 
     // Ctrl+wheel: zoom the timeline around the pointer (wheel up = zoom in), keeping the pivot ms under the cursor.
@@ -1228,6 +1245,26 @@ public partial class TimelineEditorWindow : Window
 
     private void StopPreviewAudio() => DisposeAudioPlayer();
 
+    // Decimate the capture sidecar to a peak array for the waveform lane, off the UI thread (the WAV can be
+    // large). One bucket per ~10ms, clamped, so the lane stays sharp when zoomed without reading the file again.
+    private async void LoadWaveformAsync(string? path)
+    {
+        if (_waveLane is null || string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+        try
+        {
+            var (peaks, durationMs) = await Task.Run(() =>
+            {
+                var (format, pcm) = WavFile.Read(path);
+                var ms = format.BytesToMs(pcm.Length);
+                var buckets = (int)Math.Clamp(ms / 10, 200, 4000);
+                return (Waveform.ComputePeaks(pcm, buckets), ms);
+            });
+            if (_cts.IsCancellationRequested) return;
+            _waveLane.SetWaveform(peaks, durationMs);
+        }
+        catch { /* no waveform — the lane just shows a flat baseline */ }
+    }
+
     // Keep the audio aligned to the video's source playhead: it drifts (frame-paced video vs wall-clock audio)
     // and jumps at cuts, so re-seek only once it diverges past the threshold to avoid per-tick stutter.
     private void SyncPreviewAudio()
@@ -1264,6 +1301,7 @@ public partial class TimelineEditorWindow : Window
         _strip.SetPlayhead(_playheadSourceMs);
         _effectsLane?.SetPlayhead(_playheadSourceMs);
         _ruler?.SetPlayhead(_playheadSourceMs);
+        _waveLane?.SetPlayhead(_playheadSourceMs);
         SyncPreviewAudio();
         UpdateLabels();
         UpdateCursorOverlay();

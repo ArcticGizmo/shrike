@@ -68,15 +68,18 @@
         <!-- Timeline: ruler, scrubber, the effects lane (scrolls when tall), toolbar. A Canvas overlay carries
              the floating Cut/Keep bar so it can sit above the strip without affecting the timeline's layout. -->
         <Grid Grid.Row="2" MinHeight="150">
-          <Grid RowDefinitions="Auto,Auto,*,Auto">
+          <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
             <!-- Time axis (source time), aligned with the scrubber + effects lane below it. -->
             <controls:TimeRuler Grid.Row="0" Name="TimeRuler" Margin="0,4,0,2" />
 
             <!-- Scrubber / trim lane. -->
             <controls:TimelineStrip Grid.Row="1" Name="Strip" Margin="0,0,0,10" />
 
+            <!-- Audio waveform lane (shown from code-behind when the clip carries captured audio). -->
+            <controls:WaveformLane Grid.Row="2" Name="WaveLane" IsVisible="False" Margin="0,0,0,10" />
+
             <!-- Effects lane (shown + wired from code-behind when a track is present); scrolls when it grows tall. -->
-            <Grid Grid.Row="2" Name="EffectsPanel" IsVisible="False" RowDefinitions="Auto,*">
+            <Grid Grid.Row="3" Name="EffectsPanel" IsVisible="False" RowDefinitions="Auto,*">
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,0,6">
                     <TextBlock Text="✦ Effects" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
                     <Button Name="AddEffectButton" Classes="tool" Content="+ Add effect" />
@@ -89,7 +92,7 @@
             </Grid>
 
             <!-- Toolbar -->
-            <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
+            <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
                 <Button Grid.Column="0" Classes="tool" Content="Reset trim" Click="OnResetAll" Margin="0,0,6,0" />
                 <!-- Debug-only: shown + wired in code-behind (#if DEBUG). Reveals this recording + its .track.json. -->
                 <Button Grid.Column="1" Name="RevealButton" Classes="tool" Content="Reveal files (debug)"
