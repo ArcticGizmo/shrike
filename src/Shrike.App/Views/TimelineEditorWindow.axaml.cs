@@ -75,6 +75,18 @@ public partial class TimelineEditorWindow : Window
     private long _voiceoverStartMs;
     private bool _voiceoverActive;
 
+    // Punch-in re-record: re-record a span of the voiceover and splice it into .vo.wav (backup kept for undo).
+    private Button? _punchButton;
+    private Button? _undoPunchButton;
+    private TextBlock? _punchHint;
+    private AudioCaptureRecorder? _punchRecorder;
+    private string? _punchTempPath;
+    private string? _voiceoverBackupPath;
+    private long _punchSidecarStartMs;
+    private long _punchSidecarEndMs;
+    private long _punchOutEnd;
+    private bool _punchActive;
+
     // Scrub preview pump: coalesces rapid seek requests to one in-flight ffmpeg extraction.
     private long _wantMs = -1;
     private bool _extracting;
@@ -192,7 +204,13 @@ public partial class TimelineEditorWindow : Window
         SetupEffectsLane();
         InitTimelineView();
 
-        Closed += (_, _) => { _voiceoverActive = false; _voiceoverRecorder?.Dispose(); ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); DisposeAudioPlayer(); DeleteMix(); };
+        Closed += (_, _) =>
+        {
+            _voiceoverActive = false; _voiceoverRecorder?.Dispose();
+            _punchActive = false; _punchRecorder?.Dispose();
+            ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop();
+            _player?.Dispose(); DisposeAudioPlayer(); DeleteMix(); DeletePunchArtifacts();
+        };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -398,6 +416,9 @@ public partial class TimelineEditorWindow : Window
         _audioGainValue = this.FindControl<TextBlock>("AudioGainValue");
         _audioMuteInput = this.FindControl<CheckBox>("AudioMuteInput");
         _audioOffsetInput = this.FindControl<NumericUpDown>("AudioOffsetInput");
+        _punchButton = this.FindControl<Button>("PunchButton");
+        _undoPunchButton = this.FindControl<Button>("UndoPunchButton");
+        _punchHint = this.FindControl<TextBlock>("PunchHint");
         if (_audioGainInput is not null)
             _audioGainInput.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnAudioPropsChanged(); };
         if (_audioMuteInput is not null) _audioMuteInput.IsCheckedChanged += (_, _) => OnAudioPropsChanged();
@@ -586,6 +607,13 @@ public partial class TimelineEditorWindow : Window
         if (_audioOffsetInput is not null) _audioOffsetInput.Value = clip.AvOffsetMs;
         UpdateAudioGainLabel(clip.GainDb);
         _suppressInspector = false;
+
+        // Punch-in is only for the (editor-recorded) voiceover; undo appears once a take has been spliced.
+        var isVoiceover = clip.Origin == AudioOrigin.EditorVoiceover;
+        if (_punchButton is not null) _punchButton.IsVisible = isVoiceover;
+        if (_punchHint is not null) _punchHint.IsVisible = isVoiceover;
+        if (_undoPunchButton is not null)
+            _undoPunchButton.IsVisible = isVoiceover && _voiceoverBackupPath is not null && File.Exists(_voiceoverBackupPath);
     }
 
     private void OnAudioPropsChanged()
@@ -686,6 +714,103 @@ public partial class TimelineEditorWindow : Window
         _mixDirty = true;            // the mix now includes the voiceover
         RefreshAudioUi();
         PersistEdit(); // save now so the voiceover survives even without further edits
+    }
+
+    // ---- punch-in re-record (B1) ----
+
+    /// <summary>Re-record just the selected span of the voiceover: play from the span start, capture the mic
+    /// across it, then splice the take into <c>.vo.wav</c> (backing up the original for undo). The span comes
+    /// from the strip selection (source time), mapped to the voiceover's sidecar range.</summary>
+    private void OnPunchIn(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_punchActive) { StopPunch(); return; }
+        if (_selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        if (clip.Origin != AudioOrigin.EditorVoiceover || string.IsNullOrEmpty(clip.SidecarPath)) return;
+        if (_strip.Selection is not { } sel) return;
+
+        // Map the selected source span to output time, then to the clip's sidecar range; clamp to the clip.
+        if (_timeline.SourceToEditedMs(sel.A) is not { } outA || _timeline.SourceToEditedMs(sel.B) is not { } outB) return;
+        var from = Math.Max(Math.Min(outA, outB), clip.OutputStartMs);
+        var to = Math.Min(Math.Max(outA, outB), clip.OutputStartMs + clip.DurationMs);
+        if (to - from < 100) return; // nothing meaningful to punch
+
+        _punchSidecarStartMs = from - clip.OutputStartMs + clip.SidecarOffsetMs;
+        _punchSidecarEndMs = to - clip.OutputStartMs + clip.SidecarOffsetMs;
+        _punchOutEnd = to;
+        _punchTempPath = Path.Combine(Path.GetTempPath(), "shrike-punch-" + Guid.NewGuid().ToString("N") + ".wav");
+
+        StopPlayback();
+        _currentEditedMs = from;
+        var deviceId = Shrike.App.Services.SettingsService.Instance?.Current.MicDeviceId;
+        try
+        {
+            var source = WasapiAudioSource.Microphone(deviceId);
+            var writer = new WavWriter(_punchTempPath, source.Format);
+            _punchRecorder = new AudioCaptureRecorder(source, writer, () => _punchActive ? 0L : (long?)null);
+            _punchActive = true;
+            _punchRecorder.Start();
+        }
+        catch { _punchActive = false; _punchRecorder = null; return; }
+
+        if (_punchButton is not null) _punchButton.Content = "■ Stop re-record";
+        StartPlayback(); // roll from the span start; AdvancePlayback stops the punch at _punchOutEnd
+    }
+
+    private void StopPunch()
+    {
+        if (!_punchActive) return;
+        _punchActive = false;
+        StopPlayback();
+
+        var recorder = _punchRecorder;
+        _punchRecorder = null;
+        try { recorder?.Stop(); recorder?.Dispose(); } catch { /* best effort — Dispose finalises the take */ }
+        if (_punchButton is not null) _punchButton.Content = "⦿ Re-record selected span";
+
+        try { SpliceTake(); } catch { /* leave the voiceover untouched on any failure */ }
+
+        _mixDirty = true;
+        _currentWaveformPath = null;
+        RefreshAudioUi();
+        if (_selectedAudioIndex >= 0) ShowAudioEditor(); // refresh the undo button's visibility
+        PersistEdit();
+    }
+
+    // Splice the recorded take into the voiceover sidecar, backing up the original first (for undo).
+    private void SpliceTake()
+    {
+        if (_selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        if (_punchTempPath is null || !File.Exists(_punchTempPath) || !File.Exists(clip.SidecarPath)) return;
+
+        var (format, original) = WavFile.Read(clip.SidecarPath);
+        var (_, take) = WavFile.Read(_punchTempPath);
+        var spliced = AudioSplice.Replace(original, format, _punchSidecarStartMs, _punchSidecarEndMs, take);
+
+        _voiceoverBackupPath = Path.ChangeExtension(clip.SidecarPath, ".bak.wav");
+        try { File.Copy(clip.SidecarPath, _voiceoverBackupPath, overwrite: true); } catch { _voiceoverBackupPath = null; }
+        WavFile.Write(clip.SidecarPath, format, spliced);
+
+        try { File.Delete(_punchTempPath); } catch { /* best effort */ }
+        _punchTempPath = null;
+    }
+
+    private void OnUndoPunch(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        if (_voiceoverBackupPath is null || !File.Exists(_voiceoverBackupPath) || string.IsNullOrEmpty(clip.SidecarPath)) return;
+
+        try { File.Copy(_voiceoverBackupPath, clip.SidecarPath, overwrite: true); File.Delete(_voiceoverBackupPath); }
+        catch { return; }
+        _voiceoverBackupPath = null;
+
+        _mixDirty = true;
+        _currentWaveformPath = null;
+        RefreshAudioUi();
+        ShowAudioEditor();
+        PersistEdit();
     }
 
     // ---- inline canvas editing ----
@@ -1497,6 +1622,13 @@ public partial class TimelineEditorWindow : Window
         catch { /* best effort */ }
     }
 
+    // Undo is session-only: the splice is committed on close, so drop the backup + any stray take.
+    private void DeletePunchArtifacts()
+    {
+        foreach (var p in new[] { _voiceoverBackupPath, _punchTempPath })
+            try { if (p is not null && File.Exists(p)) File.Delete(p); } catch { /* best effort */ }
+    }
+
     // One timer tick = consume one streamed frame, advancing the edited clock by exactly one frame.
     private void AdvancePlayback()
     {
@@ -1512,6 +1644,10 @@ public partial class TimelineEditorWindow : Window
 
         BlitFrame(frame);
         _currentEditedMs = Math.Min(_currentEditedMs + (long)(1000.0 / player.Fps), _timeline.KeptDurationMs);
+
+        // Punch-in: once we've played across the selected span, stop and splice the take.
+        if (_punchActive && _currentEditedMs >= _punchOutEnd) { StopPunch(); return; }
+
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
         _effectsLane?.SetPlayhead(_playheadSourceMs);

@@ -274,6 +274,14 @@
                     </StackPanel>
                     <TextBlock Classes="hint" TextWrapping="Wrap"
                                Text="Captured audio rides the cuts automatically. Nudge the offset if voice and picture drift (+ = audio later)." />
+
+                    <!-- Punch-in re-record (voiceover clips): select a span on the strip, then re-record just it. -->
+                    <Button Name="PunchButton" Classes="tool" Content="⦿ Re-record selected span"
+                            HorizontalAlignment="Stretch" Click="OnPunchIn" IsVisible="False" />
+                    <Button Name="UndoPunchButton" Classes="tool" Content="↶ Undo re-record"
+                            HorizontalAlignment="Stretch" Click="OnUndoPunch" IsVisible="False" />
+                    <TextBlock Name="PunchHint" Classes="hint" TextWrapping="Wrap" IsVisible="False"
+                               Text="Drag a span on the scrubber, then Re-record to replace just that slice of the voiceover." />
                 </StackPanel>
 
                 <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"
