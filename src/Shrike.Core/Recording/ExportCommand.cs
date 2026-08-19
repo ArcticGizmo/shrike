@@ -77,7 +77,7 @@ public sealed record ExportCommand(
 
             default: // H264 / H265 / multi-range Copy fallback
                 var map = AddScaleFps(chains, body, "[vout]", targetH, targetFps, scaleNeeded, fpsNeeded);
-                var audioMap = hasAudio ? AddAudioMix(audioClips, chains) : null; // adds audio chains to the graph
+                var audioMap = hasAudio ? AddAudioMix(audioClips, chains, inputOffset: 1) : null; // video is input 0
                 args.AddRange(new[] { "-filter_complex", string.Join(";", chains), "-map", map });
                 if (audioMap is not null) { args.Add("-map"); args.Add(audioMap); }
                 args.AddRange(VideoCodecArgs(profile, hardware));
@@ -140,9 +140,10 @@ public sealed record ExportCommand(
     private static bool SupportsAudio(ExportProfile profile) =>
         profile.Codec is ExportCodec.H264 or ExportCodec.H265 or ExportCodec.Copy;
 
-    // One chain per clip: trim the used span from its sidecar (input i+1, since 0 is the video), reset PTS,
-    // delay to the clip's output position, apply gain. Then amix them. Returns the label to map.
-    private static string AddAudioMix(IReadOnlyList<AudioClip> clips, List<string> chains)
+    // One chain per clip: trim the used span from its sidecar (input i + inputOffset), reset PTS, delay to the
+    // clip's output position, apply gain. Then amix them. Returns the label to map. inputOffset is 1 for the
+    // export (video is input 0) and 0 for an audio-only mix.
+    private static string AddAudioMix(IReadOnlyList<AudioClip> clips, List<string> chains, int inputOffset)
     {
         for (var i = 0; i < clips.Count; i++)
         {
@@ -154,7 +155,7 @@ public sealed record ExportCommand(
             };
             if (c.EffectiveStartMs > 0) filters.Add($"adelay={c.EffectiveStartMs}:all=1");
             if (Math.Abs(c.LinearGain - 1.0) > 1e-6) filters.Add($"volume={Num(c.LinearGain)}");
-            chains.Add($"[{i + 1}:a]{string.Join(",", filters)}[a{i}]");
+            chains.Add($"[{i + inputOffset}:a]{string.Join(",", filters)}[a{i}]");
         }
 
         if (clips.Count == 1) return "[a0]";
@@ -166,6 +167,23 @@ public sealed record ExportCommand(
     }
 
     private static IEnumerable<string> AudioCodecArgs() => new[] { "-c:a", "aac", "-b:a", "160k" };
+
+    /// <summary>Build an <b>audio-only</b> ffmpeg command that mixes <paramref name="audio"/> down to a PCM WAV
+    /// on the output timeline — used to pre-render the editor's preview mix (multiple clips + gains, exactly as
+    /// the export mixes them). Returns an empty-ish command (no filter/map) when nothing is audible; the caller
+    /// checks <see cref="AudioTrack.HasAudibleContent"/> first.</summary>
+    public static IReadOnlyList<string> BuildAudioMix(AudioTrack audio, string outputWavPath)
+    {
+        var clips = audio.Clips.Where(c => !c.Muted && c.DurationMs > 0).ToArray();
+        var args = new List<string> { "-y", "-hide_banner", "-loglevel", "error" };
+        foreach (var c in clips) { args.Add("-i"); args.Add(c.SidecarPath); }
+        if (clips.Length == 0) return args;
+
+        var chains = new List<string>();
+        var map = AddAudioMix(clips, chains, inputOffset: 0); // audio clips are inputs 0..N-1 (no video)
+        args.AddRange(new[] { "-filter_complex", string.Join(";", chains), "-map", map, "-c:a", "pcm_s16le", outputWavPath });
+        return args;
+    }
 
     // ---- codecs ----
 

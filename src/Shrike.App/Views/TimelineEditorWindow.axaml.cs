@@ -64,6 +64,8 @@ public partial class TimelineEditorWindow : Window
     private string? _previewAudioPath;
     private WaveformLane? _waveLane;
     private string? _currentWaveformPath;
+    private string? _mixPath;          // temp WAV: the whole audio track pre-mixed on the output timeline
+    private bool _mixDirty = true;     // re-render the mix when the audio track or the cuts change
     private const long AudioResyncMs = 120;
 
     // In-editor voiceover: record the mic over the playing preview into a single .vo.wav clip.
@@ -182,7 +184,7 @@ public partial class TimelineEditorWindow : Window
         if (this.FindControl<Button>("KeepOnlySelectionButton") is { } keepOnlyBtn) keepOnlyBtn.Click += (_, _) => KeepOnlySelection();
         if (this.FindControl<Button>("ClearSelectionButton") is { } clrBtn) clrBtn.Click += (_, _) => DropSelection();
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
-        _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
+        _timeline.Changed += () => { _mixDirty = true; StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
         // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
         _timeline.Changed += ReprojectSmoothTrack;
         SeedTuningFromSettings();
@@ -190,7 +192,7 @@ public partial class TimelineEditorWindow : Window
         SetupEffectsLane();
         InitTimelineView();
 
-        Closed += (_, _) => { _voiceoverActive = false; _voiceoverRecorder?.Dispose(); ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); DisposeAudioPlayer(); };
+        Closed += (_, _) => { _voiceoverActive = false; _voiceoverRecorder?.Dispose(); ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); DisposeAudioPlayer(); DeleteMix(); };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -595,6 +597,7 @@ public partial class TimelineEditorWindow : Window
         var offset = (long)(_audioOffsetInput?.Value ?? (decimal)clip.AvOffsetMs);
         _audioClips[_selectedAudioIndex] = clip with { GainDb = gainDb, Muted = muted, AvOffsetMs = offset };
         UpdateAudioGainLabel(gainDb);
+        _mixDirty = true; // gain/mute/offset changes the mix
 
         // A muted primary silences the preview; recompute what plays and cut it now if nothing is audible.
         RefreshAudioUi();
@@ -680,6 +683,7 @@ public partial class TimelineEditorWindow : Window
         _selectedAudioIndex = -1;
         if (_audioEditor is not null) _audioEditor.IsVisible = false;
         _currentWaveformPath = null; // force the waveform to reload for the new clip
+        _mixDirty = true;            // the mix now includes the voiceover
         RefreshAudioUi();
         PersistEdit(); // save now so the voiceover survives even without further edits
     }
@@ -1395,19 +1399,57 @@ public partial class TimelineEditorWindow : Window
         }
     }
 
-    private void StartPreviewAudio()
+    private async void StartPreviewAudio()
     {
         DisposeAudioPlayer();
-        if (_previewAudioPath is null || _voiceoverActive) return; // don't monitor the mix while recording VO
+        // Don't play the mix while recording a voiceover, and skip when nothing is audible.
+        if (_voiceoverActive || !_audioClips.Any(c => !c.Muted && c.DurationMs > 0)) return;
+
+        string? mixPath;
+        try { mixPath = await EnsureMixAsync(); }
+        catch { return; }
+        if (mixPath is null || !_playing || _voiceoverActive) return; // stopped / failed while rendering
+
         try
         {
             var player = new NAudioPlayer();
-            player.Load(_previewAudioPath);
-            player.Position = TimeSpan.FromMilliseconds(_playheadSourceMs); // sidecar shares the source clock
+            player.Load(mixPath);
+            player.Position = TimeSpan.FromMilliseconds(_currentEditedMs); // the mix is on the output timeline
             player.Play();
             _audioPlayer = player;
         }
         catch { DisposeAudioPlayer(); } // audio is best-effort — never let it break video playback
+    }
+
+    // Pre-render the whole audio track (mic + voiceover, gains, cut-ridden) to a temp WAV via ffmpeg — the same
+    // mix the export produces, so preview == output. Cached until the track or the cuts change (_mixDirty).
+    private async Task<string?> EnsureMixAsync()
+    {
+        var mapped = CaptureAudio.ForOutput(CurrentAudio, _timeline.KeptRanges);
+        if (!mapped.HasAudibleContent) return null;
+
+        _mixPath ??= Path.Combine(Path.GetTempPath(), "shrike-mix-" + Guid.NewGuid().ToString("N") + ".wav");
+        if (!_mixDirty && File.Exists(_mixPath)) return _mixPath;
+
+        var args = ExportCommand.BuildAudioMix(mapped, _mixPath);
+        await Task.Run(() => RunFfmpeg(args), _cts.Token);
+        _mixDirty = false;
+        return File.Exists(_mixPath) ? _mixPath : null;
+    }
+
+    private void RunFfmpeg(IReadOnlyList<string> args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(_ffmpegPath)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi);
+        if (p is null) return;
+        _ = p.StandardError.ReadToEnd(); // drain so ffmpeg doesn't block on a full pipe
+        p.WaitForExit();
     }
 
     private void StopPreviewAudio() => DisposeAudioPlayer();
@@ -1432,21 +1474,27 @@ public partial class TimelineEditorWindow : Window
         catch { /* no waveform — the lane just shows a flat baseline */ }
     }
 
-    // Keep the audio aligned to the video's source playhead: it drifts (frame-paced video vs wall-clock audio)
-    // and jumps at cuts, so re-seek only once it diverges past the threshold to avoid per-tick stutter.
+    // Keep the mix aligned to the video's edited (output) playhead: it drifts (frame-paced video vs wall-clock
+    // audio), so re-seek only once it diverges past the threshold to avoid per-tick stutter.
     private void SyncPreviewAudio()
     {
         var player = _audioPlayer;
         if (player is null || !player.IsPlaying) return;
         var actual = (long)player.Position.TotalMilliseconds;
-        if (Math.Abs(actual - _playheadSourceMs) > AudioResyncMs)
-            player.Position = TimeSpan.FromMilliseconds(_playheadSourceMs);
+        if (Math.Abs(actual - _currentEditedMs) > AudioResyncMs)
+            player.Position = TimeSpan.FromMilliseconds(_currentEditedMs);
     }
 
     private void DisposeAudioPlayer()
     {
         _audioPlayer?.Dispose();
         _audioPlayer = null;
+    }
+
+    private void DeleteMix()
+    {
+        try { if (_mixPath is not null && File.Exists(_mixPath)) File.Delete(_mixPath); }
+        catch { /* best effort */ }
     }
 
     // One timer tick = consume one streamed frame, advancing the edited clock by exactly one frame.

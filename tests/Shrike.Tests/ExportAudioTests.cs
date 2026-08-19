@@ -147,6 +147,42 @@ public class ExportAudioTests
     }
 
     [Fact]
+    public void BuildAudioMix_makes_an_audio_only_pcm_command()
+    {
+        var track = Track(Narration(0, 4_000, path: "a.wav"), Narration(5_000, 3_000, path: "b.wav"));
+        var s = string.Join(" ", ExportCommand.BuildAudioMix(track, "mix.wav"));
+
+        Assert.Contains("-i a.wav", s);
+        Assert.Contains("-i b.wav", s);
+        Assert.Contains("[0:a]", s);   // audio-only: inputs start at 0, not 1
+        Assert.Contains("[1:a]", s);
+        Assert.Contains("amix=inputs=2:normalize=0[aout]", s);
+        Assert.Contains("-map [aout]", s);
+        Assert.Contains("-c:a pcm_s16le", s);
+        Assert.EndsWith("mix.wav", s);
+        Assert.DoesNotContain("0:v", s); // no video
+    }
+
+    [Fact]
+    public void BuildAudioMix_single_clip_uses_input_zero()
+    {
+        var s = string.Join(" ", ExportCommand.BuildAudioMix(Track(Narration(1_000, 2_000)), "mix.wav"));
+        Assert.Contains("[0:a]atrim=start=0:end=2", s);
+        Assert.Contains("adelay=1000:all=1", s);
+        Assert.Contains("-map [a0]", s);
+        Assert.DoesNotContain("amix", s);
+    }
+
+    [Fact]
+    public void BuildAudioMix_excludes_muted_and_empty()
+    {
+        var track = new AudioTrack([Narration(0, 3_000) with { Muted = true }]);
+        var s = string.Join(" ", ExportCommand.BuildAudioMix(track, "mix.wav"));
+        Assert.DoesNotContain("-map", s);   // nothing audible → no filter/map
+        Assert.DoesNotContain("-i", s);
+    }
+
+    [Fact]
     public void Estimate_adds_audio_bytes_for_h264()
     {
         var track = Track(Narration(0, 10_000)); // 10s of narration
