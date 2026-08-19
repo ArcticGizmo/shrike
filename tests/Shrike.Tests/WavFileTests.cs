@@ -52,6 +52,20 @@ public class WavFileTests
     }
 
     [Fact]
+    public void ReadInfo_returns_format_and_length_without_reading_samples()
+    {
+        using var ms = new MemoryStream();
+        var fmt = AudioFormat.Default; // 192000 bytes/sec
+        using (var w = new WavWriter(ms, fmt)) w.Write(Ramp(192_000)); // exactly 1 second
+        ms.Position = 0;
+
+        var (format, dataBytes) = WavFile.ReadInfo(ms);
+        Assert.Equal(fmt, format);
+        Assert.Equal(192_000, dataBytes);
+        Assert.Equal(1000, format.BytesToMs(dataBytes));
+    }
+
+    [Fact]
     public void Reading_a_non_riff_stream_throws()
     {
         using var ms = new MemoryStream(new byte[64]); // zeros, no RIFF magic

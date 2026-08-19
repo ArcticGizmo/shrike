@@ -24,6 +24,55 @@ public static class WavFile
         return Read(s);
     }
 
+    /// <summary>Read just the format and PCM byte length without loading the samples — cheap for a long
+    /// recording's sidecar when only the duration/format is needed (the data chunk is skipped, not read).</summary>
+    public static (AudioFormat Format, long DataBytes) ReadInfo(string path)
+    {
+        using var s = File.OpenRead(path);
+        return ReadInfo(s);
+    }
+
+    /// <summary>Read format + PCM length from a stream positioned at the RIFF header, without reading the PCM.</summary>
+    public static (AudioFormat Format, long DataBytes) ReadInfo(Stream stream)
+    {
+        Span<byte> hdr = stackalloc byte[12];
+        ReadExactly(stream, hdr);
+        if (hdr[0] != 'R' || hdr[1] != 'I' || hdr[2] != 'F' || hdr[3] != 'F' ||
+            hdr[8] != 'W' || hdr[9] != 'A' || hdr[10] != 'V' || hdr[11] != 'E')
+            throw new InvalidDataException("Not a RIFF/WAVE stream.");
+
+        AudioFormat? format = null;
+        Span<byte> chunkHdr = stackalloc byte[8];
+        while (TryReadExactly(stream, chunkHdr))
+        {
+            var id = System.Text.Encoding.ASCII.GetString(chunkHdr[..4]);
+            var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(chunkHdr[4..]);
+
+            if (id == "fmt ")
+            {
+                var fmt = new byte[size];
+                ReadExactly(stream, fmt);
+                var channels = BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(2));
+                var sampleRate = (int)BinaryPrimitives.ReadUInt32LittleEndian(fmt.AsSpan(4));
+                var bits = BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(14));
+                format = new AudioFormat(sampleRate, channels, bits);
+                if (size % 2 == 1) stream.Seek(1, SeekOrigin.Current);
+            }
+            else if (id == "data")
+            {
+                if (format is not { } f) throw new InvalidDataException("WAV data before fmt.");
+                return (f, size); // stop here — don't read the samples
+            }
+            else
+            {
+                stream.Seek(size + (size % 2), SeekOrigin.Current);
+            }
+        }
+
+        if (format is not { } fmt2) throw new InvalidDataException("WAV missing fmt chunk.");
+        return (fmt2, 0);
+    }
+
     /// <summary>Read PCM WAV from a stream positioned at the RIFF header.</summary>
     public static (AudioFormat Format, byte[] Pcm) Read(Stream stream)
     {
