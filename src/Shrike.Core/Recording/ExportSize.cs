@@ -1,3 +1,5 @@
+using Shrike.Core.Audio;
+
 namespace Shrike.Core.Recording;
 
 /// <summary>
@@ -12,36 +14,40 @@ public static class ExportSize
     private const double H264BppAtCrf23 = 0.10;
     private const double H265BppAtCrf28 = 0.05;
 
-    /// <summary>Estimated output size in bytes, or null when it can't be modelled (e.g. stream-copy).</summary>
+    // AAC audio bitrate the mux targets (see ExportCommand.AudioCodecArgs).
+    private const double AudioBitsPerSecond = 160_000;
+
+    /// <summary>Estimated output size in bytes, or null when it can't be modelled (e.g. stream-copy). When an
+    /// audible <paramref name="audio"/> track is present on a format that carries audio, its AAC stream is
+    /// added on top of the video estimate.</summary>
     public static long? EstimateBytes(ExportProfile profile, int width, int height, int fps, long keptDurationMs,
-        long? sourceFileBytes = null, long? sourceDurationMs = null)
+        long? sourceFileBytes = null, long? sourceDurationMs = null, AudioTrack? audio = null)
     {
         var seconds = keptDurationMs / 1000.0;
         if (seconds <= 0 || width <= 0 || height <= 0 || fps <= 0) return 0;
 
-        switch (profile.Codec)
+        long? video = profile.Codec switch
         {
-            case ExportCodec.Copy:
-                // No re-encode: it's the same bitrate as the source, scaled by how much you kept.
-                if (sourceFileBytes is { } bytes && sourceDurationMs is > 0)
-                    return (long)(bytes * (keptDurationMs / (double)sourceDurationMs));
-                return null;
+            // No re-encode: same bitrate as the source, scaled by how much you kept.
+            ExportCodec.Copy => sourceFileBytes is { } bytes && sourceDurationMs is > 0
+                ? (long)(bytes * (keptDurationMs / (double)sourceDurationMs))
+                : null,
+            ExportCodec.H264 => Bpp(H264BppAtCrf23, 23, profile.Crf, width, height, fps, seconds),
+            ExportCodec.H265 => Bpp(H265BppAtCrf28, 28, profile.Crf, width, height, fps, seconds),
+            // Lossy animated image — in the H.265 ballpark for these clips.
+            ExportCodec.WebP => Bpp(0.06, 28, 28, width, height, fps, seconds),
+            // Palette + LZW: much heavier per pixel, and largely quality-independent.
+            ExportCodec.Gif => (long)(0.20 * width * height * fps * seconds),
+            _ => null,
+        };
 
-            case ExportCodec.H264:
-                return Bpp(H264BppAtCrf23, 23, profile.Crf, width, height, fps, seconds);
-            case ExportCodec.H265:
-                return Bpp(H265BppAtCrf28, 28, profile.Crf, width, height, fps, seconds);
-
-            case ExportCodec.WebP:
-                // Lossy animated image — in the H.265 ballpark for these clips.
-                return Bpp(0.06, 28, 28, width, height, fps, seconds);
-            case ExportCodec.Gif:
-                // Palette + LZW: much heavier per pixel, and largely quality-independent.
-                return (long)(0.20 * width * height * fps * seconds);
-
-            default:
-                return null;
+        if (video is { } v && audio is { IsEmpty: false }
+            && profile.Codec is ExportCodec.H264 or ExportCodec.H265 or ExportCodec.Copy)
+        {
+            var audioSeconds = Math.Min(audio.DurationMs, keptDurationMs) / 1000.0;
+            return v + (long)(AudioBitsPerSecond / 8.0 * audioSeconds);
         }
+        return video;
     }
 
     // Halving CRF steps of 6 roughly double the bitrate; that's the knob's shape.
