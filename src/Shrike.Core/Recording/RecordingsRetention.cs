@@ -62,8 +62,8 @@ public static class RecordingsRetention
         {
             if (TryDelete(f.Path)) deleted++;
             TryDelete(AppStorage.SidecarFor(f.Path)); // the track sidecar shares the recording's fate
-            TryDelete(AppStorage.MicWavFor(f.Path));  // audio sidecars go with it too
-            TryDelete(AppStorage.SystemWavFor(f.Path));
+            foreach (var suffix in AppStorage.AudioSidecarSuffixes) // audio sidecars go with it too
+                TryDelete(Path.ChangeExtension(f.Path, suffix));
         }
 
         // Clear orphaned sidecars (a sidecar whose recording is gone).

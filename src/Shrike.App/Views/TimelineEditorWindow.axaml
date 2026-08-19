@@ -57,6 +57,9 @@
                         HorizontalContentAlignment="Center" Content="▶ Play" Click="OnPlayPause" />
                 <TextBlock Grid.Column="1" Name="TimeLabel" Classes="hint" VerticalAlignment="Center"
                            Margin="12,0,0,0" FontFamily="Consolas,monospace" Text="00:00 / 00:00" />
+                <Button Grid.Column="2" Name="VoiceoverButton" Classes="tool" HorizontalAlignment="Left"
+                        Margin="16,0,0,0" Content="● Voiceover" Click="OnVoiceover" IsVisible="False"
+                        ToolTip.Tip="Record narration over the playing preview" />
                 <TextBlock Grid.Column="3" Name="KeptLabel" Classes="hint" VerticalAlignment="Center" />
             </Grid>
         </Grid>

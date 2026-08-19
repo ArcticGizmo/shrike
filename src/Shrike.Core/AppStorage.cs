@@ -46,6 +46,11 @@ public static class AppStorage
     public static string SystemWavFor(string recordingPath) =>
         System.IO.Path.ChangeExtension(recordingPath, ".sys.wav");
 
+    /// <summary>The in-editor voiceover sidecar (<c>name.mp4</c> → <c>name.vo.wav</c>). One per clip for now;
+    /// re-recording replaces it. Multiple takes / punch-in (M1b) will extend this.</summary>
+    public static string VoiceoverWavFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".vo.wav");
+
     /// <summary>The audio sidecar suffixes, for the retention sweep to evict alongside a recording.</summary>
-    public static IReadOnlyList<string> AudioSidecarSuffixes { get; } = [".mic.wav", ".sys.wav"];
+    public static IReadOnlyList<string> AudioSidecarSuffixes { get; } = [".mic.wav", ".sys.wav", ".vo.wav"];
 }

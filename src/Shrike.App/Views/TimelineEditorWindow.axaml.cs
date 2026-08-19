@@ -63,7 +63,15 @@ public partial class TimelineEditorWindow : Window
     private IAudioPlayer? _audioPlayer;
     private string? _previewAudioPath;
     private WaveformLane? _waveLane;
+    private string? _currentWaveformPath;
     private const long AudioResyncMs = 120;
+
+    // In-editor voiceover: record the mic over the playing preview into a single .vo.wav clip.
+    private Button? _voiceoverButton;
+    private AudioCaptureRecorder? _voiceoverRecorder;
+    private string? _voiceoverPath;
+    private long _voiceoverStartMs;
+    private bool _voiceoverActive;
 
     // Scrub preview pump: coalesces rapid seek requests to one in-flight ffmpeg extraction.
     private long _wantMs = -1;
@@ -182,7 +190,7 @@ public partial class TimelineEditorWindow : Window
         SetupEffectsLane();
         InitTimelineView();
 
-        Closed += (_, _) => { ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); DisposeAudioPlayer(); };
+        Closed += (_, _) => { _voiceoverActive = false; _voiceoverRecorder?.Dispose(); ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); DisposeAudioPlayer(); };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -259,15 +267,8 @@ public partial class TimelineEditorWindow : Window
         else
             _audioClips.AddRange(SeedAudioFromSidecars());
 
-        // The clip previewed in sync with the video: the first audible live-capture sidecar (usually the mic).
-        _previewAudioPath = _audioClips
-            .FirstOrDefault(c => !c.Muted && c.Origin == AudioOrigin.LiveCapture)?.SidecarPath;
-
-        if (_waveLane is not null)
-        {
-            _waveLane.IsVisible = _audioClips.Count > 0;
-            LoadWaveformAsync(_audioClips.FirstOrDefault(c => c.Origin == AudioOrigin.LiveCapture)?.SidecarPath);
-        }
+        RefreshAudioUi();
+        if (_voiceoverButton is not null) _voiceoverButton.IsVisible = !string.IsNullOrEmpty(_source.Path);
 
         // Seed the lane from the loaded effects, and mark where clicks fired (snap targets).
         if (_effectsLane is not null)
@@ -378,6 +379,8 @@ public partial class TimelineEditorWindow : Window
             _effectsLane.ZoomRequested += OnTimelineZoom;
             _effectsLane.PanRequested += OnTimelinePan;
         }
+
+        _voiceoverButton = this.FindControl<Button>("VoiceoverButton");
 
         _waveLane = this.FindControl<WaveformLane>("WaveLane");
         if (_waveLane is not null)
@@ -594,7 +597,7 @@ public partial class TimelineEditorWindow : Window
         UpdateAudioGainLabel(gainDb);
 
         // A muted primary silences the preview; recompute what plays and cut it now if nothing is audible.
-        _previewAudioPath = _audioClips.FirstOrDefault(c => !c.Muted && c.Origin == AudioOrigin.LiveCapture)?.SidecarPath;
+        RefreshAudioUi();
         if (_previewAudioPath is null) StopPreviewAudio();
     }
 
@@ -603,6 +606,82 @@ public partial class TimelineEditorWindow : Window
         if (_audioGainValue is null) return;
         _audioGainValue.Text = (gainDb >= 0 ? "+" : "") +
             gainDb.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " dB";
+    }
+
+    // ---- in-editor voiceover (B0) ----
+
+    private void OnVoiceover(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_voiceoverActive) StopVoiceover();
+        else StartVoiceover();
+    }
+
+    /// <summary>Record the mic over the playing preview into the single <c>.vo.wav</c> clip, starting at the
+    /// current output position. Best-effort: a mic that won't open just cancels the take.</summary>
+    private void StartVoiceover()
+    {
+        if (_voiceoverActive || _timeline.KeptDurationMs <= 0 || string.IsNullOrEmpty(_source.Path)) return;
+
+        StopPlayback();
+        _voiceoverStartMs = _currentEditedMs;
+        _voiceoverPath = Shrike.Core.AppStorage.VoiceoverWavFor(_source.Path);
+        var deviceId = Shrike.App.Services.SettingsService.Instance?.Current.MicDeviceId;
+
+        try
+        {
+            var source = WasapiAudioSource.Microphone(deviceId);
+            var writer = new WavWriter(_voiceoverPath, source.Format);
+            _voiceoverRecorder = new AudioCaptureRecorder(source, writer, () => _voiceoverActive ? 0L : (long?)null);
+            _voiceoverActive = true;
+            _voiceoverRecorder.Start();
+        }
+        catch
+        {
+            _voiceoverActive = false;
+            _voiceoverRecorder = null;
+            return;
+        }
+
+        if (_voiceoverButton is not null) _voiceoverButton.Content = "■ Stop voiceover";
+        StartPlayback(); // narrate over the playing preview (its audio is suppressed while recording)
+    }
+
+    private void StopVoiceover()
+    {
+        if (!_voiceoverActive) return;
+        _voiceoverActive = false;
+        StopPlayback();
+
+        var recorder = _voiceoverRecorder;
+        _voiceoverRecorder = null;
+        try { recorder?.Stop(); recorder?.Dispose(); } catch { /* best effort — Dispose finalises the WAV */ }
+        if (_voiceoverButton is not null) _voiceoverButton.Content = "● Voiceover";
+
+        if (_voiceoverPath is null || !File.Exists(_voiceoverPath)) return;
+
+        long durationMs;
+        AudioFormat format;
+        try { var (fmt, bytes) = WavFile.ReadInfo(_voiceoverPath); format = fmt; durationMs = fmt.BytesToMs(bytes); }
+        catch { return; }
+        if (durationMs <= 0) { try { File.Delete(_voiceoverPath); } catch { /* ignore */ } return; }
+
+        // One voiceover clip for now — a new take replaces the old.
+        _audioClips.RemoveAll(c => c.Origin == AudioOrigin.EditorVoiceover);
+        _audioClips.Add(new AudioClip
+        {
+            SidecarPath = _voiceoverPath,
+            Format = format,
+            OutputStartMs = _voiceoverStartMs,
+            SidecarOffsetMs = 0,
+            DurationMs = durationMs,
+            Origin = AudioOrigin.EditorVoiceover,
+        });
+
+        _selectedAudioIndex = -1;
+        if (_audioEditor is not null) _audioEditor.IsVisible = false;
+        _currentWaveformPath = null; // force the waveform to reload for the new clip
+        RefreshAudioUi();
+        PersistEdit(); // save now so the voiceover survives even without further edits
     }
 
     // ---- inline canvas editing ----
@@ -1301,10 +1380,25 @@ public partial class TimelineEditorWindow : Window
 
     // ---- preview audio (WYSIWYG) ----
 
+    // The audio the editor previews + draws follows the first audible clip (mic or voiceover); the waveform
+    // only reloads when that path actually changes, so a gain-slider drag doesn't re-read the file.
+    private void RefreshAudioUi()
+    {
+        _previewAudioPath = _audioClips.FirstOrDefault(c => !c.Muted)?.SidecarPath;
+        if (_waveLane is not null) _waveLane.IsVisible = _audioClips.Count > 0;
+
+        var wavePath = _previewAudioPath ?? _audioClips.FirstOrDefault()?.SidecarPath;
+        if (wavePath != _currentWaveformPath)
+        {
+            _currentWaveformPath = wavePath;
+            LoadWaveformAsync(wavePath);
+        }
+    }
+
     private void StartPreviewAudio()
     {
         DisposeAudioPlayer();
-        if (_previewAudioPath is null) return;
+        if (_previewAudioPath is null || _voiceoverActive) return; // don't monitor the mix while recording VO
         try
         {
             var player = new NAudioPlayer();
