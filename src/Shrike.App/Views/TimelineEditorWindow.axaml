@@ -108,6 +108,18 @@
                 <TextBlock Name="PaneEmpty" Classes="hint" TextWrapping="Wrap"
                            Text="Select an effect on the timeline to edit it, or right-click the timeline to add one." />
 
+                <!-- Timing (every effect). -->
+                <Grid Name="TimingEditor" ColumnDefinitions="*,*" IsVisible="False">
+                    <StackPanel Grid.Column="0" Spacing="5" Margin="0,0,4,0">
+                        <TextBlock Text="Start (s)" Classes="hint" />
+                        <NumericUpDown Name="StartInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="5" Margin="4,0,0,0">
+                        <TextBlock Text="End (s)" Classes="hint" />
+                        <NumericUpDown Name="EndInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
+                    </StackPanel>
+                </Grid>
+
                 <!-- Zoom editor. -->
                 <StackPanel Name="ZoomEditor" Spacing="16" IsVisible="False">
                     <StackPanel Spacing="5">

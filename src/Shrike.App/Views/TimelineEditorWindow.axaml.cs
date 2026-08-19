@@ -79,6 +79,9 @@ public partial class TimelineEditorWindow : Window
     private Control? _zoomEditor;
     private Control? _spotlightEditor;
     private Control? _visibilityEditor;
+    private Control? _timingEditor;
+    private NumericUpDown? _startInput;
+    private NumericUpDown? _endInput;
     private Button? _deleteButton;
     private NumericUpDown? _zoomAmountInput;
     private NumericUpDown? _easeInInput;
@@ -253,6 +256,9 @@ public partial class TimelineEditorWindow : Window
         _zoomEditor = this.FindControl<StackPanel>("ZoomEditor");
         _spotlightEditor = this.FindControl<StackPanel>("SpotlightEditor");
         _visibilityEditor = this.FindControl<StackPanel>("VisibilityEditor");
+        _timingEditor = this.FindControl<Grid>("TimingEditor");
+        _startInput = this.FindControl<NumericUpDown>("StartInput");
+        _endInput = this.FindControl<NumericUpDown>("EndInput");
         _deleteButton = this.FindControl<Button>("DeleteZoomButton");
         _zoomAmountInput = this.FindControl<NumericUpDown>("ZoomAmountInput");
         _easeInInput = this.FindControl<NumericUpDown>("EaseInInput");
@@ -285,6 +291,8 @@ public partial class TimelineEditorWindow : Window
             _spotlightOpacityInput.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnSpotlightPropsChanged(); };
         if (_spotlightRadiusInput is not null) _spotlightRadiusInput.ValueChanged += (_, _) => OnSpotlightPropsChanged();
         if (_visibilityInput is not null) _visibilityInput.IsCheckedChanged += (_, _) => OnVisibilityPropsChanged();
+        if (_startInput is not null) _startInput.ValueChanged += (_, _) => OnTimingChanged();
+        if (_endInput is not null) _endInput.ValueChanged += (_, _) => OnTimingChanged();
 
         _canvasSurface = this.FindControl<AnnotationSurface>("CanvasSurface");
         _canvasEditor = this.FindControl<StackPanel>("CanvasEditor");
@@ -313,7 +321,23 @@ public partial class TimelineEditorWindow : Window
     private void OnEffectsChanged()
     {
         _authoredZoom = ZoomTrackFromEffects();
+        RefreshTimingInputs();
         UpdateCursorOverlay();
+    }
+
+    // Mirror the selected effect's start/end into the pane inputs (e.g. after a lane drag), unless the user is
+    // currently typing in them.
+    private void RefreshTimingInputs()
+    {
+        if (_effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count) return;
+        if (_startInput?.IsKeyboardFocusWithin == true || _endInput?.IsKeyboardFocusWithin == true) return;
+        var ev = _effects[i];
+        _suppressInspector = true;
+        if (_startInput is not null) _startInput.Value = (decimal)(ev.StartMs / 1000.0);
+        if (_endInput is not null) _endInput.Value = (decimal)(ev.EndMs / 1000.0);
+        _suppressInspector = false;
     }
 
     private void OnEffectSelectionChanged(int index)
@@ -334,6 +358,7 @@ public partial class TimelineEditorWindow : Window
         if (_spotlightEditor is not null) _spotlightEditor.IsVisible = spot is not null;
         if (_visibilityEditor is not null) _visibilityEditor.IsVisible = vis is not null;
         if (_canvasEditor is not null) _canvasEditor.IsVisible = canvas is not null;
+        if (_timingEditor is not null) _timingEditor.IsVisible = effect is not null; // start/end for every kind
         if (_deleteButton is not null) _deleteButton.IsVisible = effect is not null;
         if (_paneEmpty is not null)
         {
@@ -349,6 +374,11 @@ public partial class TimelineEditorWindow : Window
         _preview.SetTargetBox(zoom is not null ? EventBox(zoom) : null);
 
         _suppressInspector = true;
+        if (effect is not null)
+        {
+            if (_startInput is not null) _startInput.Value = (decimal)(effect.StartMs / 1000.0);
+            if (_endInput is not null) _endInput.Value = (decimal)(effect.EndMs / 1000.0);
+        }
         if (zoom is not null)
         {
             if (_zoomAmountInput is not null) _zoomAmountInput.Value = (decimal)zoom.Zoom;
@@ -531,6 +561,23 @@ public partial class TimelineEditorWindow : Window
             Radius = (int)Math.Clamp((double)(_spotlightRadiusInput?.Value ?? ev.Radius), 12, 160),
         };
         UpdateCursorOverlay();
+    }
+
+    // The Start/End inputs changed — retime the selected effect (any kind), clamped to the clip + a floor.
+    private void OnTimingChanged()
+    {
+        if (_suppressInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count) return;
+        const long minDur = 200;
+        var dur = _timeline.DurationMs;
+        var start = (long)Math.Round((double)(_startInput?.Value ?? 0) * 1000);
+        var end = (long)Math.Round((double)(_endInput?.Value ?? 0) * 1000);
+        start = Math.Clamp(start, 0, Math.Max(0, dur - minDur));
+        end = Math.Clamp(end, start + minDur, dur);
+        _effects[i] = _effects[i] with { StartMs = start, EndMs = end };
+        OnEffectsChanged();
+        _effectsLane.Refresh();
     }
 
     // The visibility editor changed — flip the selected span between shown/hidden.
