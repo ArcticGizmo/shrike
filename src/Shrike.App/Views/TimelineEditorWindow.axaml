@@ -34,7 +34,12 @@
         </Style>
     </Window.Styles>
 
-    <Grid ColumnDefinitions="*,Auto">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="360" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="248" MinWidth="200" MaxWidth="480" />
+        </Grid.ColumnDefinitions>
         <Grid Grid.Column="0" RowDefinitions="3*,Auto,2*" Margin="14">
         <!-- Preview + transport — resizable against the timeline below via the splitter. -->
         <Grid Grid.Row="0" RowDefinitions="*,Auto" MinHeight="180">
@@ -110,10 +115,15 @@
         </Grid>
         </Grid>
 
-        <!-- Right pane: always present (fixed column, so selecting an effect never reflows the editor). Its
-             content swaps to the selected effect's editor, or an empty-state hint when nothing is selected. -->
-        <Border Grid.Column="1" Name="PropsPane" IsVisible="False" Width="248"
+        <!-- Draggable divider so the properties pane can be widened/narrowed. -->
+        <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns"
+                      Background="#241C12" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+
+        <!-- Right pane: always present (its column is reserved, so selecting an effect never reflows the editor).
+             Content swaps to the selected effect's/segment's editor, or an empty-state hint. Resizable. -->
+        <Border Grid.Column="2" Name="PropsPane" IsVisible="False"
                 Background="#1A150E" BorderBrush="#322A1E" BorderThickness="1,0,0,0" Padding="16">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="16">
                 <TextBlock Name="PaneHeader" Text="✦ Effect" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" />
 
@@ -122,16 +132,16 @@
                            Text="Select an effect on the timeline to edit it, or right-click the timeline to add one." />
 
                 <!-- Timing (every effect). -->
-                <Grid Name="TimingEditor" ColumnDefinitions="*,*" IsVisible="False">
-                    <StackPanel Grid.Column="0" Spacing="5" Margin="0,0,4,0">
+                <StackPanel Name="TimingEditor" Spacing="12" IsVisible="False">
+                    <StackPanel Spacing="5">
                         <TextBlock Text="Start (s)" Classes="hint" />
                         <NumericUpDown Name="StartInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="5" Margin="4,0,0,0">
+                    <StackPanel Spacing="5">
                         <TextBlock Text="End (s)" Classes="hint" />
                         <NumericUpDown Name="EndInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
                     </StackPanel>
-                </Grid>
+                </StackPanel>
 
                 <!-- Zoom editor. -->
                 <StackPanel Name="ZoomEditor" Spacing="16" IsVisible="False">
@@ -230,16 +240,14 @@
 
                 <!-- Segment editor (a strip span selected by double-click). -->
                 <StackPanel Name="SegmentEditor" Spacing="12" IsVisible="False">
-                    <Grid ColumnDefinitions="*,*">
-                        <StackPanel Grid.Column="0" Spacing="5" Margin="0,0,4,0">
-                            <TextBlock Text="Start (s)" Classes="hint" />
-                            <NumericUpDown Name="SegStartInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="5" Margin="4,0,0,0">
-                            <TextBlock Text="End (s)" Classes="hint" />
-                            <NumericUpDown Name="SegEndInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
-                        </StackPanel>
-                    </Grid>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Start (s)" Classes="hint" />
+                        <NumericUpDown Name="SegStartInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="End (s)" Classes="hint" />
+                        <NumericUpDown Name="SegEndInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
+                    </StackPanel>
                     <CheckBox Name="SegKeepToggle" Content="Keep this span" Foreground="#B8AE9C" />
                     <Button Name="RemoveSplitButton" Classes="tool" Content="Remove split" HorizontalAlignment="Stretch" />
                     <TextBlock Classes="hint" TextWrapping="Wrap"
@@ -249,6 +257,7 @@
                 <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"
                         HorizontalAlignment="Stretch" IsVisible="False" />
             </StackPanel>
+            </ScrollViewer>
         </Border>
     </Grid>
 </Window>

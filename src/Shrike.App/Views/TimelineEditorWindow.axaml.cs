@@ -285,7 +285,7 @@ public partial class TimelineEditorWindow : Window
         _zoomEditor = this.FindControl<StackPanel>("ZoomEditor");
         _spotlightEditor = this.FindControl<StackPanel>("SpotlightEditor");
         _visibilityEditor = this.FindControl<StackPanel>("VisibilityEditor");
-        _timingEditor = this.FindControl<Grid>("TimingEditor");
+        _timingEditor = this.FindControl<StackPanel>("TimingEditor");
         _startInput = this.FindControl<NumericUpDown>("StartInput");
         _endInput = this.FindControl<NumericUpDown>("EndInput");
         _segmentEditor = this.FindControl<StackPanel>("SegmentEditor");
