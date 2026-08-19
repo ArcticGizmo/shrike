@@ -47,9 +47,8 @@ public partial class TimelineEditorWindow : Window
     private long _currentEditedMs;
     private long _viewStartMs;
     private long _viewEndMs;   // 0 until initialised → full-clip view
-    private long? _markInMs;
-    private long? _markOutMs;
     private bool _playing;
+    private Border? _selectionBar;
 
     // Streaming playback: one persistent ffmpeg feeds frames into this reused bitmap.
     private FramePlayer? _player;
@@ -137,10 +136,19 @@ public partial class TimelineEditorWindow : Window
         }
 
         _strip.Timeline = _timeline;
-        _strip.Seeked += OnSeek;
-        _strip.Scrubbing += OnScrub;
+        _strip.Seeked += OnSeek;                 // a plain click on the strip seeks
+        _strip.RangeSelected += OnRangeSelected; // drag on the strip selects a range to cut/keep
+        _strip.SelectionCleared += OnSelectionCleared;
+        _strip.TrimHeadTo += OnTrimHead;         // drag the end handles to trim head/tail
+        _strip.TrimTailTo += OnTrimTail;
+        _strip.RestoreRequested += ms => { _timeline.RestoreSegmentAt(ms); UpdateLabels(); };
         _strip.ZoomRequested += OnTimelineZoom;
         _strip.PanRequested += OnTimelinePan;
+
+        _selectionBar = this.FindControl<Border>("SelectionBar");
+        if (this.FindControl<Button>("CutSelectionButton") is { } cutBtn) cutBtn.Click += (_, _) => CutSelection();
+        if (this.FindControl<Button>("KeepSelectionButton") is { } keepBtn) keepBtn.Click += (_, _) => KeepSelection();
+        if (this.FindControl<Button>("ClearSelectionButton") is { } clrBtn) clrBtn.Click += (_, _) => DropSelection();
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
         // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
@@ -1037,6 +1045,13 @@ public partial class TimelineEditorWindow : Window
             return;
         }
 
+        // A drag-selection on the strip: Esc clears it, Delete cuts it (when no effect is selected).
+        if (_strip.Selection is not null && (_effectsLane?.SelectedIndex ?? -1) < 0)
+        {
+            if (e.Key == Avalonia.Input.Key.Escape) { DropSelection(); e.Handled = true; return; }
+            if (e.Key is Avalonia.Input.Key.Delete or Avalonia.Input.Key.Back) { CutSelection(); e.Handled = true; return; }
+        }
+
         // Delete / nudge the selected effect (arrow keys shift it in source time).
         var sel = _effectsLane?.SelectedIndex ?? -1;
         if (sel < 0 || sel >= _effects.Count) return;
@@ -1150,55 +1165,69 @@ public partial class TimelineEditorWindow : Window
         _preview.Show(bmp);
     }
 
-    // ---- editing ----
+    // ---- editing (direct trim: handles + drag-select) ----
 
-    private void OnMarkIn(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private const long MinKeptMs = 200;
+
+    // Dragging the head trim-handle: set where the kept region starts, preserving interior cuts.
+    private void OnTrimHead(long ms)
     {
-        _markInMs = _playheadSourceMs;
-        if (_markOutMs <= _markInMs) _markOutMs = null;
-        _strip.MarkInMs = _markInMs; _strip.MarkOutMs = _markOutMs;
-        _strip.Refresh();
+        var kr = _timeline.KeptRanges;
+        if (kr.Count == 0) return;
+        long start = kr[0].StartMs, end = kr[^1].EndMs;
+        ms = Math.Clamp(ms, 0, end - MinKeptMs);
+        if (ms > start) _timeline.Cut(start, ms);
+        else if (ms < start) _timeline.Keep(ms, start);
     }
 
-    private void OnMarkOut(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnTrimTail(long ms)
     {
-        _markOutMs = _playheadSourceMs;
-        if (_markInMs >= _markOutMs) _markInMs = null;
-        _strip.MarkInMs = _markInMs; _strip.MarkOutMs = _markOutMs;
-        _strip.Refresh();
+        var kr = _timeline.KeptRanges;
+        if (kr.Count == 0) return;
+        long start = kr[0].StartMs, end = kr[^1].EndMs;
+        ms = Math.Clamp(ms, start + MinKeptMs, _timeline.DurationMs);
+        if (ms < end) _timeline.Cut(ms, end);
+        else if (ms > end) _timeline.Keep(end, ms);
     }
 
-    private void OnCut(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    // A range was drag-selected on the strip — position + show the floating Cut / Keep bar over it.
+    private void OnRangeSelected(long a, long b)
     {
-        if (_markInMs is { } a && _markOutMs is { } b) _timeline.Cut(a, b);
-        else _timeline.DeleteSegmentAt(_playheadSourceMs);   // no marks → drop the span under the playhead
-        ClearMarks();
+        if (_selectionBar is null) return;
+        _selectionBar.IsVisible = true;
+        var mid = (_strip.MsToX(a) + _strip.MsToX(b)) / 2.0;
+        var barW = _selectionBar.Bounds.Width > 0 ? _selectionBar.Bounds.Width : 150;
+        _selectionBar.Margin = new Thickness(Math.Clamp(mid - barW / 2, 0, Math.Max(0, _strip.Bounds.Width - barW)), 0, 0, 0);
     }
 
-    private void OnKeepOnly(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnSelectionCleared()
     {
-        if (_markInMs is { } a && _markOutMs is { } b) _timeline.KeepOnly(a, b);
-        ClearMarks();
+        if (_selectionBar is not null) _selectionBar.IsVisible = false;
     }
 
-    private void OnRestoreAt(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void CutSelection()
     {
-        _timeline.RestoreSegmentAt(_playheadSourceMs);
-        ClearMarks();
+        if (_strip.Selection is { } sel) _timeline.Cut(sel.A, sel.B);
+        DropSelection();
+    }
+
+    private void KeepSelection()
+    {
+        if (_strip.Selection is { } sel) _timeline.KeepOnly(sel.A, sel.B);
+        DropSelection();
+    }
+
+    private void DropSelection()
+    {
+        _strip.ClearSelection();
+        OnSelectionCleared();
+        UpdateLabels();
     }
 
     private void OnResetAll(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _timeline.RestoreAll();
-        ClearMarks();
-    }
-
-    private void ClearMarks()
-    {
-        _markInMs = _markOutMs = null;
-        _strip.MarkInMs = _strip.MarkOutMs = null;
-        _strip.Refresh();
-        UpdateLabels();
+        DropSelection();
     }
 
     // ---- export ----
