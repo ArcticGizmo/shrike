@@ -22,9 +22,14 @@ phases are Avalonia UI + real-microphone verification.
 - ✅ **A3 — Export mux**: `ExportCommand` folds an `AudioTrack` into an ffmpeg `amix` graph; `ExportSize`
   counts the AAC stream; off-means-off preserved.
 - ✅ **A4 (persistence slice)** — `ClipEdit` v3 carries the audio track; forgiving v1/v2 migration.
-- ⏸️ **A2 — mic-check gate + record-flow wiring** (Avalonia UI, `WasapiAudioPlayer`, `CaptureController`).
-  Needs a real mic to verify + your eyes on the UX. **← next, paused for input.**
-- ⏸️ **A4 (rest)** — editor waveform lane, scrub-synced playback, gain/mute + lip-sync controls.
+- ✅ **A2 — mic-check dialog + record-flow wiring**: `MicCheckWindow` (device, live meter,
+  test-&-play-back, system-sound toggle) off a "Mic…" button on the setup HUD; `AudioLevelMonitor`,
+  `NAudioPlayer`, `AudioSidecarCapture`; settings + `.mic.wav`/`.sys.wav` sidecars + retention.
+  **Needs your real-mic test.** Softened the "record disabled until signal" hard gate to the
+  test-and-playback flow. Editor consumption of the sidecars is A4.
+- ⏸️ **A4 (rest)** — editor waveform lane, scrub-synced playback, gain/mute + lip-sync controls, and
+  seeding an `AudioClip` from the `.mic.wav`/`.sys.wav` sidecars into the edit doc so it exports.
+  **← next; UI + real-hardware.**
 
 ---
 
