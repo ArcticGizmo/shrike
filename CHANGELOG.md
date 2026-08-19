@@ -8,6 +8,25 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.1] - 2026-08-19
+
+- One unified **effects timeline** — right-click a lane to add any effect
+- Mouse **spotlight** effect — a glow that follows the cursor
+- Click **ripples** and **cursor visibility** are now timed effects, not clip-wide toggles
+- **Drawing canvas** — add boxes, arrows, text and redaction over a time range
+- Draw directly on the frame, right in the timeline editor
+- **Animate a drawing** in — fade, slide or pop
+- **Scroll to zoom and pan** the timeline (Ctrl / Shift + scroll)
+- The time ruler is now a **draggable playhead**
+- **Trim by dragging handles** on the filmstrip
+- **Split a clip into multiple cut/keep segments**, each editable on its own
+- Set any effect's or segment's **start and end by number**
+- Properties panel is always present and **resizable**
+- **Resizable preview** — drag the divider for more room to see effects
+- Cursor smoothness and size now live with the cursor effect
+
+---
+
 ## [v0.3.0] - 2026-08-18
 
 - Timeline zoom — place, drag and resize zoom events on a clip

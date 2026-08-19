@@ -1339,4 +1339,36 @@ public sealed class AnnotationSurface : UserControl
 
         return new CapturedImage(w, h, buffer, _image.Source, _image.CapturedAt);
     }
+
+    /// <summary>
+    /// Rasterise <b>only</b> the annotation layer (no base image) onto transparency at an arbitrary target
+    /// size — the sprite a video canvas effect blits per frame. Reuses the same <see cref="BuildControl"/>
+    /// path as the on-screen editor and export, so it stays WYSIWYG. Returns <b>premultiplied</b> BGRA
+    /// (top-down, length targetW*targetH*4), matching what a <c>CanvasCompositor</c> expects. Must run on the
+    /// UI thread (Avalonia render). Null if there's nothing to render.
+    /// </summary>
+    public byte[]? RenderAnnotationLayer(int targetW, int targetH)
+    {
+        if (_image is null || _document is null || targetW <= 0 || targetH <= 0) return null;
+        var scale = (double)targetW / _image.Width;
+
+        var layer = new Canvas { Width = targetW, Height = targetH, Background = null };
+        foreach (var annotation in _document.Items)
+        {
+            var control = BuildControl(annotation, scale);
+            if (control is not null) layer.Children.Add(control);
+        }
+
+        layer.Measure(new Size(targetW, targetH));
+        layer.Arrange(new Rect(0, 0, targetW, targetH));
+
+        var rtb = new RenderTargetBitmap(new PixelSize(targetW, targetH), new Vector(96, 96));
+        rtb.Render(layer); // untouched pixels stay fully transparent
+
+        var buffer = new byte[targetW * targetH * 4];
+        var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+        try { rtb.CopyPixels(new PixelRect(0, 0, targetW, targetH), handle.AddrOfPinnedObject(), buffer.Length, targetW * 4); }
+        finally { handle.Free(); }
+        return buffer;
+    }
 }

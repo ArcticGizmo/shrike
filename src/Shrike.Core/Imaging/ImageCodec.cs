@@ -39,6 +39,18 @@ public static class ImageCodec
         _ => throw new ArgumentOutOfRangeException(nameof(format)),
     };
 
+    /// <summary>Decode an encoded image (PNG/JPEG/WebP bytes) to a <see cref="CapturedImage"/> — the inverse of
+    /// <see cref="Encode"/>. Used to hand a decoded video frame to the annotation editor as its base image.
+    /// The result is straight, top-down BGRA at the image's native size.</summary>
+    public static CapturedImage DecodeToCaptured(byte[] bytes, DateTimeOffset? capturedAt = null)
+    {
+        using var img = Image.Load<Bgra32>(bytes);
+        var buffer = new byte[img.Width * img.Height * 4];
+        img.CopyPixelDataTo(buffer);
+        return new CapturedImage(img.Width, img.Height, buffer,
+            new PixelBounds(0, 0, img.Width, img.Height), capturedAt ?? DateTimeOffset.Now);
+    }
+
     /// <summary>Encode to the given format. <paramref name="quality"/> (1–100) applies to JPEG/WebP.</summary>
     public static byte[] Encode(CapturedImage image, ImageFormatKind format, int quality = 90)
     {

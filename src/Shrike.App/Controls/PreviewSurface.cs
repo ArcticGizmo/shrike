@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Shrike.Core.Recording;
 
 namespace Shrike.App.Controls;
 
@@ -18,11 +19,23 @@ public sealed class PreviewSurface : Control
     /// and stay the same on-screen size through zoom — matching how the export bakes them.</summary>
     public readonly record struct PreviewRipple(Point Center, double RadiusFraction, double ThicknessFraction, double Alpha);
 
+    /// <summary>A spotlight glow to preview: a soft radial halo under the cursor. Centre is normalised [0..1]
+    /// within the displayed frame; radius is a fraction of the drawn frame height, matching the export.</summary>
+    public readonly record struct PreviewSpotlight(Point Center, double RadiusFraction, Color Color, double Alpha);
+
     private IImage? _image;
     private Point? _cursor;   // optional overlay cursor, normalised [0..1] within the displayed (cropped) frame
     private Rect? _viewport;  // optional normalised source crop [0..1] — the zoom framing
     private double _cursorHeightFrac = 1.0 / 45.0; // overlay cursor height as a fraction of the drawn frame height
     private IReadOnlyList<PreviewRipple> _ripples = [];
+    private PreviewSpotlight? _spotlight;
+
+    /// <summary>A rendered canvas-effect layer to composite over the frame. <c>ContentSpace</c> layers ride the
+    /// zoom crop (drawn through the same source rect as the frame); screen-space layers are fixed over the fit
+    /// rect. <c>Transform</c> is the layer's animated move/scale/rotate/opacity for the current frame. The layer
+    /// bitmap is at source resolution.</summary>
+    public readonly record struct PreviewCanvas(IImage Layer, bool ContentSpace, LayerTransform Transform);
+    private IReadOnlyList<PreviewCanvas> _canvasLayers = [];
 
     // Zoom-aim: draw / move / resize a box on the frame to define a zoom event's focus + factor. The box is a
     // normalised square (the crop is always the frame's aspect ratio, so a square in normalised space), and
@@ -83,6 +96,20 @@ public sealed class PreviewSurface : Control
     public void SetRipples(IReadOnlyList<PreviewRipple> ripples)
     {
         _ripples = ripples;
+        InvalidateVisual();
+    }
+
+    /// <summary>Set the canvas-effect layers to composite over the frame (empty to clear), mirroring the export.</summary>
+    public void SetCanvasLayers(IReadOnlyList<PreviewCanvas> layers)
+    {
+        _canvasLayers = layers;
+        InvalidateVisual();
+    }
+
+    /// <summary>Overlay the spotlight glow active at the current time (null to clear), mirroring the export.</summary>
+    public void SetSpotlight(PreviewSpotlight? spotlight)
+    {
+        _spotlight = spotlight;
         InvalidateVisual();
     }
 
@@ -189,10 +216,12 @@ public sealed class PreviewSurface : Control
         var src = img.Size;
         if (src.Width <= 0 || src.Height <= 0) return;
 
-        // Source sub-rectangle (the zoom crop), in image pixels; whole frame when no viewport is set.
-        var srcRect = _viewport is { } v
-            ? new Rect(v.X * src.Width, v.Y * src.Height, v.Width * src.Width, v.Height * src.Height)
-            : new Rect(src);
+        // The zoom crop as a normalised rectangle (0..1); the whole frame when no viewport is set. Kept
+        // normalised so it maps onto both the frame image AND a canvas layer, which may differ in pixel size.
+        var nv = _viewport ?? new Rect(0, 0, 1, 1);
+
+        // Source sub-rectangle (the zoom crop), in the frame image's pixels.
+        var srcRect = new Rect(nv.X * src.Width, nv.Y * src.Height, nv.Width * src.Width, nv.Height * src.Height);
 
         var dst = Bounds.Size;
         var scale = Math.Min(dst.Width / srcRect.Width, dst.Height / srcRect.Height);
@@ -201,6 +230,40 @@ public sealed class PreviewSurface : Control
         var rect = new Rect((dst.Width - w) / 2, (dst.Height - h) / 2, w, h);
         _fitRect = rect;
         ctx.DrawImage(img, srcRect, rect);
+
+        // Content-space canvas layers ride the same normalised crop as the frame (so they magnify with a zoom).
+        // The crop is applied against the LAYER's own size — the layer is rendered at the recording-source
+        // resolution, which may differ from the preview frame's pixel size.
+        foreach (var cv in _canvasLayers)
+            if (cv.ContentSpace && cv.Transform.Opacity > 0)
+            {
+                var ls = cv.Layer.Size;
+                var layerSrc = new Rect(nv.X * ls.Width, nv.Y * ls.Height, nv.Width * ls.Width, nv.Height * ls.Height);
+                using (PushLayer(ctx, cv.Transform, rect, rect.Width / layerSrc.Width))
+                using (ctx.PushOpacity(cv.Transform.Opacity))
+                    ctx.DrawImage(cv.Layer, layerSrc, rect);
+            }
+
+        // Spotlight glow sits under everything else, following the cursor (drawn as a radial gradient ellipse).
+        if (_spotlight is { } sp && sp.Alpha > 0)
+        {
+            var centre = new Point(rect.X + sp.Center.X * rect.Width, rect.Y + sp.Center.Y * rect.Height);
+            var radius = sp.RadiusFraction * rect.Height;
+            if (radius > 0)
+            {
+                var inner = Color.FromArgb((byte)Math.Clamp(sp.Alpha * 255, 0, 255), sp.Color.R, sp.Color.G, sp.Color.B);
+                var outer = Color.FromArgb(0, sp.Color.R, sp.Color.G, sp.Color.B);
+                var brush = new RadialGradientBrush
+                {
+                    Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                    GradientOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                    RadiusX = new RelativeScalar(0.5, RelativeUnit.Relative),
+                    RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(inner, 0), new GradientStop(outer, 1) },
+                };
+                ctx.DrawEllipse(brush, null, centre, radius, radius);
+            }
+        }
 
         // Ripples sit under the cursor, anchored where the click landed.
         foreach (var r in _ripples)
@@ -216,6 +279,13 @@ public sealed class PreviewSurface : Control
         if (_cursor is { } c)
             DrawCursor(ctx, new Point(rect.X + c.X * rect.Width, rect.Y + c.Y * rect.Height), _cursorHeightFrac * rect.Height);
 
+        // Screen-space canvas layers are fixed over the output frame — on top, ignoring the zoom crop.
+        foreach (var cv in _canvasLayers)
+            if (!cv.ContentSpace && cv.Transform.Opacity > 0)
+                using (PushLayer(ctx, cv.Transform, rect, rect.Width / Math.Max(1, cv.Layer.Size.Width)))
+                using (ctx.PushOpacity(cv.Transform.Opacity))
+                    ctx.DrawImage(cv.Layer, new Rect(cv.Layer.Size), rect);
+
         // Zoom-aim overlay: dim outside the target square, outline it, and draw aspect-locked corner handles.
         if (AimMode && _targetBox is { } tb)
         {
@@ -229,6 +299,18 @@ public sealed class PreviewSurface : Control
             foreach (var corner in new[] { box.TopLeft, box.TopRight, box.BottomLeft, box.BottomRight })
                 ctx.DrawRectangle(fill, stroke, new Rect(corner.X - 4, corner.Y - 4, 8, 8), 2, 2);
         }
+    }
+
+    // Build the animated-layer transform in display space: scale + rotate about the drawn frame's centre, plus
+    // a translate mapped from source pixels to display pixels. (Opacity is pushed separately by the caller.)
+    private static DrawingContext.PushedState PushLayer(DrawingContext ctx, LayerTransform t, Rect r, double srcToDisp)
+    {
+        double cx = r.Center.X, cy = r.Center.Y;
+        var m = Matrix.CreateTranslation(-cx, -cy)
+              * Matrix.CreateScale(t.Scale, t.Scale)
+              * Matrix.CreateRotation(t.RotationDeg * Math.PI / 180.0)
+              * Matrix.CreateTranslation(cx + t.Dx * srcToDisp, cy + t.Dy * srcToDisp);
+        return ctx.PushTransform(m);
     }
 
     // Darken the frame outside the target box so the aim reads clearly.

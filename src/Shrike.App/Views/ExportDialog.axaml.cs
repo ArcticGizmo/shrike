@@ -180,21 +180,19 @@ public partial class ExportDialog : Window
     }
 
     private CursorSmoothing _smoothing = CursorSmoothing.Default;
+    private EffectTrack _effects = EffectTrack.Empty;
     private ZoomTrack _authoredZoom = ZoomTrack.Empty;
     private double _cursorSize = 1.0;
-    private bool _cursorRipple = true;
-    private bool _showCursor = true;
 
-    /// <summary>Carry the editor's tuned smoothing + cursor look + authored zoom into the export so what you saw
-    /// in the preview is what gets rendered. Cursor and zoom are both post effects: <paramref name="showCursor"/>
-    /// gates the cursor overlay, and an empty <paramref name="authoredZoom"/> means no zoom.</summary>
-    internal void ConfigureSmoothCursor(CursorSmoothing smoothing, double cursorSize, bool cursorRipple, bool showCursor, ZoomTrack? authoredZoom = null)
+    /// <summary>Carry the editor's tuned smoothing + the authored effect track into the export so what you saw
+    /// in the preview is what gets rendered. Zoom is a frame transform; the cursor / ripple / spotlight / mouse
+    /// -visibility effects are resolved per frame from the track (an empty track means a plain transcode).</summary>
+    internal void ConfigureEffects(CursorSmoothing smoothing, double cursorSize, EffectTrack effects)
     {
         _smoothing = smoothing;
         _cursorSize = cursorSize;
-        _cursorRipple = cursorRipple;
-        _showCursor = showCursor;
-        _authoredZoom = authoredZoom ?? ZoomTrack.Empty;
+        _effects = effects;
+        _authoredZoom = effects.ZoomTrack;
     }
 
     private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
@@ -203,9 +201,12 @@ public partial class ExportDialog : Window
         // Composite in post when there's something to draw. The cursor overlay needs the logged pointer track;
         // authored zoom is a pure frame transform that needs no track, so it composites on its own too.
         var track = LoadTrack();
-        var wantsCursor = _showCursor && track is { Points.Count: > 0 };
+        // Cursor / ripple / spotlight all need the pointer track; visibility gates the cursor per frame at
+        // composite time (so a whole-clip hide simply draws nothing). Zoom + canvas are pure frame effects.
+        var wantsCursor = track is { Points.Count: > 0 };
         var wantsZoom = !_authoredZoom.IsEmpty;
-        if (wantsCursor || wantsZoom)
+        var wantsCanvas = _effects.OfKind<CanvasEffect>().Any(c => c.Annotations.Count > 0);
+        if (wantsCursor || wantsZoom || wantsCanvas)
         {
             await CompositeExport(profile, hardware, wantsCursor ? track : null, outputPath, progress, ct);
             return;
@@ -213,6 +214,21 @@ public partial class ExportDialog : Window
 
         var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
         await new VideoExporter(_ffmpegPath).ExportAsync(cmd, _timeline.KeptDurationMs, progress, ct);
+    }
+
+    /// <summary>Rasterise one canvas effect's annotations to a premultiplied-BGRA layer sprite at the export
+    /// size, reusing the annotation editor's own renderer (so it matches the preview). Runs on the UI thread.
+    /// Annotations are in source-frame pixels, so a blank source-sized base sets the scale to the export size.</summary>
+    private byte[]? RasterizeCanvas(CanvasEffect c, int w, int h)
+    {
+        var surface = new Controls.AnnotationSurface();
+        var doc = new Shrike.Core.Annotations.AnnotationDocument();
+        foreach (var a in c.Annotations) doc.Add(a);
+        var blank = new CapturedImage(_source.Width, _source.Height,
+            new byte[_source.Width * _source.Height * 4],
+            new PixelBounds(0, 0, _source.Width, _source.Height), System.DateTimeOffset.Now);
+        surface.SetContent(blank, doc);
+        return surface.RenderAnnotationLayer(w, h);
     }
 
     private MouseTrack? LoadTrack()
@@ -242,13 +258,36 @@ public partial class ExportDialog : Window
             ? smoothed.Frames.Count
             : (int)Math.Max(1, Math.Round(_timeline.KeptDurationMs / 1000.0 * fps));
 
-        // Compose the effect chain: the zoom transform first (only with authored events), then the cursor +
-        // ripple overlay (only when a track is present). Each is an IFrameCompositor — adding an effect appends here.
+        // Compose the effect chain in order: the zoom transform first (only with authored events), then the
+        // spotlight glow (under the cursor), then the cursor + ripple overlay — each an IFrameCompositor.
+        // Visibility / ripple are per-frame masks resolved from the effect track; spotlight is per-frame too.
         ZoomViewport[]? viewports = _authoredZoom.IsEmpty ? null : _authoredZoom.Resolve(_timeline, frameCount, fps, w, h);
+
+        // Canvas layers rasterise to sprites here on the UI thread (Avalonia render), split by space: content
+        // canvases go under the zoom transform (they magnify with it); screen canvases sit on top of everything.
+        var contentCanvas = new List<IFrameCompositor>();
+        var screenCanvas = new List<IFrameCompositor>();
+        foreach (var c in _effects.OfKind<CanvasEffect>().Where(c => c.Annotations.Count > 0))
+        {
+            var sprite = RasterizeCanvas(c, w, h);
+            if (sprite is null) continue;
+            var comp = new CanvasCompositor(sprite, w, h, EffectTrack.ResolveCanvasTransforms(c, _timeline, frameCount, fps));
+            (c.Space == CanvasSpace.Screen ? screenCanvas : contentCanvas).Add(comp);
+        }
+
         var effects = new List<IFrameCompositor>();
+        effects.AddRange(contentCanvas);                                   // content canvas — under the zoom
         if (viewports is not null) effects.Add(new ZoomCompositor(viewports));
         if (smoothed is not null && !smoothed.IsEmpty)
-            effects.Add(new CursorCompositor(smoothed, CursorStyle.ForExport(h, _cursorSize, _cursorRipple), viewports));
+        {
+            if (_effects.HasSpotlight)
+                effects.Add(new SpotlightCompositor(smoothed, _effects.ResolveSpotlight(_timeline, frameCount, fps, h), viewports));
+            effects.Add(new CursorCompositor(smoothed, CursorStyle.ForExport(h, _cursorSize),
+                viewports,
+                _effects.ResolveCursorVisible(_timeline, frameCount, fps),
+                _effects.ResolveRipplesEnabled(_timeline, frameCount, fps)));
+        }
+        effects.AddRange(screenCanvas);                                    // screen canvas — fixed, on top
         if (effects.Count == 0)
         {
             var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
