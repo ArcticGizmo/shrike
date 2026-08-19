@@ -1,0 +1,73 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.MicCheckWindow"
+        Title="Mic check"
+        Width="360"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#140F0A">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="#9A8F7D" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="#EDE6DA" />
+        </Style>
+        <Style Selector="Button.tool">
+            <Setter Property="Padding" Value="11,7" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3A2F1E" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#140F0A" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="18" Spacing="14">
+        <TextBlock Text="Mic check" FontSize="16" FontWeight="SemiBold" Foreground="#EDE6DA" />
+
+        <CheckBox Name="MicEnabledBox" Content="Record my microphone into this clip" Click="OnMicEnabledChanged" />
+
+        <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Input device" />
+            <ComboBox Name="MicDeviceBox" HorizontalAlignment="Stretch" SelectionChanged="OnDeviceChanged" />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Input level" />
+            <ProgressBar Name="MicMeter" Minimum="0" Maximum="1" Height="16"
+                         Foreground="#F5A524" Background="#2A2318" CornerRadius="4" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Name="TestButton" Classes="tool" Content="Test (3s)" Click="OnTest" />
+            <TextBlock Name="TestStatus" Classes="hint" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <CheckBox Name="SystemSoundBox" Content="Also capture system sound (loopback)" Click="OnSystemSoundChanged" />
+
+        <TextBlock Classes="hint"
+                   Text="Tip: record a quick test and play it back before you start — it catches a muted or wrong mic every time." />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Classes="tool accent" Content="Done" Click="OnDone" />
+        </StackPanel>
+    </StackPanel>
+</Window>

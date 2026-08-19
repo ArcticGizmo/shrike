@@ -43,6 +43,7 @@ public partial class RecordingHudWindow : Window
     private StackPanel? _setupPanel;
     private StackPanel? _recordingPanel;
     private ToggleButton? _showCursorButton;
+    private Button? _micButton;
     private TextBlock? _elapsed;
     private Button? _pauseButton;
     private Ellipse? _recDot;
@@ -60,10 +61,13 @@ public partial class RecordingHudWindow : Window
     /// should be drawn in the edited video (the clip's default; the editor can change it later).</summary>
     public event Action<bool>? ShowCursorToggled;
 
-    // Parameterless ctor for the XAML designer only.
-    public RecordingHudWindow() : this(default, true) { }
+    /// <summary>Raised when the user opens the mic-check dialog (device, level meter, test, system sound).</summary>
+    public event Action? MicCheckRequested;
 
-    internal RecordingHudWindow(PixelBounds region, bool showCursor)
+    // Parameterless ctor for the XAML designer only.
+    public RecordingHudWindow() : this(default, true, default) { }
+
+    internal RecordingHudWindow(PixelBounds region, bool showCursor, MicSetup mic)
     {
         _region = region;
         InitializeComponent();
@@ -71,11 +75,13 @@ public partial class RecordingHudWindow : Window
         _setupPanel = this.FindControl<StackPanel>("SetupPanel");
         _recordingPanel = this.FindControl<StackPanel>("RecordingPanel");
         _showCursorButton = this.FindControl<ToggleButton>("ShowCursorButton");
+        _micButton = this.FindControl<Button>("MicButton");
         _elapsed = this.FindControl<TextBlock>("Elapsed");
         _pauseButton = this.FindControl<Button>("PauseButton");
         _recDot = this.FindControl<Ellipse>("RecDot");
 
         if (_showCursorButton is not null) _showCursorButton.IsChecked = showCursor;
+        ReflectMicState(mic.AnyArmed);
 
         // SizeToContent means the real size isn't known until layout runs; re-place when it settles (and
         // again whenever the bar's width changes, e.g. swapping to the recording controls) unless the user
@@ -150,6 +156,18 @@ public partial class RecordingHudWindow : Window
 
     private void OnToggleShowCursor(object? sender, RoutedEventArgs e)
         => ShowCursorToggled?.Invoke(_showCursorButton?.IsChecked ?? true);
+
+    // ---- mic check ----
+
+    private void OnOpenMicCheck(object? sender, RoutedEventArgs e) => MicCheckRequested?.Invoke();
+
+    /// <summary>Reflect whether any audio source is armed on the mic button (a check mark + accent).</summary>
+    internal void ReflectMicState(bool armed)
+    {
+        if (_micButton is null) return;
+        _micButton.Content = armed ? "🎤 Mic ✓" : "🎤 Mic…";
+        _micButton.Classes.Set("accent", armed);
+    }
 
     // ---- setup / recording actions ----
 

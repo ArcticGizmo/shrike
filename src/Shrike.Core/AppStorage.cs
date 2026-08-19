@@ -35,4 +35,17 @@ public static class AppStorage
     /// lifecycle from the capture-time <c>*.track.json</c>, so it's a separate sidecar.</summary>
     public static string EditDocFor(string recordingPath) =>
         System.IO.Path.ChangeExtension(recordingPath, ".edit.json");
+
+    /// <summary>The microphone audio sidecar for a recording (<c>name.mp4</c> → <c>name.mic.wav</c>).
+    /// Captured live during recording; consumed by the editor/export. Same one-owner convention as the
+    /// other sidecars so the retention sweep can find and evict it.</summary>
+    public static string MicWavFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".mic.wav");
+
+    /// <summary>The system-sound (loopback) audio sidecar (<c>name.mp4</c> → <c>name.sys.wav</c>).</summary>
+    public static string SystemWavFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".sys.wav");
+
+    /// <summary>The audio sidecar suffixes, for the retention sweep to evict alongside a recording.</summary>
+    public static IReadOnlyList<string> AudioSidecarSuffixes { get; } = [".mic.wav", ".sys.wav"];
 }

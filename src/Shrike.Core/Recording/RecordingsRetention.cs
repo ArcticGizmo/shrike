@@ -16,7 +16,8 @@ public readonly record struct RecordingFile(string Path, long SizeBytes, DateTim
 /// Keeps the recordings working folder bounded. <see cref="ToEvict"/> is the pure, testable decision —
 /// newest-first, the most recent recording always survives (it may be open in the editor), and everything
 /// past the count / total-size / age bound is evicted. <see cref="Sweep"/> applies it to a real folder,
-/// deleting each recording together with its <c>*.track.json</c> sidecar and clearing orphaned sidecars.
+/// deleting each recording together with its sidecars (<c>*.track.json</c> and the <c>*.mic.wav</c> /
+/// <c>*.sys.wav</c> audio) and clearing orphaned sidecars.
 /// </summary>
 public static class RecordingsRetention
 {
@@ -61,17 +62,20 @@ public static class RecordingsRetention
         {
             if (TryDelete(f.Path)) deleted++;
             TryDelete(AppStorage.SidecarFor(f.Path)); // the track sidecar shares the recording's fate
+            TryDelete(AppStorage.MicWavFor(f.Path));  // audio sidecars go with it too
+            TryDelete(AppStorage.SystemWavFor(f.Path));
         }
 
-        // Clear orphaned sidecars (a *.track.json whose recording is gone).
-        const string suffix = ".track.json";
-        foreach (var sidecar in Directory.EnumerateFiles(directory, "*" + suffix))
-        {
-            var name = Path.GetFileName(sidecar);
-            if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
-            var mp4 = Path.Combine(directory, name[..^suffix.Length] + ".mp4");
-            if (!File.Exists(mp4)) TryDelete(sidecar);
-        }
+        // Clear orphaned sidecars (a sidecar whose recording is gone).
+        string[] suffixes = [".track.json", .. AppStorage.AudioSidecarSuffixes];
+        foreach (var suffix in suffixes)
+            foreach (var sidecar in Directory.EnumerateFiles(directory, "*" + suffix))
+            {
+                var name = Path.GetFileName(sidecar);
+                if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
+                var mp4 = Path.Combine(directory, name[..^suffix.Length] + ".mp4");
+                if (!File.Exists(mp4)) TryDelete(sidecar);
+            }
 
         return deleted;
     }

@@ -44,6 +44,15 @@ internal sealed class CaptureController
     private MouseHook? _mouseHook;
     private bool _showCursor = true;
     private PixelBounds _pendingRegion;
+    private string? _pendingPath;
+
+    // Audio capture (opt-in via the mic-check dialog): the sidecars are written next to the recording and
+    // consumed by the editor/export. Off by default so no recording silently opens the mic.
+    private AudioSidecarCapture? _audioCapture;
+    private MicCheckWindow? _micCheck;
+    private bool _micEnabled;
+    private string? _micDeviceId;
+    private bool _systemSound;
 
     /// <summary>The last capture mode the user ran, so the editor's "New capture" button can repeat it.</summary>
     private CaptureMenuChoice _lastCaptureChoice = CaptureMenuChoice.Region;
@@ -390,15 +399,19 @@ internal sealed class CaptureController
         // The "Show cursor" default is remembered across recordings (CursorInRecording now means "draw the
         // cursor in the edited video" — every recording is a clean plate regardless).
         _showCursor = _settings?.Current.CursorInRecording ?? true;
+        _micEnabled = _settings?.Current.MicEnabled ?? false;
+        _micDeviceId = _settings?.Current.MicDeviceId;
+        _systemSound = _settings?.Current.SystemSoundEnabled ?? false;
 
         var regionWindow = new RecordingRegionWindow(region, MonitorsOrFallback());
-        var hud = new RecordingHudWindow(region, _showCursor);
+        var hud = new RecordingHudWindow(region, _showCursor, new MicSetup(_micEnabled, _micDeviceId, _systemSound));
 
         // Setup wiring: the HUD's Record/Cancel drive the region window; its handle drags trail the HUD.
         hud.RecordRequested += OnRecordRequested;
         hud.CancelRequested += TeardownRecordingSetup;
         hud.Finished += OnRecordingFinished;
         hud.ShowCursorToggled += OnShowCursorToggled;
+        hud.MicCheckRequested += OnMicCheckRequested;
         hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
 
         regionWindow.RegionChanged += hud.FollowRegion;
@@ -422,6 +435,51 @@ internal sealed class CaptureController
         // Remember the choice as the default for the next recording.
         if (_settings is not null && _settings.Current.CursorInRecording != show)
             _settings.Update(_settings.Current with { CursorInRecording = show });
+    }
+
+    /// <summary>Open the mic-check dialog: device, live meter, test-and-play-back, system-sound toggle. Each
+    /// change is persisted immediately (remembered for next time), and the HUD reflects the armed state.</summary>
+    private void OnMicCheckRequested()
+    {
+        if (_micCheck is not null) { _micCheck.Activate(); return; }
+        if (_hud is null) return;
+
+        var dialog = new MicCheckWindow(new MicSetup(_micEnabled, _micDeviceId, _systemSound));
+        dialog.MicEnabledChanged += OnMicEnabledChanged;
+        dialog.DeviceChanged += OnMicDeviceChanged;
+        dialog.SystemSoundChanged += OnSystemSoundChanged;
+        dialog.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_micCheck, dialog)) _micCheck = null;
+            _hud?.ReflectMicState(_micEnabled || _systemSound);
+        };
+
+        _micCheck = dialog;
+        dialog.Show(_hud); // owned by the HUD so it stays above the region frame
+        dialog.Activate();
+    }
+
+    private void OnMicEnabledChanged(bool on)
+    {
+        _micEnabled = on;
+        _hud?.ReflectMicState(_micEnabled || _systemSound);
+        if (_settings is not null && _settings.Current.MicEnabled != on)
+            _settings.Update(_settings.Current with { MicEnabled = on });
+    }
+
+    private void OnMicDeviceChanged(string? id)
+    {
+        _micDeviceId = id;
+        if (_settings is not null && _settings.Current.MicDeviceId != id)
+            _settings.Update(_settings.Current with { MicDeviceId = id });
+    }
+
+    private void OnSystemSoundChanged(bool on)
+    {
+        _systemSound = on;
+        _hud?.ReflectMicState(_micEnabled || _systemSound);
+        if (_settings is not null && _settings.Current.SystemSoundEnabled != on)
+            _settings.Update(_settings.Current with { SystemSoundEnabled = on });
     }
 
     /// <summary>Record pressed: the region is now final, so kick off the (slow) ffmpeg pipeline build in
@@ -448,6 +506,7 @@ internal sealed class CaptureController
         // its *.track.json sidecar survive to be edited / re-exported.
         var path = Path.Combine(AppStorage.RecordingsDirectory(),
             CaptureNaming.Expand(CaptureNaming.DefaultTemplate, DateTimeOffset.Now) + ".mp4");
+        _pendingPath = path; // used to derive the audio sidecar paths when capture starts
 
         _buildTask = Task.Run(() => BuildRecorder(region, path, fps, captureCursor));
         _regionWindow.StartCountdown();
@@ -481,6 +540,24 @@ internal sealed class CaptureController
         _hud.BeginRecording(recorder);
         recorder.Start();
         StartTrackCapture(recorder);
+        StartAudioCapture(recorder);
+    }
+
+    /// <summary>Arm mic and/or system-sound capture for this recording if the user enabled them in the
+    /// mic-check dialog. Writes WAV sidecars aligned to the recorder's pause-excluded clock; tolerant of a
+    /// device that won't open (the recording proceeds without that source).</summary>
+    private void StartAudioCapture(Recorder recorder)
+    {
+        if (_pendingPath is null || (!_micEnabled && !_systemSound)) return;
+        try
+        {
+            _audioCapture = AudioSidecarCapture.Start(
+                _pendingPath, _micEnabled, _micDeviceId, _systemSound, recorder.CaptureTimeMs);
+        }
+        catch
+        {
+            _audioCapture = null; // never let an audio failure stop the recording
+        }
     }
 
     /// <summary>Arm the pointer track for this recording: install the mouse hook and stamp each event with the
@@ -514,8 +591,13 @@ internal sealed class CaptureController
         Dispatcher.UIThread.Post(() =>
         {
             _buildTask = null;
+            _pendingPath = null;
             DisposeMouseHook();
             _trackRecorder = null;
+            _audioCapture?.Dispose();
+            _audioCapture = null;
+            _micCheck?.Close();
+            _micCheck = null;
             _hud?.Close();
             _hud = null;
             _regionWindow?.Close();
@@ -584,6 +666,27 @@ internal sealed class CaptureController
         _mouseHook = null;
     }
 
+    /// <summary>Stop and finalise the audio sidecars off the UI thread (Dispose patches each WAV and closes
+    /// the device, which can briefly block). For a discarded take (no saved MP4) the sidecars are orphans, so
+    /// they're deleted rather than left for the retention sweep.</summary>
+    private void FinalizeAudioCapture(string? savedPath)
+    {
+        var audio = _audioCapture;
+        _audioCapture = null;
+        if (audio is null) return;
+
+        var paths = audio.WrittenPaths.ToArray();
+        audio.Stop();
+        var discarded = savedPath is null;
+        Task.Run(() =>
+        {
+            try { audio.Dispose(); } catch { /* best effort */ }
+            if (discarded)
+                foreach (var p in paths)
+                    try { if (File.Exists(p)) File.Delete(p); } catch { /* best effort */ }
+        });
+    }
+
     private void OnRecordingFinished(string? savedPath)
     {
         // The HUD closes itself; drop the region frame (which doubled as the recording border) with it.
@@ -591,6 +694,10 @@ internal sealed class CaptureController
         _regionWindow = null;
         var recorder = _recorder;
         _recorder = null;
+
+        // Finalise the audio sidecars (patch WAV sizes, close devices) — off the UI thread; if the take was
+        // discarded there's no MP4, so the orphaned sidecars are deleted.
+        FinalizeAudioCapture(savedPath);
 
         // Finalise the smooth-cursor track (if any) as a sidecar next to the MP4 before we hand off.
         WriteMouseTrackSidecar(savedPath);
