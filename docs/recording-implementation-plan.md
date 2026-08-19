@@ -9,27 +9,30 @@
 **Companions:** [`recording-audio-roadmap.md`](recording-audio-roadmap.md) (the feature line & ordering) ·
 [`recording-vision.html`](recording-vision.html) (the M1 UX vision).
 
-## Progress (2026-08-19)
+## Progress (2026-08-19) — M1a feature-complete, pending your real-mic test
 
-Everything that's pure/unit-testable is built, committed, and green (suite 286 → 337). The remaining
-phases are Avalonia UI + real-microphone verification.
+All of M1a (A0–A4) is built, committed, and green (suite 286 → 355). Everything below compiles clean
+(Debug + Release, 0 warnings) and the app boots; audio capture/playback themselves need a real mic —
+that's the outstanding verification.
 
 - ✅ **A0 — Core audio foundations** (`Shrike.Core/Audio`): `AudioFormat`, `IAudioSource`,
-  device/player seams, `LevelMeter`, `WavFile`/`WavWriter`, `AudioClip`/`AudioTrack`.
-- ✅ **A1 — Capture plumbing**: new `Shrike.Audio` adapter (NAudio 3.0.1, modern `WasapiRecorderBuilder`
-  API), `Pcm16Converter` + `AudioCaptureRecorder` in Core, `WasapiAudioSource` (mic + loopback),
-  `NAudioDeviceCatalog`. Not yet wired to the record flow (that's A2, behind the mic-check opt-in).
+  device/player seams, `LevelMeter`, `WavFile`/`WavWriter`, `AudioClip`/`AudioTrack`, `Waveform`,
+  `Pcm16Converter`, `CaptureAudio` (cut-riding).
+- ✅ **A1 — Capture plumbing**: `Shrike.Audio` adapter (NAudio 3.0.1, `WasapiRecorderBuilder`),
+  `AudioCaptureRecorder`, `WasapiAudioSource` (mic + loopback), `NAudioDeviceCatalog`, `NAudioPlayer`.
+- ✅ **A2 — mic-check dialog + record-flow wiring**: `MicCheckWindow` (device, live meter,
+  test-&-play-back, system-sound toggle) off the setup HUD; `AudioLevelMonitor`; `AudioSidecarCapture`;
+  settings + `.mic.wav`/`.sys.wav` sidecars + retention.
 - ✅ **A3 — Export mux**: `ExportCommand` folds an `AudioTrack` into an ffmpeg `amix` graph; `ExportSize`
   counts the AAC stream; off-means-off preserved.
-- ✅ **A4 (persistence slice)** — `ClipEdit` v3 carries the audio track; forgiving v1/v2 migration.
-- ✅ **A2 — mic-check dialog + record-flow wiring**: `MicCheckWindow` (device, live meter,
-  test-&-play-back, system-sound toggle) off a "Mic…" button on the setup HUD; `AudioLevelMonitor`,
-  `NAudioPlayer`, `AudioSidecarCapture`; settings + `.mic.wav`/`.sys.wav` sidecars + retention.
-  **Needs your real-mic test.** Softened the "record disabled until signal" hard gate to the
-  test-and-playback flow. Editor consumption of the sidecars is A4.
-- ⏸️ **A4 (rest)** — editor waveform lane, scrub-synced playback, gain/mute + lip-sync controls, and
-  seeding an `AudioClip` from the `.mic.wav`/`.sys.wav` sidecars into the edit doc so it exports.
-  **← next; UI + real-hardware.**
+- ✅ **A4 — editor**: `ClipEdit` v3 persistence; seed `AudioClip`s from sidecars on open; export wiring
+  (maps live audio through the cuts via `CaptureAudio.ForOutput`); scrub-synced preview audio (WYSIWYG);
+  `WaveformLane`; audio inspector (gain / mute / **A/V offset** lip-sync nudge).
+
+**Lip-sync helps delivered:** automatic cut-riding (`CaptureAudio`) keeps captured audio in sync across
+edits; the per-clip A/V offset is the manual nudge for residual device latency.
+
+**Deferred to M1b:** in-editor voiceover recording + punch-in re-record.
 
 ---
 
