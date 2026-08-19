@@ -35,18 +35,18 @@ edits; the per-clip A/V offset is the manual nudge for residual device latency.
 ## M1b progress
 
 - ✅ **B0 — in-editor voiceover recording**: "● Voiceover" records the mic over the playing preview into a
-  single `.vo.wav` clip at the current output position; inserts an `EditorVoiceover` `AudioClip`; exports
-  and persists. Preview/waveform follow the first audible clip (mic or voiceover).
-- ⏸️ **B1 — punch-in re-record** — recommended to start **after M1a+B0 are hardware-verified**, because it
-  depends on two new pieces it makes little sense to build blind:
-  1. a **multi-clip voiceover model** (a punch splits the clip into before/punch/after),
-  2. a **multi-clip preview engine** — the current preview plays one sidecar file; punched audio lives in
-     another, so a mixing/sequencing `IAudioPlayer` over an `AudioTrack` is a prerequisite for WYSIWYG.
-  Plus take-versioning, undo, and boundary crossfades.
-- ⏸️ **B2 — take management & polish**.
+  single `.vo.wav` clip; inserts an `EditorVoiceover` `AudioClip`; exports and persists.
+- ✅ **Multi-clip preview engine** (B1 prerequisite): the editor pre-renders the whole `AudioTrack` to a temp
+  WAV via `ExportCommand.BuildAudioMix` (the same ffmpeg mix as export) and plays it on the output timeline —
+  so mic + voiceover + punches are all heard together, in sync. Cached; re-rendered on track/cut changes.
+- ✅ **B1 — punch-in re-record**: select a span, re-record just it, splice into `.vo.wav`
+  (`AudioSplice.Replace`, length-preserving with edge fades), one-level **undo** via a backup. Solved with a
+  single-clip splice rather than a multi-clip voiceover model, so retention stays trivial.
+- ⏸️ **B2 — take management & polish**: multiple takes / take picker, richer undo, boundary crossfades,
+  optional pre-roll. Refinement on a working feature.
 
 **Outstanding across the board:** real-microphone verification of capture, playback, resampling, loopback,
-and A/V sync.
+A/V sync, voiceover, and punch-in. This is the sole remaining gate on M1.
 
 ---
 
