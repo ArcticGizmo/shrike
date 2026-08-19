@@ -43,6 +43,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Shrike.Core\Shrike.Core.csproj" />
+    <!-- WASAPI audio capture/playback adapter (NAudio). Used by the recording flow from A2 onward. -->
+    <ProjectReference Include="..\Shrike.Audio\Shrike.Audio.csproj" />
   </ItemGroup>
 
 </Project>

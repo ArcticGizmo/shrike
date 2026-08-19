@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Shrike.Core/Shrike.Core.csproj" />
+    <Project Path="src/Shrike.Audio/Shrike.Audio.csproj" />
     <Project Path="src/Shrike.App/Shrike.App.csproj" />
   </Folder>
   <Folder Name="/tests/">
