@@ -41,6 +41,69 @@ public class TimelineTests
     }
 
     [Fact]
+    public void Split_divides_a_span_into_two_kept_segments_that_survive()
+    {
+        var t = Make();
+        t.Split(4_000);
+
+        Assert.Equal(2, t.Segments.Count);
+        Assert.Equal(new Segment(0, 4_000, true), t.Segments[0]);
+        Assert.Equal(new Segment(4_000, 10_000, true), t.Segments[1]);
+        Assert.Contains(4_000L, t.Splits);
+        Assert.Equal(10_000, t.KeptDurationMs); // a split never changes what plays/exports
+    }
+
+    [Fact]
+    public void Split_then_cut_one_side_marks_only_that_span()
+    {
+        var t = Make();
+        t.Split(4_000);
+        t.SetSegmentKept(2_000, kept: false); // cut the left span (contains 2000)
+
+        Assert.Equal(2, t.Segments.Count);
+        Assert.Equal(new Segment(0, 4_000, false), t.Segments[0]);
+        Assert.Equal(new Segment(4_000, 10_000, true), t.Segments[1]);
+        Assert.Equal(6_000, t.KeptDurationMs);
+    }
+
+    [Fact]
+    public void RemoveSplit_merges_the_two_spans_back()
+    {
+        var t = Make();
+        t.Split(4_000);
+        t.RemoveSplitAt(4_100, toleranceMs: 500);
+
+        Assert.Single(t.Segments);
+        Assert.Empty(t.Splits);
+        Assert.Equal(new Segment(0, 10_000, true), t.Segments[0]);
+    }
+
+    [Fact]
+    public void MoveBoundary_resizes_a_cut()
+    {
+        var t = Make();
+        t.Cut(3_000, 7_000);       // keep · cut · keep, boundaries at 3000 and 7000
+        t.MoveBoundary(7_000, 6_000); // pull the cut's right edge in to 6000
+
+        Assert.Equal(3, t.Segments.Count);
+        Assert.Equal(new Segment(3_000, 6_000, false), t.Segments[1]);
+        Assert.Equal(7_000, t.KeptDurationMs); // kept grew by 1000
+    }
+
+    [Fact]
+    public void MoveBoundary_moves_a_split_between_two_kept_spans()
+    {
+        var t = Make();
+        t.Split(4_000);
+        t.MoveBoundary(4_000, 6_000);
+
+        Assert.Equal(2, t.Segments.Count);
+        Assert.Equal(6_000, t.Segments[0].EndMs);
+        Assert.Contains(6_000L, t.Splits);
+        Assert.DoesNotContain(4_000L, t.Splits);
+    }
+
+    [Fact]
     public void Restoring_a_cut_returns_to_a_single_kept_span()
     {
         var t = Make();

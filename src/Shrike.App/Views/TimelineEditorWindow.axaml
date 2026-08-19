@@ -98,7 +98,7 @@
                 <Button Grid.Column="1" Name="RevealButton" Classes="tool" Content="Reveal files (debug)"
                         HorizontalAlignment="Left" IsVisible="False" Margin="0,0,6,0" />
                 <TextBlock Grid.Column="2" Classes="hint" VerticalAlignment="Center"
-                           Text="drag the amber ends to trim · drag across to select a range → Cut / Keep · right-click a cut to restore" />
+                           Text="drag ends to trim · drag a boundary to move it · right-click to split / cut / keep · double-click a span to edit · Ctrl+drag adds a split" />
                 <Button Grid.Column="3" Classes="tool accent" Content="Export…" Click="OnExport" />
             </Grid>
         </Grid>
@@ -220,6 +220,24 @@
                         <TextBlock Classes="hint" TextWrapping="Wrap"
                                    Text="Draw on the frame. Redaction is permanent in the export. Click Done when finished." />
                     </StackPanel>
+                </StackPanel>
+
+                <!-- Segment editor (a strip span selected by double-click). -->
+                <StackPanel Name="SegmentEditor" Spacing="12" IsVisible="False">
+                    <Grid ColumnDefinitions="*,*">
+                        <StackPanel Grid.Column="0" Spacing="5" Margin="0,0,4,0">
+                            <TextBlock Text="Start (s)" Classes="hint" />
+                            <NumericUpDown Name="SegStartInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="5" Margin="4,0,0,0">
+                            <TextBlock Text="End (s)" Classes="hint" />
+                            <NumericUpDown Name="SegEndInput" Minimum="0" Increment="0.1" FormatString="0.0#" />
+                        </StackPanel>
+                    </Grid>
+                    <CheckBox Name="SegKeepToggle" Content="Keep this span" Foreground="#B8AE9C" />
+                    <Button Name="RemoveSplitButton" Classes="tool" Content="Remove split" HorizontalAlignment="Stretch" />
+                    <TextBlock Classes="hint" TextWrapping="Wrap"
+                               Text="Uncheck to cut this span. Drag the boundary handles on the strip, or set the times here." />
                 </StackPanel>
 
                 <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"

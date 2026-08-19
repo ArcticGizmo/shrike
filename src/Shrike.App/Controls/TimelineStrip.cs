@@ -8,45 +8,51 @@ using Shrike.Core.Recording;
 namespace Shrike.App.Controls;
 
 /// <summary>
-/// The scrubber/trim lane: a filmstrip of thumbnails across the source, with cut spans dimmed. It's where you
-/// crop the clip directly — drag the <b>trim handles</b> at each end of the kept region inward to trim
-/// head/tail, or <b>drag across the body</b> to select a range (the window then offers Cut / Keep). A plain
-/// click seeks. Sharing the ruler's view window, it zooms/pans with Ctrl/Shift+wheel. Pure view: it holds a
-/// reference to the <see cref="Timeline"/> for rendering + handle positions but never edits it — all edits go
-/// back to the window through events.
+/// The scrubber/trim lane: a filmstrip divided into segments by draggable boundary handles, each span kept or
+/// cut. Trim the ends by dragging the amber end-handles; drag any interior boundary to move it; drag across a
+/// span to select a quick range; double-click a span to edit it in the pane; Ctrl+drag drops a new split;
+/// right-click for Split / Cut / Keep / Remove-split; a plain click seeks. It shares the ruler's view window
+/// (Ctrl/Shift+wheel zoom/pan). Pure view — it reads the <see cref="Timeline"/> for rendering + hit-testing
+/// but never edits it; every edit goes back to the window through events.
 /// </summary>
 public sealed class TimelineStrip : Control
 {
-    private enum Mode { None, TrimHead, TrimTail, SelectPending, Select }
+    private enum Mode { None, TrimHead, TrimTail, MoveBoundary, SelectPending, Select }
 
-    private const double HandlePx = 9;      // grab zone / draw width for the trim handles
-    private const double DragThresholdPx = 4; // move less than this and it's a click (seek), not a selection
+    private const double HandlePx = 9;        // grab zone / draw width for a handle
+    private const double DragThresholdPx = 4; // move less than this and a body press is a click, not a selection
 
     private readonly List<(long Ms, Bitmap Thumb)> _thumbs = new();
     private Mode _mode;
     private double _pressX;
-    private long? _selA, _selB;             // the drag-selection range (source ms)
+    private long _dragBoundaryMs;   // the interior boundary currently being dragged
+    private long? _selA, _selB;     // the drag-selection range (source ms)
 
     public Timeline? Timeline { get; set; }
     public long PlayheadMs { get; private set; }
 
-    /// <summary>The visible time window (source ms). When End &lt;= Start the whole clip is shown.</summary>
     public long ViewStartMs { get; private set; }
     public long ViewEndMs { get; private set; }
     public void SetView(long startMs, long endMs) { ViewStartMs = startMs; ViewEndMs = endMs; InvalidateVisual(); }
 
-    /// <summary>Raised when the pointer is released on a plain click — the committed seek position.</summary>
+    /// <summary>A plain click — seek here.</summary>
     public event Action<long>? Seeked;
-    /// <summary>Raised as a range is drag-selected (min, max source ms); the window shows Cut/Keep for it.</summary>
+    /// <summary>Double-click a span — select it for editing in the pane (its start/end).</summary>
+    public event Action<long, long>? SegmentSelected;
+    /// <summary>A quick drag-selection range (min, max) — the window offers Cut/Keep for it.</summary>
     public event Action<long, long>? RangeSelected;
-    /// <summary>Raised when the selection is dropped (a plain click, or Esc).</summary>
     public event Action? SelectionCleared;
-    /// <summary>Drag the head/tail trim handle to this source ms (set the kept region's start/end).</summary>
+    /// <summary>Drag the head/tail end-handle to this source ms.</summary>
     public event Action<long>? TrimHeadTo;
     public event Action<long>? TrimTailTo;
-    /// <summary>Right-click a cut (dimmed) span — restore it.</summary>
-    public event Action<long>? RestoreRequested;
-    /// <summary>Ctrl+wheel: zoom the view around this source ms. Shift+wheel: pan by this wheel delta.</summary>
+    /// <summary>Drag an interior boundary from → to.</summary>
+    public event Action<long, long>? BoundaryMoved;
+    /// <summary>Right-click / Ctrl+drag — add a split at this source ms.</summary>
+    public event Action<long>? SplitRequested;
+    /// <summary>Right-click a span — set its kept-state (the quick Cut/Keep; keeping a cut restores it).</summary>
+    public event Action<long, bool>? SetKeptRequested;
+    /// <summary>Right-click near a split — remove it.</summary>
+    public event Action<long>? RemoveSplitRequested;
     public event Action<long, double>? ZoomRequested;
     public event Action<double>? PanRequested;
 
@@ -57,18 +63,10 @@ public sealed class TimelineStrip : Control
     }
 
     public void SetPlayhead(long ms) { PlayheadMs = ms; InvalidateVisual(); }
-
     public void AddThumbnail(long ms, Bitmap thumb) { _thumbs.Add((ms, thumb)); InvalidateVisual(); }
-
     public void Refresh() => InvalidateVisual();
-
-    /// <summary>Drop any drag-selection (after a Cut/Keep, or on cancel).</summary>
     public void ClearSelection() { _selA = _selB = null; InvalidateVisual(); }
-
-    /// <summary>The current selection as (min, max) source ms, or null.</summary>
     public (long A, long B)? Selection => _selA is { } a && _selB is { } b && a != b ? (Math.Min(a, b), Math.Max(a, b)) : null;
-
-    /// <summary>Pixel x of a source ms in the current view — lets the window place the floating Cut/Keep bar.</summary>
     public double MsToX(long ms) => Xp(ms);
 
     // ---- axis / view ----
@@ -76,6 +74,7 @@ public sealed class TimelineStrip : Control
     private double ViewSpan => ViewEndMs > ViewStartMs ? ViewEndMs - ViewStartMs : Dur;
     private double Xp(long ms) => (ms - ViewStartMs) / ViewSpan * Bounds.Width;
     private long MsAt(double x) => (long)Math.Clamp(ViewStartMs + x / Math.Max(1, Bounds.Width) * ViewSpan, 0, Dur);
+    private long PxToMs(double px) => (long)(px / Math.Max(1, Bounds.Width) * ViewSpan); // a pixel distance in ms
 
     private (long Start, long End)? KeptExtent()
     {
@@ -83,6 +82,10 @@ public sealed class TimelineStrip : Control
         if (kr is null || kr.Count == 0) return null;
         return (kr[0].StartMs, kr[^1].EndMs);
     }
+
+    // Interior boundaries (segment starts strictly inside the clip) — the draggable split/cut edges.
+    private IEnumerable<long> InteriorBoundaries()
+        => Timeline is null ? [] : Timeline.Segments.Select(s => s.StartMs).Where(m => m > 0);
 
     // ---- input ----
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -99,21 +102,35 @@ public sealed class TimelineStrip : Control
         if (Timeline is null || Bounds.Width <= 0) return;
         var x = e.GetPosition(this).X;
 
-        // Right-click a cut span → restore it.
-        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed) { ShowContextMenu(x); return; }
+
+        // Ctrl+drag: drop a split here and drag it.
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            if (Timeline.Find(MsAt(x)) is { Kept: false }) RestoreRequested?.Invoke(MsAt(x));
+            var ms = MsAt(x);
+            SplitRequested?.Invoke(ms);
+            _mode = Mode.MoveBoundary; _dragBoundaryMs = ms;
+            e.Pointer.Capture(this);
             return;
         }
 
-        // Grab a trim handle if the press is near a kept-extent edge.
+        // Double-click a span → select it for pane editing.
+        if (e.ClickCount == 2)
+        {
+            if (Timeline.Find(MsAt(x)) is { } seg) SegmentSelected?.Invoke(seg.StartMs, seg.EndMs);
+            return;
+        }
+
+        // Grab a handle if near one — trim handles at the kept-extent ends take precedence over interior ones.
         if (KeptExtent() is { } ext)
         {
             if (Math.Abs(x - Xp(ext.Start)) <= HandlePx) { _mode = Mode.TrimHead; e.Pointer.Capture(this); return; }
             if (Math.Abs(x - Xp(ext.End)) <= HandlePx) { _mode = Mode.TrimTail; e.Pointer.Capture(this); return; }
         }
+        foreach (var b in InteriorBoundaries())
+            if (Math.Abs(x - Xp(b)) <= HandlePx) { _mode = Mode.MoveBoundary; _dragBoundaryMs = b; e.Pointer.Capture(this); return; }
 
-        // Otherwise start a select-or-seek gesture.
+        // Otherwise a select-or-seek gesture on the body.
         _mode = Mode.SelectPending;
         _pressX = x;
         _selA = MsAt(x);
@@ -131,6 +148,10 @@ public sealed class TimelineStrip : Control
         {
             case Mode.TrimHead: TrimHeadTo?.Invoke(MsAt(x)); break;
             case Mode.TrimTail: TrimTailTo?.Invoke(MsAt(x)); break;
+            case Mode.MoveBoundary:
+                var to = ClampBetweenNeighbours(_dragBoundaryMs, MsAt(x));
+                if (to != _dragBoundaryMs) { BoundaryMoved?.Invoke(_dragBoundaryMs, to); _dragBoundaryMs = to; }
+                break;
             case Mode.SelectPending:
                 if (Math.Abs(x - _pressX) < DragThresholdPx) break;
                 _mode = Mode.Select;
@@ -150,13 +171,49 @@ public sealed class TimelineStrip : Control
         _mode = Mode.None;
         e.Pointer.Capture(null);
 
-        if (was == Mode.SelectPending) // never crossed the threshold → a click: seek, and drop any selection
+        if (was == Mode.SelectPending) // a click: seek and drop any selection
         {
             _selA = _selB = null;
             SelectionCleared?.Invoke();
             Seeked?.Invoke(MsAt(e.GetPosition(this).X));
             InvalidateVisual();
         }
+    }
+
+    // Keep a dragged boundary strictly between its neighbours (min 100ms spans).
+    private long ClampBetweenNeighbours(long boundary, long want)
+    {
+        if (Timeline is null) return want;
+        long lo = 0, hi = Timeline.DurationMs;
+        foreach (var b in InteriorBoundaries())
+        {
+            if (b < boundary) lo = Math.Max(lo, b);
+            else if (b > boundary) hi = Math.Min(hi, b);
+        }
+        return Math.Clamp(want, lo + 100, hi - 100);
+    }
+
+    private void ShowContextMenu(double x)
+    {
+        if (Timeline is null) return;
+        var ms = MsAt(x);
+        var tol = Math.Max(1, PxToMs(HandlePx));
+        var flyout = new MenuFlyout();
+        void Item(string header, Action act) { var mi = new MenuItem { Header = header }; mi.Click += (_, _) => act(); flyout.Items.Add(mi); }
+
+        Item("Split here", () => SplitRequested?.Invoke(ms));
+        if (Timeline.Find(ms) is { } seg)
+        {
+            flyout.Items.Add(new Separator());
+            if (seg.Kept) Item("Cut this span", () => SetKeptRequested?.Invoke(ms, false));
+            else Item("Keep this span", () => SetKeptRequested?.Invoke(ms, true));
+        }
+        if (Timeline.HasSplitNear(ms, tol))
+        {
+            flyout.Items.Add(new Separator());
+            Item("Remove split", () => RemoveSplitRequested?.Invoke(ms));
+        }
+        flyout.ShowAt(this, showAtPointer: true);
     }
 
     // ---- render ----
@@ -172,8 +229,7 @@ public sealed class TimelineStrip : Control
 
         ctx.FillRectangle(new SolidColorBrush(Color.Parse("#0E0B06")), new Rect(0, 0, w, h));
 
-        // Filmstrip: each thumbnail occupies the slice of the strip around its timestamp, positioned by time so
-        // it tracks the zoom/pan of the view window (off-screen slices are skipped).
+        // Filmstrip: each thumbnail occupies the slice around its timestamp, positioned by time (tracks zoom/pan).
         if (_thumbs.Count > 0)
         {
             var half = Dur / _thumbs.Count / 2.0;
@@ -209,11 +265,20 @@ public sealed class TimelineStrip : Control
             ctx.DrawLine(pen, new Point(r.Right, 0), new Point(r.Right, h));
         }
 
-        // Trim handles at the kept-region edges.
-        if (KeptExtent() is { } ext)
+        var ext = KeptExtent();
+
+        // Interior boundary handles (skip the ones that are the trim-extent edges — those get end-handles).
+        foreach (var b in InteriorBoundaries())
         {
-            DrawHandle(ctx, X(ext.Start), h, left: true);
-            DrawHandle(ctx, X(ext.End), h, left: false);
+            if (ext is { } ex && (b == ex.Start || b == ex.End)) continue;
+            DrawBoundary(ctx, X(b), h);
+        }
+
+        // Trim handles at the kept-region ends.
+        if (ext is { } e2)
+        {
+            DrawHandle(ctx, X(e2.Start), h, left: true);
+            DrawHandle(ctx, X(e2.End), h, left: false);
         }
 
         // Playhead: amber line + top triangle.
@@ -230,23 +295,31 @@ public sealed class TimelineStrip : Control
         }
         ctx.DrawGeometry(amber, null, tri);
 
-        // Frame.
         ctx.DrawRectangle(null, new Pen(new SolidColorBrush(Color.Parse("#322A1E"))), new Rect(0.5, 0.5, w - 1, h - 1));
     }
 
-    // A grabbable trim handle at the kept-region edge: a rounded bar with a bracket lip pointing inward.
+    // A grabbable end (trim) handle: a rounded bar with a bracket lip pointing inward.
     private static void DrawHandle(DrawingContext ctx, double x, double h, bool left)
     {
         var fill = new SolidColorBrush(Color.Parse("#F5A524"));
         var dir = left ? 1 : -1;
         var barX = left ? x : x - 5;
         ctx.DrawRectangle(fill, null, new RoundedRect(new Rect(barX, 0, 5, h), 2));
-        // Two grip lines.
         var grip = new Pen(new SolidColorBrush(Color.Parse("#140F0A")), 1);
         ctx.DrawLine(grip, new Point(barX + 2, h * 0.35), new Point(barX + 2, h * 0.65));
-        // A short lip into the kept area so the edge reads as a handle.
         ctx.DrawLine(new Pen(fill, 2), new Point(x, 1), new Point(x + dir * 6, 1));
         ctx.DrawLine(new Pen(fill, 2), new Point(x, h - 1), new Point(x + dir * 6, h - 1));
+    }
+
+    // An interior boundary handle: a thin line with a grab pill at the vertical centre.
+    private static void DrawBoundary(DrawingContext ctx, double x, double h)
+    {
+        var amber = new SolidColorBrush(Color.Parse("#F5A524"));
+        ctx.DrawLine(new Pen(new SolidColorBrush(Color.Parse("#C0F5A524")), 1), new Point(x, 0), new Point(x, h));
+        var pill = new Rect(x - 3, h / 2 - 11, 6, 22);
+        ctx.DrawRectangle(amber, new Pen(new SolidColorBrush(Color.Parse("#140F0A")), 1), new RoundedRect(pill, 3));
+        var grip = new Pen(new SolidColorBrush(Color.Parse("#140F0A")), 1);
+        ctx.DrawLine(grip, new Point(x, h / 2 - 5), new Point(x, h / 2 + 5));
     }
 
     // Center-crop the thumbnail to fill its slot without distortion.

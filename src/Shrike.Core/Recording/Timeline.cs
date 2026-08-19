@@ -24,6 +24,11 @@ public sealed class Timeline
 {
     private readonly List<Segment> _segments = new();
 
+    // User-placed split points (source ms) that survive coalescing, so a boundary the user made stays put even
+    // when both sides share a kept-state (split first, decide later). They never change what plays/exports —
+    // two adjacent kept spans join back-to-back — they only give the editor a boundary to grab and toggle.
+    private readonly SortedSet<long> _pins = new();
+
     /// <summary>Total length of the underlying source, in milliseconds.</summary>
     public long DurationMs { get; }
 
@@ -105,8 +110,57 @@ public sealed class Timeline
     public void RestoreAll()
     {
         _segments.Clear();
+        _pins.Clear();
         _segments.Add(new Segment(0, DurationMs, Kept: true));
         Changed?.Invoke();
+    }
+
+    /// <summary>The user-placed split points (interior boundaries that survive coalescing).</summary>
+    public IReadOnlyCollection<long> Splits => _pins;
+
+    /// <summary>Add a split at <paramref name="atMs"/> — a new boundary that divides the span there into two,
+    /// both keeping their current state (so you can split first and decide per-side after). No-op at the ends
+    /// or on an existing split.</summary>
+    public void Split(long atMs)
+    {
+        atMs = Math.Clamp(atMs, 0, DurationMs);
+        if (atMs <= 0 || atMs >= DurationMs) return;
+        if (!_pins.Add(atMs)) return;
+        Rebuild(Array.Empty<long>(), KeptAtBefore);
+    }
+
+    /// <summary>Remove the split nearest <paramref name="atMs"/> within <paramref name="toleranceMs"/> — merging
+    /// the two spans it divided (they coalesce if they now share a state). Only user splits are removed; a cut
+    /// boundary is removed by restoring the cut.</summary>
+    public void RemoveSplitAt(long atMs, long toleranceMs = long.MaxValue)
+    {
+        long? best = null; long bestD = long.MaxValue;
+        foreach (var p in _pins) { var d = Math.Abs(p - atMs); if (d < bestD) { bestD = d; best = p; } }
+        if (best is { } pin && bestD <= toleranceMs) { _pins.Remove(pin); Rebuild(Array.Empty<long>(), KeptAtBefore); }
+    }
+
+    /// <summary>Whether a user split sits within <paramref name="toleranceMs"/> of <paramref name="atMs"/>.</summary>
+    public bool HasSplitNear(long atMs, long toleranceMs) => _pins.Any(p => Math.Abs(p - atMs) <= toleranceMs);
+
+    /// <summary>Set the kept-state of whichever span contains <paramref name="atMs"/> (the quick per-span toggle).</summary>
+    public void SetSegmentKept(long atMs, bool kept)
+    {
+        if (Find(atMs) is { } seg) SetKept(seg.StartMs, seg.EndMs, kept);
+    }
+
+    /// <summary>Move an interior boundary from <paramref name="fromMs"/> to <paramref name="toMs"/> — the swept
+    /// span takes the state of the side the boundary retreats from, and a split there moves with it. Clamped so
+    /// it can't cross into the neighbouring boundaries.</summary>
+    public void MoveBoundary(long fromMs, long toMs)
+    {
+        if (fromMs <= 0 || fromMs >= DurationMs) return;
+        toMs = Math.Clamp(toMs, 0, DurationMs);
+        var leftState = KeptAtBefore(fromMs - 1);
+        var rightState = KeptAtBefore(fromMs);
+        if (_pins.Remove(fromMs) && toMs > 0 && toMs < DurationMs) _pins.Add(toMs);
+        if (toMs > fromMs) SetKept(fromMs, toMs, leftState);
+        else if (toMs < fromMs) SetKept(toMs, fromMs, rightState);
+        else Rebuild(Array.Empty<long>(), KeptAtBefore); // pin-only nudge to the same ms → just re-segment
     }
 
     /// <summary>The span covering <paramref name="atMs"/>, or null if out of range.</summary>
@@ -171,6 +225,7 @@ public sealed class Timeline
         var cuts = new SortedSet<long> { 0, DurationMs };
         foreach (var s in _segments) cuts.Add(s.StartMs);
         foreach (var b in boundaries) if (b > 0 && b < DurationMs) cuts.Add(b);
+        foreach (var p in _pins) if (p > 0 && p < DurationMs) cuts.Add(p); // keep user splits as boundaries
 
         var points = cuts.ToList();
         var rebuilt = new List<Segment>(points.Count);
@@ -180,8 +235,8 @@ public sealed class Timeline
             if (end <= start) continue;
             var mid = start + (end - start) / 2;
             var span = new Segment(start, end, kept(mid));
-            // Coalesce with the previous span when they share a kept-state.
-            if (rebuilt.Count > 0 && rebuilt[^1].Kept == span.Kept)
+            // Coalesce with the previous span when they share a kept-state — but never across a user split.
+            if (rebuilt.Count > 0 && rebuilt[^1].Kept == span.Kept && !_pins.Contains(start))
                 rebuilt[^1] = rebuilt[^1] with { EndMs = end };
             else
                 rebuilt.Add(span);

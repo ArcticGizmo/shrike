@@ -84,6 +84,13 @@ public partial class TimelineEditorWindow : Window
     private NumericUpDown? _startInput;
     private NumericUpDown? _endInput;
     private Button? _deleteButton;
+    // Segment (strip span) editor.
+    private Control? _segmentEditor;
+    private NumericUpDown? _segStartInput;
+    private NumericUpDown? _segEndInput;
+    private CheckBox? _segKeepToggle;
+    private Button? _removeSplitButton;
+    private (long Start, long End)? _selSeg;
     private NumericUpDown? _zoomAmountInput;
     private NumericUpDown? _easeInInput;
     private NumericUpDown? _easeOutInput;
@@ -137,11 +144,15 @@ public partial class TimelineEditorWindow : Window
 
         _strip.Timeline = _timeline;
         _strip.Seeked += OnSeek;                 // a plain click on the strip seeks
-        _strip.RangeSelected += OnRangeSelected; // drag on the strip selects a range to cut/keep
+        _strip.SegmentSelected += OnSegmentSelected; // double-click a span → edit it in the pane
+        _strip.RangeSelected += OnRangeSelected; // drag on the body selects a quick range to cut/keep
         _strip.SelectionCleared += OnSelectionCleared;
         _strip.TrimHeadTo += OnTrimHead;         // drag the end handles to trim head/tail
         _strip.TrimTailTo += OnTrimTail;
-        _strip.RestoreRequested += ms => { _timeline.RestoreSegmentAt(ms); UpdateLabels(); };
+        _strip.BoundaryMoved += (from, to) => { _timeline.MoveBoundary(from, to); UpdateLabels(); };
+        _strip.SplitRequested += ms => { _timeline.Split(ms); UpdateLabels(); };
+        _strip.SetKeptRequested += (ms, kept) => { _timeline.SetSegmentKept(ms, kept); UpdateLabels(); };
+        _strip.RemoveSplitRequested += ms => { _timeline.RemoveSplitAt(ms); UpdateLabels(); };
         _strip.ZoomRequested += OnTimelineZoom;
         _strip.PanRequested += OnTimelinePan;
 
@@ -274,6 +285,11 @@ public partial class TimelineEditorWindow : Window
         _timingEditor = this.FindControl<Grid>("TimingEditor");
         _startInput = this.FindControl<NumericUpDown>("StartInput");
         _endInput = this.FindControl<NumericUpDown>("EndInput");
+        _segmentEditor = this.FindControl<StackPanel>("SegmentEditor");
+        _segStartInput = this.FindControl<NumericUpDown>("SegStartInput");
+        _segEndInput = this.FindControl<NumericUpDown>("SegEndInput");
+        _segKeepToggle = this.FindControl<CheckBox>("SegKeepToggle");
+        _removeSplitButton = this.FindControl<Button>("RemoveSplitButton");
         _deleteButton = this.FindControl<Button>("DeleteZoomButton");
         _zoomAmountInput = this.FindControl<NumericUpDown>("ZoomAmountInput");
         _easeInInput = this.FindControl<NumericUpDown>("EaseInInput");
@@ -310,6 +326,10 @@ public partial class TimelineEditorWindow : Window
         if (_visibilityInput is not null) _visibilityInput.IsCheckedChanged += (_, _) => OnVisibilityPropsChanged();
         if (_startInput is not null) _startInput.ValueChanged += (_, _) => OnTimingChanged();
         if (_endInput is not null) _endInput.ValueChanged += (_, _) => OnTimingChanged();
+        if (_segStartInput is not null) _segStartInput.ValueChanged += (_, _) => OnSegStartChanged();
+        if (_segEndInput is not null) _segEndInput.ValueChanged += (_, _) => OnSegEndChanged();
+        if (_segKeepToggle is not null) _segKeepToggle.IsCheckedChanged += (_, _) => OnSegKeepChanged();
+        if (_removeSplitButton is not null) _removeSplitButton.Click += (_, _) => OnRemoveSplit();
 
         _canvasSurface = this.FindControl<AnnotationSurface>("CanvasSurface");
         _canvasEditor = this.FindControl<StackPanel>("CanvasEditor");
@@ -367,6 +387,10 @@ public partial class TimelineEditorWindow : Window
         var spot = effect as SpotlightEffect;
         var vis = effect as VisibilityEffect;
         var canvas = effect as CanvasEffect;
+
+        // A segment and an effect are mutually exclusive selections in the pane.
+        if (_segmentEditor is not null) _segmentEditor.IsVisible = false;
+        if (effect is not null) _selSeg = null;
 
         // The pane is always present; only its content swaps to the selected effect's editor. Kinds without an
         // editor (ripple) show the empty-state note. Delete is offered for any selection.
@@ -1228,6 +1252,82 @@ public partial class TimelineEditorWindow : Window
     {
         _timeline.RestoreAll();
         DropSelection();
+        ClearSegmentSelection();
+        OnEffectSelectionChanged(_effectsLane?.SelectedIndex ?? -1);
+    }
+
+    // ---- segment (strip span) editing in the pane ----
+
+    private long SplitTolMs() => Math.Max(1, _timeline.DurationMs / 200);
+
+    private void OnSegmentSelected(long start, long end)
+    {
+        _selSeg = (start, end);
+        _effectsLane?.Select(-1);   // a segment and an effect can't both be "the selection" → drop the effect
+        ShowSegmentEditor();
+    }
+
+    private void ShowSegmentEditor()
+    {
+        if (_selSeg is not { } s || _segmentEditor is null) return;
+        if (_paneHeader is not null) _paneHeader.Text = "✦ Segment";
+        if (_paneEmpty is not null) _paneEmpty.IsVisible = false;
+        if (_timingEditor is not null) _timingEditor.IsVisible = false;
+        if (_deleteButton is not null) _deleteButton.IsVisible = false;
+        _segmentEditor.IsVisible = true;
+
+        var seg = _timeline.Find((s.Start + s.End) / 2);
+        _suppressInspector = true;
+        if (_segStartInput is not null) _segStartInput.Value = (decimal)(s.Start / 1000.0);
+        if (_segEndInput is not null) _segEndInput.Value = (decimal)(s.End / 1000.0);
+        if (_segKeepToggle is not null) _segKeepToggle.IsChecked = seg?.Kept ?? true;
+        _suppressInspector = false;
+        if (_removeSplitButton is not null)
+            _removeSplitButton.IsEnabled = _timeline.HasSplitNear(s.Start, SplitTolMs()) || _timeline.HasSplitNear(s.End, SplitTolMs());
+    }
+
+    private void ClearSegmentSelection()
+    {
+        _selSeg = null;
+        if (_segmentEditor is not null) _segmentEditor.IsVisible = false;
+    }
+
+    private void OnSegStartChanged()
+    {
+        if (_suppressInspector || _selSeg is not { } s) return;
+        var v = Math.Clamp((long)Math.Round((double)(_segStartInput?.Value ?? 0) * 1000), 0, s.End - 100);
+        if (s.Start == 0) { if (v > 0) _timeline.Cut(0, v); }   // first span → trimming its start cuts the head
+        else _timeline.MoveBoundary(s.Start, v);
+        _selSeg = (v, s.End);
+        UpdateLabels();
+    }
+
+    private void OnSegEndChanged()
+    {
+        if (_suppressInspector || _selSeg is not { } s) return;
+        var dur = _timeline.DurationMs;
+        var v = Math.Clamp((long)Math.Round((double)(_segEndInput?.Value ?? 0) * 1000), s.Start + 100, dur);
+        if (s.End == dur) { if (v < dur) _timeline.Cut(v, dur); }  // last span → trimming its end cuts the tail
+        else _timeline.MoveBoundary(s.End, v);
+        _selSeg = (s.Start, v);
+        UpdateLabels();
+    }
+
+    private void OnSegKeepChanged()
+    {
+        if (_suppressInspector || _selSeg is not { } s) return;
+        _timeline.SetSegmentKept((s.Start + s.End) / 2, _segKeepToggle?.IsChecked == true);
+        UpdateLabels();
+    }
+
+    private void OnRemoveSplit()
+    {
+        if (_selSeg is not { } s) return;
+        if (_timeline.HasSplitNear(s.Start, SplitTolMs())) _timeline.RemoveSplitAt(s.Start);
+        else if (_timeline.HasSplitNear(s.End, SplitTolMs())) _timeline.RemoveSplitAt(s.End);
+        UpdateLabels();
+        ClearSegmentSelection();
+        OnEffectSelectionChanged(-1);
     }
 
     // ---- export ----
