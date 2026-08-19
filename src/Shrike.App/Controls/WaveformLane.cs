@@ -33,6 +33,17 @@ public sealed class WaveformLane : Control
     public event Action<long, double>? ZoomRequested;
     public event Action<double>? PanRequested;
 
+    /// <summary>Raised when the lane is clicked, with the source ms under the pointer — selects the audio clip.</summary>
+    public event Action<long>? Clicked;
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (Bounds.Width <= 0) return;
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            Clicked?.Invoke(MsAt(e.GetPosition(this).X));
+    }
+
     /// <summary>Set the decimated peaks (0..1) covering [0, <paramref name="audioDurationMs"/>] of the sidecar.</summary>
     public void SetWaveform(float[] peaks, long audioDurationMs)
     {

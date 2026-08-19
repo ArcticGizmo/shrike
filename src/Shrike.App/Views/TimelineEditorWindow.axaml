@@ -257,6 +257,22 @@
                                Text="Uncheck to cut this span. Drag the boundary handles on the strip, or set the times here." />
                 </StackPanel>
 
+                <!-- Audio clip editor (shown when the waveform lane is clicked). -->
+                <StackPanel Name="AudioEditor" Spacing="14" IsVisible="False">
+                    <CheckBox Name="AudioMuteInput" Content="Mute this audio" Foreground="#B8AE9C" />
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Gain" Classes="hint" />
+                        <Slider Name="AudioGainInput" Minimum="-24" Maximum="12" />
+                        <TextBlock Name="AudioGainValue" Classes="hint" FontFamily="Consolas,monospace" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="A/V sync offset (ms)" Classes="hint" />
+                        <NumericUpDown Name="AudioOffsetInput" Minimum="-2000" Maximum="2000" Increment="10" FormatString="0" />
+                    </StackPanel>
+                    <TextBlock Classes="hint" TextWrapping="Wrap"
+                               Text="Captured audio rides the cuts automatically. Nudge the offset if voice and picture drift (+ = audio later)." />
+                </StackPanel>
+
                 <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"
                         HorizontalAlignment="Stretch" IsVisible="False" />
             </StackPanel>

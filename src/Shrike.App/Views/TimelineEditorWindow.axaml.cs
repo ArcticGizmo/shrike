@@ -385,7 +385,19 @@ public partial class TimelineEditorWindow : Window
             _waveLane.Timeline = _timeline;
             _waveLane.ZoomRequested += OnTimelineZoom;
             _waveLane.PanRequested += OnTimelinePan;
+            _waveLane.Clicked += OnWaveformClicked;
         }
+
+        _audioEditor = this.FindControl<StackPanel>("AudioEditor");
+        _audioGainInput = this.FindControl<Slider>("AudioGainInput");
+        _audioGainValue = this.FindControl<TextBlock>("AudioGainValue");
+        _audioMuteInput = this.FindControl<CheckBox>("AudioMuteInput");
+        _audioOffsetInput = this.FindControl<NumericUpDown>("AudioOffsetInput");
+        if (_audioGainInput is not null)
+            _audioGainInput.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnAudioPropsChanged(); };
+        if (_audioMuteInput is not null) _audioMuteInput.IsCheckedChanged += (_, _) => OnAudioPropsChanged();
+        if (_audioOffsetInput is not null) _audioOffsetInput.ValueChanged += (_, _) => OnAudioPropsChanged();
+
         _preview.TargetBoxDrawn += OnTargetBoxDrawn;
         if (this.FindControl<Button>("AddEffectButton") is { } add)
             add.Click += (_, _) => _effectsLane?.ShowAddMenu(add, atPointer: false, _playheadSourceMs, hitIndex: -1);
@@ -431,6 +443,14 @@ public partial class TimelineEditorWindow : Window
     private readonly List<AudioClip> _audioClips = [];
     private AudioTrack CurrentAudio => new(_audioClips);
 
+    // Audio clip inspector (gain / mute / A-V offset), selected by clicking the waveform lane.
+    private StackPanel? _audioEditor;
+    private Slider? _audioGainInput;
+    private TextBlock? _audioGainValue;
+    private CheckBox? _audioMuteInput;
+    private NumericUpDown? _audioOffsetInput;
+    private int _selectedAudioIndex = -1;
+
     // The selected effect if it's a zoom (the only kind with an inspector + aim box today), else null.
     private ZoomEffect? SelectedZoomEffect()
         => _effectsLane is { SelectedIndex: var i } && i >= 0 && i < _effects.Count && _effects[i] is ZoomEffect z
@@ -470,9 +490,10 @@ public partial class TimelineEditorWindow : Window
         var vis = effect as VisibilityEffect;
         var canvas = effect as CanvasEffect;
 
-        // A segment and an effect are mutually exclusive selections in the pane.
+        // A segment, an effect, and an audio clip are mutually exclusive selections in the pane.
         if (_segmentEditor is not null) _segmentEditor.IsVisible = false;
-        if (effect is not null) _selSeg = null;
+        if (_audioEditor is not null) _audioEditor.IsVisible = false;
+        if (effect is not null) { _selSeg = null; _selectedAudioIndex = -1; }
 
         // The pane is always present; only its content swaps to the selected effect's editor. Kinds without an
         // editor (ripple) show the empty-state note. Delete is offered for any selection.
@@ -530,6 +551,58 @@ public partial class TimelineEditorWindow : Window
         _suppressInspector = false;
 
         UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
+    }
+
+    // ---- audio clip inspector ----
+
+    private void OnWaveformClicked(long sourceMs)
+    {
+        if (_audioClips.Count == 0) return;
+        // One live-capture clip today; pick it (fall back to the first clip). Deselect any effect first.
+        var index = _audioClips.FindIndex(c => c.Origin == AudioOrigin.LiveCapture);
+        if (index < 0) index = 0;
+        _effectsLane?.Select(-1);
+        _selectedAudioIndex = index;
+        ShowAudioEditor();
+    }
+
+    private void ShowAudioEditor()
+    {
+        if (_audioEditor is null || _selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+
+        if (_paneHeader is not null) _paneHeader.Text = "✦ Audio";
+        if (_paneEmpty is not null) _paneEmpty.IsVisible = false;
+        _audioEditor.IsVisible = true;
+
+        _suppressInspector = true;
+        if (_audioMuteInput is not null) _audioMuteInput.IsChecked = clip.Muted;
+        if (_audioGainInput is not null) _audioGainInput.Value = clip.GainDb;
+        if (_audioOffsetInput is not null) _audioOffsetInput.Value = clip.AvOffsetMs;
+        UpdateAudioGainLabel(clip.GainDb);
+        _suppressInspector = false;
+    }
+
+    private void OnAudioPropsChanged()
+    {
+        if (_suppressInspector || _selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        var gainDb = _audioGainInput?.Value ?? clip.GainDb;
+        var muted = _audioMuteInput?.IsChecked ?? clip.Muted;
+        var offset = (long)(_audioOffsetInput?.Value ?? (decimal)clip.AvOffsetMs);
+        _audioClips[_selectedAudioIndex] = clip with { GainDb = gainDb, Muted = muted, AvOffsetMs = offset };
+        UpdateAudioGainLabel(gainDb);
+
+        // A muted primary silences the preview; recompute what plays and cut it now if nothing is audible.
+        _previewAudioPath = _audioClips.FirstOrDefault(c => !c.Muted && c.Origin == AudioOrigin.LiveCapture)?.SidecarPath;
+        if (_previewAudioPath is null) StopPreviewAudio();
+    }
+
+    private void UpdateAudioGainLabel(double gainDb)
+    {
+        if (_audioGainValue is null) return;
+        _audioGainValue.Text = (gainDb >= 0 ? "+" : "") +
+            gainDb.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " dB";
     }
 
     // ---- inline canvas editing ----
