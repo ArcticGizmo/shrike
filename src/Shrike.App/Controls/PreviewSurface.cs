@@ -216,10 +216,12 @@ public sealed class PreviewSurface : Control
         var src = img.Size;
         if (src.Width <= 0 || src.Height <= 0) return;
 
-        // Source sub-rectangle (the zoom crop), in image pixels; whole frame when no viewport is set.
-        var srcRect = _viewport is { } v
-            ? new Rect(v.X * src.Width, v.Y * src.Height, v.Width * src.Width, v.Height * src.Height)
-            : new Rect(src);
+        // The zoom crop as a normalised rectangle (0..1); the whole frame when no viewport is set. Kept
+        // normalised so it maps onto both the frame image AND a canvas layer, which may differ in pixel size.
+        var nv = _viewport ?? new Rect(0, 0, 1, 1);
+
+        // Source sub-rectangle (the zoom crop), in the frame image's pixels.
+        var srcRect = new Rect(nv.X * src.Width, nv.Y * src.Height, nv.Width * src.Width, nv.Height * src.Height);
 
         var dst = Bounds.Size;
         var scale = Math.Min(dst.Width / srcRect.Width, dst.Height / srcRect.Height);
@@ -229,12 +231,18 @@ public sealed class PreviewSurface : Control
         _fitRect = rect;
         ctx.DrawImage(img, srcRect, rect);
 
-        // Content-space canvas layers ride the same source crop as the frame (so they magnify with a zoom).
+        // Content-space canvas layers ride the same normalised crop as the frame (so they magnify with a zoom).
+        // The crop is applied against the LAYER's own size — the layer is rendered at the recording-source
+        // resolution, which may differ from the preview frame's pixel size.
         foreach (var cv in _canvasLayers)
             if (cv.ContentSpace && cv.Transform.Opacity > 0)
-                using (PushLayer(ctx, cv.Transform, rect, rect.Width / srcRect.Width))
+            {
+                var ls = cv.Layer.Size;
+                var layerSrc = new Rect(nv.X * ls.Width, nv.Y * ls.Height, nv.Width * ls.Width, nv.Height * ls.Height);
+                using (PushLayer(ctx, cv.Transform, rect, rect.Width / layerSrc.Width))
                 using (ctx.PushOpacity(cv.Transform.Opacity))
-                    ctx.DrawImage(cv.Layer, srcRect, rect);
+                    ctx.DrawImage(cv.Layer, layerSrc, rect);
+            }
 
         // Spotlight glow sits under everything else, following the cursor (drawn as a radial gradient ellipse).
         if (_spotlight is { } sp && sp.Alpha > 0)
