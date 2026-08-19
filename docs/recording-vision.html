@@ -1,0 +1,694 @@
+<title>Shrike Narration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  /* ============ Tokens: light is the bare :root ============ */
+  :root {
+    --bg:        #E8EAEE;   /* cool pale slate — the shrike's breast, not cream */
+    --surface:   #F5F6F8;
+    --surface-2: #FDFDFE;
+    --panel:     #FFFFFF;
+    --ink:       #1B1F24;   /* charcoal — the bird's mask */
+    --ink-soft:  #545E69;
+    --ink-faint: #8B95A0;
+    --line:      #D3D8DF;
+    --line-soft: #E4E8ED;
+    --accent:    #B0442A;   /* rufous — the shrike's back, and the record light */
+    --accent-ink:#8F3620;
+    --accent-wash:#F3E2DC;
+    --signal:    #2C6B66;   /* healthy input teal */
+    --signal-wash:#DDEBE9;
+    --hot:       #C98A1E;   /* meter approaching clip */
+    --shadow:    0 1px 2px rgba(20,24,28,.05), 0 8px 26px -12px rgba(20,24,28,.22);
+    --shadow-lg: 0 2px 4px rgba(20,24,28,.06), 0 26px 60px -22px rgba(20,24,28,.34);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #14171B;
+      --surface:   #1C2027;
+      --surface-2: #23282F;
+      --panel:     #262C34;
+      --ink:       #E8EBEF;
+      --ink-soft:  #A6B0BB;
+      --ink-faint: #6C7681;
+      --line:      #333A43;
+      --line-soft: #2A3038;
+      --accent:    #D4664A;
+      --accent-ink:#E9917B;
+      --accent-wash:#3A241D;
+      --signal:    #52B3A9;
+      --signal-wash:#1E312F;
+      --hot:       #E0AA45;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px -12px rgba(0,0,0,.6);
+      --shadow-lg: 0 2px 6px rgba(0,0,0,.45), 0 30px 70px -24px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #14171B;
+    --surface:   #1C2027;
+    --surface-2: #23282F;
+    --panel:     #262C34;
+    --ink:       #E8EBEF;
+    --ink-soft:  #A6B0BB;
+    --ink-faint: #6C7681;
+    --line:      #333A43;
+    --line-soft: #2A3038;
+    --accent:    #D4664A;
+    --accent-ink:#E9917B;
+    --accent-wash:#3A241D;
+    --signal:    #52B3A9;
+    --signal-wash:#1E312F;
+    --hot:       #E0AA45;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px -12px rgba(0,0,0,.6);
+    --shadow-lg: 0 2px 6px rgba(0,0,0,.45), 0 30px 70px -24px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+
+  h1, h2, h3 { font-family: "Archivo", system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  a { color: var(--accent-ink); text-decoration-color: color-mix(in srgb, var(--accent-ink) 40%, transparent); text-underline-offset: 3px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; font-weight: 500;
+    letter-spacing: .18em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ============ Header ============ */
+  header.hero { padding: 72px 0 48px; }
+  .brandline { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; }
+  .mark {
+    width: 34px; height: 34px; border-radius: 9px; flex: none;
+    background: var(--accent); color: #fff;
+    display: grid; place-items: center;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, #000 10%) inset;
+    position: relative;
+  }
+  .mark::after { /* record ring */
+    content: ""; position: absolute; inset: -5px; border-radius: 12px;
+    border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  .mark span { width: 11px; height: 11px; background: #fff; border-radius: 50%; }
+  .brandline b { font-family: "Archivo"; font-weight: 700; letter-spacing: .01em; }
+  .brandline .div { color: var(--ink-faint); }
+  .brandline .status {
+    margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    color: var(--ink-soft); border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 11px; background: var(--surface);
+  }
+
+  h1 { font-size: clamp(38px, 6.4vw, 68px); font-weight: 800; line-height: 1.02; letter-spacing: -.02em; }
+  h1 .em { color: var(--accent); }
+  .lede { font-size: clamp(17px, 2.1vw, 21px); color: var(--ink-soft); max-width: 60ch; margin-top: 22px; }
+
+  .thesis {
+    margin-top: 34px; padding: 20px 22px; border-radius: var(--radius);
+    background: var(--surface); border: 1px solid var(--line);
+    display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: start;
+  }
+  .thesis .glyph { font-size: 22px; line-height: 1; }
+  .thesis p { margin: 0; font-size: 15.5px; }
+  .thesis strong { color: var(--ink); }
+
+  /* ============ Section scaffolding ============ */
+  section { padding: 30px 0; }
+  .step-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 6px; }
+  .step-num {
+    font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px;
+    color: var(--accent); letter-spacing: .05em; padding-top: 4px; flex: none;
+  }
+  .step-head h2 { font-size: clamp(23px, 3.2vw, 30px); font-weight: 700; letter-spacing: -.01em; }
+  .step-sub { color: var(--ink-soft); max-width: 64ch; margin: 4px 0 24px 0; padding-left: 46px; }
+  @media (max-width: 640px){ .step-sub { padding-left: 0; } }
+
+  .tag {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 10.5px;
+    letter-spacing: .1em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px;
+    background: var(--accent-wash); color: var(--accent-ink); font-weight: 500;
+    vertical-align: middle; margin-left: 4px;
+  }
+  .tag.later { background: var(--surface-2); color: var(--ink-faint); border: 1px dashed var(--line); }
+  .tag.pain { background: var(--signal-wash); color: var(--signal); }
+
+  /* ============ Mock chrome (a Shrike window) ============ */
+  .mock {
+    border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line);
+    box-shadow: var(--shadow-lg); overflow: hidden;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    background: var(--surface); border-bottom: 1px solid var(--line);
+    font-size: 12.5px; color: var(--ink-soft);
+  }
+  .titlebar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .titlebar .name { font-family: "Archivo"; font-weight: 600; color: var(--ink); letter-spacing: .02em; }
+  .titlebar .spacer { flex: 1; }
+  .titlebar .win { font-family: "IBM Plex Mono", monospace; color: var(--ink-faint); font-size: 13px; }
+
+  .mock-body { padding: 22px; }
+
+  .field-label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); margin-bottom: 7px; }
+
+  .select {
+    display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--surface-2); font-size: 14px;
+  }
+  .select .ico { color: var(--accent); flex: none; display: grid; place-items: center; }
+  .select .grow { flex: 1; }
+  .select .chev { color: var(--ink-faint); }
+  .select .badge {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--signal);
+    background: var(--signal-wash); padding: 2px 7px; border-radius: 5px;
+  }
+
+  /* Level meter */
+  .meter-block { margin-top: 20px; }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .meter-top .val { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); }
+  .meter {
+    position: relative; height: 20px; border-radius: 6px; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--line);
+    --level: 62%;
+  }
+  .meter .fill {
+    position: absolute; inset: 0; width: var(--level);
+    background: linear-gradient(90deg, var(--signal) 0 60%, var(--hot) 78%, var(--accent) 100%);
+    background-size: 165% 100%; background-position: left;
+    border-radius: 5px 0 0 5px;
+    transition: width .09s linear;
+  }
+  .meter .ticks { position: absolute; inset: 0; display: flex; }
+  .meter .ticks i { flex: 1; border-right: 2px solid var(--panel); }
+  .meter .ticks i:last-child { border-right: 0; }
+  .meter .peak { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); left: 74%; opacity: .55; }
+  .meter-scale { display: flex; justify-content: space-between; font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--ink-faint); margin-top: 5px; }
+
+  .checkrow { display: flex; align-items: center; gap: 10px; margin-top: 18px; font-size: 13.5px; color: var(--ink-soft); }
+  .checkrow .ok { color: var(--signal); display: inline-grid; place-items: center; }
+
+  /* Capture-source toggles */
+  .sources { margin-top: 18px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .src-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface-2); }
+  .src-row + .src-row { border-top: 1px solid var(--line-soft); }
+  .src-row .sico { color: var(--accent); flex: none; display: grid; place-items: center; }
+  .src-row .txt { flex: 1; }
+  .src-row .txt b { font-family: "Archivo"; font-weight: 600; font-size: 14px; display: block; }
+  .src-row .txt small { color: var(--ink-faint); font-size: 12px; }
+  .toggle { width: 40px; height: 23px; border-radius: 999px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+  .toggle.on { background: var(--signal); }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+  .toggle.on::after { transform: translateX(17px); }
+
+  .actions { display: flex; gap: 12px; align-items: center; margin-top: 24px; flex-wrap: wrap; }
+  .btn {
+    font-family: "IBM Plex Sans"; font-size: 14px; font-weight: 600;
+    padding: 11px 18px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--ink); cursor: default; display: inline-flex; align-items: center; gap: 9px;
+  }
+  .btn.ghost { background: transparent; }
+  .btn.rec { background: var(--accent); border-color: transparent; color: #fff; }
+  .btn.rec .rd { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+  .btn .kbd {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; padding: 2px 6px; border-radius: 5px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-soft);
+    border: 1px solid var(--line-soft);
+  }
+  .btn.rec .kbd { background: rgba(255,255,255,.2); color: #fff; border-color: transparent; }
+
+  /* Callouts beside a mock */
+  .callouts { display: grid; gap: 14px; margin-top: 22px; }
+  @media (min-width: 760px){ .with-notes { display: grid; grid-template-columns: 1.5fr 1fr; gap: 28px; align-items: start; } .with-notes .callouts { margin-top: 0; } }
+  .note { display: grid; grid-template-columns: auto 1fr; gap: 12px; }
+  .note .n {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; color: #fff;
+    background: var(--accent); width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; flex: none;
+  }
+  .note b { font-family: "Archivo"; font-weight: 600; font-size: 14.5px; }
+  .note p { margin: 3px 0 0; font-size: 13.5px; color: var(--ink-soft); }
+
+  /* Recording HUD */
+  .hud {
+    max-width: 460px; margin: 0 auto; border-radius: 12px; background: var(--panel);
+    border: 1px solid var(--line); box-shadow: var(--shadow-lg); padding: 14px 16px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .hud .recdot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); flex: none; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); animation: pulse 1.8s ease-out infinite; }
+  @keyframes pulse { 0%{ box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);} 100%{ box-shadow: 0 0 0 12px transparent;} }
+  .hud .time { font-family: "IBM Plex Mono", monospace; font-size: 16px; font-weight: 600; letter-spacing: .02em; }
+  .hud .minimeter { flex: 1; height: 12px; border-radius: 4px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; position: relative; }
+  .hud .minimeter .f { position: absolute; inset: 0; width: 48%; background: linear-gradient(90deg, var(--signal), var(--hot)); }
+  .hud .hbtn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); display: grid; place-items: center; color: var(--ink-soft); }
+  .hud .micpill { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--signal); background: var(--signal-wash); padding: 3px 8px; border-radius: 6px; display: inline-flex; gap: 6px; align-items: center; }
+
+  /* Editor / timeline mock */
+  .editor { display: grid; gap: 12px; }
+  .ed-top { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+  @media (max-width: 640px){ .ed-top { grid-template-columns: 1fr; } }
+  .preview {
+    border-radius: 10px; border: 1px solid var(--line); background:
+      repeating-linear-gradient(45deg, var(--surface) 0 12px, var(--surface-2) 12px 24px);
+    min-height: 150px; position: relative; overflow: hidden;
+  }
+  .preview .frame { position: absolute; inset: 14px; border-radius: 7px; background: linear-gradient(160deg, color-mix(in srgb, var(--signal) 22%, var(--panel)), var(--panel)); border: 1px solid var(--line); }
+  .preview .caption-ghost {
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    font-family: "IBM Plex Sans"; font-size: 12px; font-weight: 600; color: var(--ink);
+    background: color-mix(in srgb, var(--panel) 82%, transparent); backdrop-filter: blur(2px);
+    padding: 4px 10px; border-radius: 6px; border: 1px dashed var(--line); white-space: nowrap;
+  }
+  .preview .badge-play { position: absolute; top: 12px; left: 12px; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--signal); background: var(--signal-wash); padding: 3px 8px; border-radius: 6px; display: flex; gap: 6px; align-items: center; }
+  .props { border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); padding: 14px; font-size: 13px; }
+  .props h4 { font-family: "Archivo"; margin: 0 0 10px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
+  .props .prow { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line-soft); }
+  .props .prow:last-child { border-bottom: 0; }
+  .props .prow .k { color: var(--ink-soft); }
+  .props .prow .v { font-family: "IBM Plex Mono", monospace; }
+
+  .lane {
+    border-radius: 10px; border: 1px solid var(--line); background: var(--surface); overflow: hidden;
+  }
+  .lane .ruler { height: 26px; border-bottom: 1px solid var(--line-soft); position: relative; background: var(--surface-2); }
+  .lane .ruler .tickmark { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line); }
+  .lane .ruler .lbl { position: absolute; top: 6px; font-family: "IBM Plex Mono", monospace; font-size: 9.5px; color: var(--ink-faint); transform: translateX(4px); }
+  .lane .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); z-index: 5; }
+  .lane .playhead::before { content: ""; position: absolute; top: -1px; left: -5px; border: 6px solid transparent; border-top-color: var(--accent); }
+
+  .track { position: relative; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+  .track:last-child { border-bottom: 0; }
+  .track .tname { position: absolute; left: 10px; top: 8px; font-family: "IBM Plex Mono", monospace; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); z-index: 2; }
+
+  .film { height: 40px; margin: 0 10px; border-radius: 6px; overflow: hidden; display: flex; }
+  .film span { flex: 1; border-right: 1px solid var(--panel); background: linear-gradient(160deg, color-mix(in srgb, var(--signal) 18%, var(--surface-2)), var(--surface-2)); }
+
+  .wave { height: 48px; margin: 22px 10px 6px; position: relative; }
+  .wave canvas { width: 100%; height: 100%; display: block; }
+  .rerec {
+    position: absolute; top: -4px; bottom: -4px; border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1.5px solid var(--accent); z-index: 3;
+  }
+  .rerec .lab {
+    position: absolute; top: -21px; left: -1px; font-family: "IBM Plex Mono", monospace; font-size: 10px;
+    color: #fff; background: var(--accent); padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+    display: inline-flex; gap: 5px; align-items: center;
+  }
+
+  /* Export mini */
+  .export-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .export-grid .cell { border: 1px solid var(--line); border-radius: 9px; padding: 12px 13px; background: var(--surface-2); }
+  .export-grid .cell.ghost { border-style: dashed; opacity: .72; }
+  .export-grid .cell .top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--ink-soft); }
+  .export-grid .cell .big { font-family: "IBM Plex Mono", monospace; font-size: 16px; font-weight: 600; margin-top: 6px; }
+  .stream { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-size: 13px; }
+  .stream .chip { font-family: "IBM Plex Mono", monospace; font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); }
+  .stream .chip.on { background: var(--signal-wash); color: var(--signal); border-color: transparent; }
+  .stream .chip.a { background: var(--accent-wash); color: var(--accent-ink); border-color: transparent; }
+
+  /* Principles footer */
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-top: 12px; }
+  .rule { padding: 18px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+  .rule h4 { font-family: "Archivo"; font-size: 14.5px; font-weight: 600; margin: 0 0 6px; }
+  .rule p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+  .rule .k { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--accent-ink); }
+
+  hr.div { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
+  footer { padding: 44px 0 70px; color: var(--ink-faint); font-size: 13px; }
+  footer a { font-weight: 500; }
+
+  svg { display: block; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="brandline">
+      <span class="mark"><span></span></span>
+      <b>Shrike</b><span class="div">/</span><span class="eyebrow" style="letter-spacing:.16em">Recording · Narration</span>
+      <span class="status">Vision — not yet locked</span>
+    </div>
+
+    <h1>Talk over your captures <span class="em">without the re-take dread.</span></h1>
+    <p class="lede">
+      Narration in Shrike is a <em>track</em>, not something welded to the take. Record it live while you
+      demo, or lay it down in the editor against the preview — and when you fumble a line, re-record just
+      that slice. It rides the cuts like every other effect. But first, we settle the thing that always
+      goes wrong: <strong>is the right mic actually armed and audible?</strong>
+    </p>
+
+    <div class="thesis">
+      <span class="glyph">🪶</span>
+      <p>
+        Shrike's edit model is already <strong>non-destructive and source-time-anchored</strong>, so audio
+        drops in as an editable layer that survives trims and splits for free. The same move opens the door
+        to <strong>burned-in captions</strong> for the muted-autoplay Slack case <span class="tag later">investigate later</span>
+        — that's on the roadmap, not in this vision.
+      </p>
+    </div>
+  </header>
+
+  <!-- ============ STEP 01 · MIC CHECK ============ -->
+  <section>
+    <div class="step-head">
+      <span class="step-num">01</span>
+      <h2>The mic check comes <em>before</em> the record light <span class="tag pain">the pain point</span></h2>
+    </div>
+    <p class="step-sub">
+      You can't un-fumble a take because the wrong input was armed, the mic was muted, or the level was
+      pinned. So recording is <strong>gated</strong> on a check: pick the device, watch it move, record a
+      three-second test and hear it back. Only then does the record button light up.
+    </p>
+
+    <div class="with-notes">
+      <div class="mock">
+        <div class="titlebar">
+          <span class="dot"></span>
+          <span class="name">Ready to record</span>
+          <span class="spacer"></span>
+          <span class="win">Mic check</span>
+        </div>
+        <div class="mock-body">
+          <div class="field-label">Input device</div>
+          <div class="select">
+            <span class="ico" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+            </span>
+            <span class="grow">Yeti Nano — USB Microphone</span>
+            <span class="badge">signal ✓</span>
+            <span class="chev" aria-hidden="true">▾</span>
+          </div>
+
+          <div class="meter-block">
+            <div class="meter-top">
+              <span class="field-label" style="margin:0">Input level</span>
+              <span class="val" id="dbval">−14 dB</span>
+            </div>
+            <div class="meter" id="meter">
+              <div class="fill" id="fill"></div>
+              <div class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="peak"></div>
+            </div>
+            <div class="meter-scale"><span>−60</span><span>−40</span><span>−20</span><span>−12</span><span>−6</span><span>0</span></div>
+          </div>
+
+          <div class="checkrow">
+            <span class="ok" aria-hidden="true">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </span>
+            <span>Levels look healthy — peaking around −6&nbsp;dB, no clipping.</span>
+          </div>
+
+          <div class="sources">
+            <div class="src-row">
+              <span class="sico" aria-hidden="true">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+              </span>
+              <span class="txt"><b>Microphone</b><small>Yeti Nano — your voice</small></span>
+              <span class="toggle on" role="switch" aria-checked="true" aria-label="Capture microphone"></span>
+            </div>
+            <div class="src-row">
+              <span class="sico" aria-hidden="true">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+              </span>
+              <span class="txt"><b>System sound</b><small>Loopback — app audio, videos, chimes</small></span>
+              <span class="toggle" role="switch" aria-checked="false" aria-label="Capture system sound"></span>
+            </div>
+          </div>
+
+          <div class="actions">
+            <span class="btn ghost">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              Test &amp; play back <span class="kbd">3s</span>
+            </span>
+            <span class="btn rec">
+              <span class="rd"></span> Start recording <span class="kbd">Alt+Shift+R</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="callouts">
+        <div class="note"><span class="n">1</span><div><b>Device picker, remembered</b><p>The last-used input is pre-armed next time. USB mic unplugged? It says so instead of silently falling back to the laptop array.</p></div></div>
+        <div class="note"><span class="n">2</span><div><b>A meter that actually moves</b><p>Live input level with a peak marker. You see the mic respond to your voice — proof the device is live and roughly set before you commit.</p></div></div>
+        <div class="note"><span class="n">3</span><div><b>Test &amp; play back</b><p>Records three seconds and plays them straight back. The one check that catches muted mics, wrong device, and “why am I so quiet” — every time.</p></div></div>
+        <div class="note"><span class="n">4</span><div><b>Record stays dim until it's happy</b><p>No signal, no arm. The button won't pretend you're ready when the input is silent.</p></div></div>
+        <div class="note"><span class="n">5</span><div><b>Mic, system sound, or both</b><p>Flip on loopback to capture what the machine is playing — app audio, a video, a chime. Each source is its own track, so gains stay independent in the editor.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STEP 02 · RECORD ============ -->
+  <section>
+    <div class="step-head">
+      <span class="step-num">02</span>
+      <h2>Record with your voice on the same clock</h2>
+    </div>
+    <p class="step-sub">
+      The HUD keeps the mic in view the whole take — a live meter so you never trail off into a dead
+      channel, plus the armed device by name. Mic audio is captured on the <em>same pause-excluded clock</em>
+      as the pointer track, so it lines up with the video and the click ripples automatically. Want the
+      app's own sound too? Loopback capture is a toggle, mixed underneath.
+    </p>
+
+    <div class="hud">
+      <span class="recdot" aria-hidden="true"></span>
+      <span class="time">00:42</span>
+      <span class="minimeter" aria-hidden="true"><span class="f"></span></span>
+      <span class="micpill">🎙 Yeti Nano</span>
+      <span class="micpill" style="color:var(--accent-ink); background:var(--accent-wash)">🔊 System</span>
+      <span class="hbtn" aria-hidden="true" title="Pause">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      </span>
+      <span class="hbtn" aria-hidden="true" title="Stop" style="color:var(--accent)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      </span>
+    </div>
+  </section>
+
+  <!-- ============ STEP 03 · EDITOR / PUNCH-IN ============ -->
+  <section>
+    <div class="step-head">
+      <span class="step-num">03</span>
+      <h2>Re-record the fumble, keep the rest</h2>
+    </div>
+    <p class="step-sub">
+      In the editor the narration is a <strong>waveform lane</strong> right under the filmstrip. Prefer to
+      narrate after the fact? Hit record in the editor and talk over the playing preview. Flubbed one
+      sentence? Select the span, punch in, and re-record <em>only</em> that slice — everything either side
+      stays put. And because Shrike is WYSIWYG, <strong>the preview plays the narration back</strong> as you
+      scrub, so what you hear is what you'll ship.
+    </p>
+
+    <div class="mock">
+      <div class="titlebar">
+        <span class="dot"></span>
+        <span class="name">Timeline editor</span>
+        <span class="spacer"></span>
+        <span class="win">demo-2026-08-19.mp4</span>
+      </div>
+      <div class="mock-body">
+        <div class="editor">
+          <div class="ed-top">
+            <div class="preview">
+              <div class="frame"></div>
+              <span class="badge-play">▶ playing · narration on</span>
+              <span class="caption-ghost">“…and that's the mic check — done.”</span>
+            </div>
+            <div class="props">
+              <h4>Narration clip</h4>
+              <div class="prow"><span class="k">Source in</span><span class="v">00:38.20</span></div>
+              <div class="prow"><span class="k">Source out</span><span class="v">00:44.05</span></div>
+              <div class="prow"><span class="k">Gain</span><span class="v">+2.0 dB</span></div>
+              <div class="prow"><span class="k">Device</span><span class="v">Yeti Nano</span></div>
+              <div class="prow"><span class="k">Re-takes</span><span class="v">2</span></div>
+            </div>
+          </div>
+
+          <div class="lane">
+            <div class="ruler" id="ruler">
+              <div class="playhead" style="left:41%"></div>
+            </div>
+
+            <div class="track">
+              <span class="tname">Video</span>
+              <div class="film"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+
+            <div class="track">
+              <span class="tname">Narration</span>
+              <div class="wave">
+                <canvas id="wf" width="1600" height="96" aria-label="Narration waveform"></canvas>
+                <div class="rerec" style="left:36%; width:20%">
+                  <span class="lab">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+                    Punch-in re-record
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="callouts" style="margin-top:18px">
+            <div class="note"><span class="n">↺</span><div><b>Selection re-record is non-destructive</b><p>The re-record overwrites just the highlighted span of the narration track. Undo brings the old take back — the source video is never touched.</p></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STEP 04 · EXPORT ============ -->
+  <section>
+    <div class="step-head">
+      <span class="step-num">04</span>
+      <h2>Export mixes it in — off still means off</h2>
+    </div>
+    <p class="step-sub">
+      When there's a narration track, the encode stops forcing <code>-an</code> and muxes the audio into the
+      same single decode → compose → encode pass. The live size estimate now counts an audio stream. No
+      narration? The export path is byte-for-byte what it is today.
+    </p>
+
+    <div class="mock" style="max-width:620px">
+      <div class="titlebar"><span class="dot"></span><span class="name">Export</span><span class="spacer"></span><span class="win">Slack-small · H.264</span></div>
+      <div class="mock-body">
+        <div class="export-grid">
+          <div class="cell">
+            <div class="top"><span>Estimated size</span><span>≈</span></div>
+            <div class="big">3.8 MB</div>
+            <div class="stream"><span class="chip on">video ✓</span><span class="chip a">+ audio</span></div>
+          </div>
+          <div class="cell ghost">
+            <div class="top"><span>Captions</span><span class="tag later" style="margin:0">later</span></div>
+            <div class="big" style="color:var(--ink-faint)">burn-in</div>
+            <div class="stream"><span class="chip">from transcript</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:8px">
+    <div class="thesis" style="border-style:dashed">
+      <span class="glyph">🎧</span>
+      <p>
+        <strong>Later, maybe:</strong> once the mic source, level metering, and this mic-check gate exist,
+        an <strong>audio-only pathway</strong> — record narration or system sound with <em>no</em> video at
+        all — becomes a small step (skip the video source; mux audio only). Handy for a quick voice memo,
+        capturing a call, or laying the voiceover down first and building the capture around it.
+        <span class="tag later">not scoped — noted so M1 doesn't assume a video track always exists</span>
+      </p>
+    </div>
+  </section>
+
+  <hr class="div" style="margin:24px 0">
+
+  <!-- ============ PRINCIPLES ============ -->
+  <section>
+    <div class="step-head" style="margin-bottom:14px"><span class="step-num">◆</span><h2>Held to the project's rules</h2></div>
+    <div class="rules">
+      <div class="rule"><h4>WYSIWYG</h4><p>Audible in export ⇒ audible in preview. The <span class="k">PreviewSurface</span> plays the narration as you scrub.</p></div>
+      <div class="rule"><h4>Off means off</h4><p>No audio track ⇒ export is byte-for-byte today's transcode, still <span class="k">-an</span>.</p></div>
+      <div class="rule"><h4>Non-destructive</h4><p>Audio is sidecar media referenced from <span class="k">*.edit.json</span> (v3). The source MP4 is never mutated.</p></div>
+      <div class="rule"><h4>Core stays UI-free</h4><p>Capture, mixing, level metering land in <span class="k">Shrike.Core</span> with headless tests.</p></div>
+      <div class="rule"><h4>Snappy load stays green</h4><p>Nothing audio touches tray start. No models, no device enumeration until you open recording.</p></div>
+      <div class="rule"><h4>One open decision</h4><p>Audio + preview playback is the moment to unify the <span class="k">dual-path preview</span> — or defer it once more.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    Companion to <a href="recording-audio-roadmap.md">recording-audio-roadmap.md</a> · scope M1 (narration &amp; mic check).
+    This is a vision to react to, not a locked plan — the ordering, the mic-check flow, and whether captions ride
+    along all stay open until we solidify it.
+  </footer>
+
+</div>
+
+<script>
+  // Deterministic pseudo-waveform (no Math.random needed) — themed via CSS currentColor.
+  (function () {
+    const cv = document.getElementById('wf');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const W = cv.width, H = cv.height, mid = H / 2;
+    const bars = 150, gap = W / bars;
+    // pull colours from tokens so it tracks the theme at load
+    const cs = getComputedStyle(document.body);
+    const base = cs.getPropertyValue('--signal').trim() || '#2C6B66';
+    const faint = cs.getPropertyValue('--ink-faint').trim() || '#8B95A0';
+    function amp(i) {
+      // layered sines → speech-like envelope, deterministic
+      const t = i / bars;
+      let a = Math.abs(Math.sin(i * 0.7) * 0.5 + Math.sin(i * 0.23 + 1) * 0.32 + Math.sin(i * 1.9) * 0.18);
+      const env = 0.35 + 0.65 * Math.abs(Math.sin(t * Math.PI * 1.6));
+      // a quieter gap around the re-record region for realism
+      const dip = (t > 0.36 && t < 0.44) ? 0.4 : 1;
+      return Math.min(1, a * env * dip) * (mid - 4);
+    }
+    for (let i = 0; i < bars; i++) {
+      const x = i * gap + gap / 2;
+      const h = amp(i);
+      // highlight the re-record span (36%–56%)
+      const t = i / bars;
+      ctx.strokeStyle = (t >= 0.36 && t <= 0.56) ? (cs.getPropertyValue('--accent').trim() || '#B0442A') : base;
+      ctx.globalAlpha = (t >= 0.36 && t <= 0.56) ? 0.95 : 0.8;
+      ctx.lineWidth = Math.max(1.5, gap * 0.5);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, mid - h);
+      ctx.lineTo(x, mid + h);
+      ctx.stroke();
+    }
+    // centre line
+    ctx.globalAlpha = 0.25; ctx.strokeStyle = faint; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+  })();
+
+  // Gentle live meter so the "mic is live" idea reads (respects reduced-motion via CSS on transitions).
+  (function () {
+    const fill = document.getElementById('fill');
+    const dbval = document.getElementById('dbval');
+    if (!fill) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const seq = [58, 63, 60, 67, 71, 64, 55, 62, 69, 74, 66, 59, 61, 68, 72, 57];
+    let i = 0;
+    setInterval(function () {
+      const p = seq[i % seq.length]; i++;
+      fill.style.width = p + '%';
+      const db = Math.round(-60 + (p / 100) * 60);
+      if (dbval) dbval.textContent = db + ' dB';
+    }, 520);
+  })();
+
+  // Ruler ticks
+  (function () {
+    const r = document.getElementById('ruler');
+    if (!r) return;
+    for (let i = 1; i < 10; i++) {
+      const t = document.createElement('div');
+      t.className = 'tickmark'; t.style.left = (i * 10) + '%';
+      r.appendChild(t);
+      if (i % 2 === 0) {
+        const l = document.createElement('div');
+        l.className = 'lbl'; l.style.left = (i * 10) + '%';
+        l.textContent = '00:' + String(i * 6).padStart(2, '0');
+        r.appendChild(l);
+      }
+    }
+  })();
+</script>
