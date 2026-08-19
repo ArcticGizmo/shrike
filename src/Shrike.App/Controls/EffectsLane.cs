@@ -32,6 +32,15 @@ public sealed class EffectsLane : Control
     public int SelectedIndex { get; private set; } = -1;
     public long PlayheadMs { get; private set; }
 
+    /// <summary>The visible time window (source ms). When End &lt;= Start the whole clip is shown.</summary>
+    public long ViewStartMs { get; private set; }
+    public long ViewEndMs { get; private set; }
+    public void SetView(long startMs, long endMs) { ViewStartMs = startMs; ViewEndMs = endMs; InvalidateVisual(); }
+
+    /// <summary>Ctrl+wheel: zoom the view around this source ms. Shift+wheel: pan by this wheel delta.</summary>
+    public event Action<long, double>? ZoomRequested;
+    public event Action<double>? PanRequested;
+
     /// <summary>Raised when an effect's timing changed (drag/resize) — the window re-resolves + persists.</summary>
     public event Action? Changed;
     /// <summary>Raised when the selected effect changed (index, or -1 for none).</summary>
@@ -69,8 +78,18 @@ public sealed class EffectsLane : Control
 
     // ---- axis helpers ----
     private double Dur => Timeline is { DurationMs: > 0 } tl ? tl.DurationMs : 1;
-    private double X(long ms) => ms / Dur * Bounds.Width;
-    private long MsAt(double x) => (long)Math.Clamp(x / Math.Max(1, Bounds.Width) * Dur, 0, Dur);
+    private double ViewSpan => ViewEndMs > ViewStartMs ? ViewEndMs - ViewStartMs : Dur;
+    private double X(long ms) => (ms - ViewStartMs) / ViewSpan * Bounds.Width;
+    private long MsAt(double x) => (long)Math.Clamp(ViewStartMs + x / Math.Max(1, Bounds.Width) * ViewSpan, 0, Dur);
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (Timeline is null || Bounds.Width <= 0) return;
+        // Ctrl = zoom the timeline, Shift = pan; plain wheel is left to the surrounding ScrollViewer (vertical).
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) { ZoomRequested?.Invoke(MsAt(e.GetPosition(this).X), e.Delta.Y); e.Handled = true; }
+        else if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) { PanRequested?.Invoke(e.Delta.Y); e.Handled = true; }
+    }
 
     // ---- row stacking (width-independent; drives lane height) ----
     private void AssignRows()

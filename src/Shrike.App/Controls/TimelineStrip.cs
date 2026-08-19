@@ -24,15 +24,36 @@ public sealed class TimelineStrip : Control
     public long? MarkInMs { get; set; }
     public long? MarkOutMs { get; set; }
 
+    /// <summary>The visible time window (source ms). When End &lt;= Start the whole clip is shown.</summary>
+    public long ViewStartMs { get; private set; }
+    public long ViewEndMs { get; private set; }
+    public void SetView(long startMs, long endMs) { ViewStartMs = startMs; ViewEndMs = endMs; InvalidateVisual(); }
+
     /// <summary>Raised repeatedly while dragging (cheap preview) with the source ms under the pointer.</summary>
     public event Action<long>? Scrubbing;
     /// <summary>Raised when the pointer is released — the committed seek position.</summary>
     public event Action<long>? Seeked;
+    /// <summary>Ctrl+wheel: zoom the view around this source ms. Shift+wheel: pan by this wheel delta.</summary>
+    public event Action<long, double>? ZoomRequested;
+    public event Action<double>? PanRequested;
 
     public TimelineStrip()
     {
         Height = 76;
         Focusable = false;
+    }
+
+    private double Dur => Timeline is { DurationMs: > 0 } tl ? tl.DurationMs : 1;
+    private double ViewSpan => ViewEndMs > ViewStartMs ? ViewEndMs - ViewStartMs : Dur;
+    private double Xp(long ms) => (ms - ViewStartMs) / ViewSpan * Bounds.Width;
+    private long MsAt(double x) => (long)Math.Clamp(ViewStartMs + x / Math.Max(1, Bounds.Width) * ViewSpan, 0, Dur);
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (Timeline is null || Bounds.Width <= 0) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) { ZoomRequested?.Invoke(MsAt(e.GetPosition(this).X), e.Delta.Y); e.Handled = true; }
+        else if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) { PanRequested?.Invoke(e.Delta.Y); e.Handled = true; }
     }
 
     public void SetPlayhead(long ms)
@@ -75,7 +96,7 @@ public sealed class TimelineStrip : Control
     private void Scrub(double x, bool commit)
     {
         if (Timeline is null || Bounds.Width <= 0) return;
-        var ms = (long)Math.Clamp(x / Bounds.Width * Timeline.DurationMs, 0, Timeline.DurationMs);
+        var ms = MsAt(x);
         SetPlayhead(ms);
         if (commit) Seeked?.Invoke(ms);
         else Scrubbing?.Invoke(ms);
@@ -89,20 +110,24 @@ public sealed class TimelineStrip : Control
         var tl = Timeline;
         if (tl is null || w <= 0) return;
 
-        double X(long ms) => ms / (double)tl.DurationMs * w;
+        double X(long ms) => Xp(ms);
 
         // Backdrop.
         ctx.FillRectangle(new SolidColorBrush(Color.Parse("#0E0B06")), new Rect(0, 0, w, h));
 
-        // Filmstrip: each thumbnail occupies the slice of the strip around its timestamp.
+        // Filmstrip: each thumbnail occupies the slice of the strip around its timestamp, positioned by time so
+        // it tracks the zoom/pan of the view window (and off-screen slices are skipped).
         if (_thumbs.Count > 0)
         {
-            var slot = w / _thumbs.Count;
-            for (var i = 0; i < _thumbs.Count; i++)
+            var half = Dur / _thumbs.Count / 2.0;
+            foreach (var (ms, thumb) in _thumbs)
             {
-                var dest = new Rect(i * slot, 0, slot + 1, h);
+                var left = X((long)(ms - half));
+                var right = X((long)(ms + half));
+                if (right < 0 || left > w) continue;
+                var dest = new Rect(left, 0, Math.Max(1, right - left), h);
                 using (ctx.PushClip(dest))
-                    ctx.DrawImage(_thumbs[i].Thumb, Fit(_thumbs[i].Thumb, dest));
+                    ctx.DrawImage(thumb, Fit(thumb, dest));
             }
         }
 

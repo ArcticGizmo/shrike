@@ -45,6 +45,8 @@ public partial class TimelineEditorWindow : Window
 
     private long _playheadSourceMs;
     private long _currentEditedMs;
+    private long _viewStartMs;
+    private long _viewEndMs;   // 0 until initialised → full-clip view
     private long? _markInMs;
     private long? _markOutMs;
     private bool _playing;
@@ -130,11 +132,15 @@ public partial class TimelineEditorWindow : Window
             _ruler.Timeline = _timeline;
             _ruler.Scrubbing += OnScrub;   // the ruler is draggable to scrub, like the filmstrip
             _ruler.Seeked += OnSeek;
+            _ruler.ZoomRequested += OnTimelineZoom;
+            _ruler.PanRequested += OnTimelinePan;
         }
 
         _strip.Timeline = _timeline;
         _strip.Seeked += OnSeek;
         _strip.Scrubbing += OnScrub;
+        _strip.ZoomRequested += OnTimelineZoom;
+        _strip.PanRequested += OnTimelinePan;
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
         _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
         // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
@@ -142,6 +148,7 @@ public partial class TimelineEditorWindow : Window
         SeedTuningFromSettings();
         SetupSmoothingPanel();
         SetupEffectsLane();
+        InitTimelineView();
 
         Closed += (_, _) => { ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
 
@@ -275,6 +282,8 @@ public partial class TimelineEditorWindow : Window
             _effectsLane.SelectionChanged += OnEffectSelectionChanged;
             _effectsLane.AddRequested += OnAddEffect;
             _effectsLane.DeleteRequested += DeleteEffectAt;
+            _effectsLane.ZoomRequested += OnTimelineZoom;
+            _effectsLane.PanRequested += OnTimelinePan;
         }
         _preview.TargetBoxDrawn += OnTargetBoxDrawn;
         if (this.FindControl<Button>("AddEffectButton") is { } add)
@@ -908,6 +917,50 @@ public partial class TimelineEditorWindow : Window
     }
 
     private void OnSeek(long sourceMs) => OnScrub(sourceMs);
+
+    // ---- timeline zoom / pan (shared view window across the ruler, strip and effects lane) ----
+
+    private void InitTimelineView()
+    {
+        _viewStartMs = 0;
+        _viewEndMs = _timeline.DurationMs;
+        PushTimelineView();
+    }
+
+    private void PushTimelineView()
+    {
+        _ruler?.SetView(_viewStartMs, _viewEndMs);
+        _strip.SetView(_viewStartMs, _viewEndMs);
+        _effectsLane?.SetView(_viewStartMs, _viewEndMs);
+    }
+
+    // Ctrl+wheel: zoom the timeline around the pointer (wheel up = zoom in), keeping the pivot ms under the cursor.
+    private void OnTimelineZoom(long pivotMs, double deltaY)
+    {
+        var dur = _timeline.DurationMs;
+        if (dur <= 0) return;
+        var span = _viewEndMs > _viewStartMs ? (double)(_viewEndMs - _viewStartMs) : dur;
+        var minSpan = Math.Min(dur, 300.0);
+        var newSpan = Math.Clamp(span * (deltaY > 0 ? 1.0 / 1.2 : 1.2), minSpan, dur);
+        var frac = span > 0 ? (pivotMs - _viewStartMs) / span : 0.5;
+        var newStart = (long)Math.Round(pivotMs - frac * newSpan);
+        newStart = Math.Clamp(newStart, 0, Math.Max(0, dur - (long)Math.Round(newSpan)));
+        _viewStartMs = newStart;
+        _viewEndMs = Math.Min(dur, (long)Math.Round(newStart + newSpan));
+        PushTimelineView();
+    }
+
+    // Shift+wheel: pan the view horizontally (no-op when fully zoomed out).
+    private void OnTimelinePan(double deltaY)
+    {
+        var dur = _timeline.DurationMs;
+        var span = _viewEndMs - _viewStartMs;
+        if (span <= 0 || span >= dur) return;
+        var newStart = Math.Clamp(_viewStartMs + (long)Math.Round(-deltaY * span * 0.15), 0, dur - span);
+        _viewStartMs = newStart;
+        _viewEndMs = newStart + span;
+        PushTimelineView();
+    }
 
     private async void RequestPreview(long sourceMs)
     {

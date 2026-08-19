@@ -24,12 +24,22 @@ public sealed class TimeRuler : Control
     public Timeline? Timeline { get; set; }
     public long PlayheadMs { get; private set; }
 
+    /// <summary>The visible time window (source ms). When End &lt;= Start the whole clip is shown.</summary>
+    public long ViewStartMs { get; private set; }
+    public long ViewEndMs { get; private set; }
+
     /// <summary>Raised continuously while dragging the ruler — the window moves the preview to this source ms.</summary>
     public event Action<long>? Scrubbing;
     /// <summary>Raised when the drag ends (or a single click lands) — the final seek target in source ms.</summary>
     public event Action<long>? Seeked;
+    /// <summary>Ctrl+wheel over the timeline: zoom the view around this source ms (delta &gt; 0 = zoom in).</summary>
+    public event Action<long, double>? ZoomRequested;
+    /// <summary>Shift+wheel over the timeline: pan the view by this wheel delta.</summary>
+    public event Action<double>? PanRequested;
 
     private bool _dragging;
+
+    public void SetView(long startMs, long endMs) { ViewStartMs = startMs; ViewEndMs = endMs; InvalidateVisual(); }
 
     public TimeRuler()
     {
@@ -42,7 +52,17 @@ public sealed class TimeRuler : Control
     public void SetPlayhead(long sourceMs) { PlayheadMs = sourceMs; InvalidateVisual(); }
 
     private double Dur => Timeline is { DurationMs: > 0 } tl ? tl.DurationMs : 1;
-    private long MsAt(double x) => (long)Math.Clamp(x / Math.Max(1, Bounds.Width) * Dur, 0, Dur);
+    private double ViewSpan => ViewEndMs > ViewStartMs ? ViewEndMs - ViewStartMs : Dur;
+    private double X(long ms) => (ms - ViewStartMs) / ViewSpan * Bounds.Width;
+    private long MsAt(double x) => (long)Math.Clamp(ViewStartMs + x / Math.Max(1, Bounds.Width) * ViewSpan, 0, Dur);
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (Timeline is null || Bounds.Width <= 0) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) { ZoomRequested?.Invoke(MsAt(e.GetPosition(this).X), e.Delta.Y); e.Handled = true; }
+        else if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) { PanRequested?.Invoke(e.Delta.Y); e.Handled = true; }
+    }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -76,20 +96,24 @@ public sealed class TimeRuler : Control
         var w = Bounds.Width;
         var h = Bounds.Height;
         if (Timeline is not { DurationMs: > 0 } tl || w <= 0) return;
-        double dur = tl.DurationMs;
+        var span = ViewSpan;
+        long viewStart = ViewStartMs, viewEnd = ViewEndMs > ViewStartMs ? ViewEndMs : tl.DurationMs;
 
         ctx.FillRectangle(new SolidColorBrush(Color.Parse("#120E08")), new Rect(0, 0, w, h));
 
-        // Smallest round interval whose on-screen spacing clears the minimum — the most ticks that still read.
+        // Smallest round interval whose on-screen spacing clears the minimum — the most ticks that still read
+        // across the VISIBLE span (so zooming in reveals finer ticks).
         var step = Steps[^1];
         foreach (var s in Steps)
-            if (s / dur * w >= MinLabelPx) { step = s; break; }
+            if (s / span * w >= MinLabelPx) { step = s; break; }
 
         var tickPen = new Pen(new SolidColorBrush(Color.Parse("#4A3E2C")));
         var textBrush = new SolidColorBrush(Color.Parse("#8B7E68"));
-        for (long t = 0; t <= dur; t += step)
+        for (long t = (long)(Math.Floor(viewStart / (double)step) * step); t <= viewEnd; t += step)
         {
-            var x = t / dur * w;
+            if (t < 0) continue;
+            var x = X(t);
+            if (x < -1 || x > w + 1) continue;
             ctx.DrawLine(tickPen, new Point(x, h - 6), new Point(x, h));
             var ft = new FormattedText(Label(t, step), System.Globalization.CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight, new Typeface("Consolas"), 10.5, textBrush);
@@ -100,7 +124,7 @@ public sealed class TimeRuler : Control
 
         // Playhead: an amber line with a downward-pointing tab at the top, matching the scrubber's.
         var amber = new SolidColorBrush(Color.Parse("#F5A524"));
-        var px = PlayheadMs / dur * w;
+        var px = X(PlayheadMs);
         ctx.DrawLine(new Pen(amber, 1), new Point(px, 0), new Point(px, h));
         var tab = new StreamGeometry();
         using (var g = tab.Open())

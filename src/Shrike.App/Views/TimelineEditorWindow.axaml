@@ -74,7 +74,7 @@
                     <TextBlock Text="✦ Effects" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
                     <Button Name="AddEffectButton" Classes="tool" Content="+ Add effect" />
                     <TextBlock Name="EffectsHint" Classes="hint" VerticalAlignment="Center"
-                               Text="right-click the lane to add an effect · drag to move / resize · double-click adds a zoom" />
+                               Text="right-click to add · drag to move / resize · double-click adds a zoom · Ctrl+scroll to zoom the timeline, Shift+scroll to pan" />
                 </StackPanel>
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <controls:EffectsLane Name="EffectsLane" VerticalAlignment="Top" />
