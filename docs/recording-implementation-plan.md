@@ -32,7 +32,21 @@ that's the outstanding verification.
 **Lip-sync helps delivered:** automatic cut-riding (`CaptureAudio`) keeps captured audio in sync across
 edits; the per-clip A/V offset is the manual nudge for residual device latency.
 
-**Deferred to M1b:** in-editor voiceover recording + punch-in re-record.
+## M1b progress
+
+- ✅ **B0 — in-editor voiceover recording**: "● Voiceover" records the mic over the playing preview into a
+  single `.vo.wav` clip at the current output position; inserts an `EditorVoiceover` `AudioClip`; exports
+  and persists. Preview/waveform follow the first audible clip (mic or voiceover).
+- ⏸️ **B1 — punch-in re-record** — recommended to start **after M1a+B0 are hardware-verified**, because it
+  depends on two new pieces it makes little sense to build blind:
+  1. a **multi-clip voiceover model** (a punch splits the clip into before/punch/after),
+  2. a **multi-clip preview engine** — the current preview plays one sidecar file; punched audio lives in
+     another, so a mixing/sequencing `IAudioPlayer` over an `AudioTrack` is a prerequisite for WYSIWYG.
+  Plus take-versioning, undo, and boundary crossfades.
+- ⏸️ **B2 — take management & polish**.
+
+**Outstanding across the board:** real-microphone verification of capture, playback, resampling, loopback,
+and A/V sync.
 
 ---
 
