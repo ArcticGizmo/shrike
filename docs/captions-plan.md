@@ -171,14 +171,20 @@ relaunch the dev exe on every change (kill running Shrike first — [`CLAUDE.md`
 - **Exit:** ✅ pick a model, watch it download + verify; it becomes the caption model and is reused silently;
   a second (e.g. multilingual) model installs alongside. *(Interactive download exercised live in C6.)*
 
-### C3 · Burn-in rendering  *(export)*
-- `CaptionCompositor : IFrameCompositor` — pre-resolved `CaptionFrame[]` + pre-baked per-cue premultiplied
-  BGRA sprites (word-wrapped, boxed), alpha-blitted screen-space. Export-side `RasterizeCaption` mirrors
-  `RasterizeCanvas`. Wire into `CompositeExport` (append after `screenCanvas`) and add `wantsCaption` to the
-  composite decision in `Encode`.
-- **Tests:** compositor blit position/alpha; resolve→sprite selection; off-means-off byte-identity guard
-  stays green with no caption effect.
-- **Exit:** a clip with captions bakes legible, correctly-timed text into the export; audio mux unaffected.
+### ✅ C3 · Burn-in rendering  *(export)*
+- ✅ `CaptionCompositor : IFrameCompositor` + `CaptionSprite` (`CaptionCompositor.cs`) — pre-resolved
+  `CaptionFrame[]` + one pre-baked premultiplied-BGRA sprite per cue; each frame blits the active cue's
+  sprite at its baked position, scaled by the eased alpha (premultiplied source-over, bounds-checked).
+- ✅ `CaptionRasterizer` (`Controls/CaptionRasterizer.cs`) — renders the styled, word-wrapped text over a
+  translucent rounded box to a sprite via `RenderTargetBitmap` (height-derived sizing → resolution-consistent;
+  centred, lower/upper third with a margin), mirroring `RasterizeCanvas`.
+- ✅ Wired into `CompositeExport` — captions rasterise on the UI thread and append **last** (topmost
+  screen-space overlay, after the cursor + screen canvas); `wantsCaption = _effects.HasCaptions` added to the
+  `Encode` composite decision. Audio mux and the plain/off path are untouched (off-means-off holds: no cue →
+  no compositor).
+- ✅ **Tests** (`CaptionCompositorTests`, 6): blit position, alpha scaling, inactive frame, cue-index→sprite
+  selection, off-frame clipping, empty/null-sprite safety. Suite **404 passed**; App build clean, boots OK.
+- **Exit:** ✅ a clip with captions bakes legible, correctly-timed text into the export; audio mux unaffected.
 
 ### C4 · Preview WYSIWYG
 - `PreviewSurface.SetCaption(text, style, alpha)` + a draw block in `Render` (after the screen-canvas block)
