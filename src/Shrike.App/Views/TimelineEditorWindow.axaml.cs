@@ -1245,10 +1245,23 @@ public partial class TimelineEditorWindow : Window
         var i = _effectsLane.SelectedIndex;
         if (i < 0 || i >= _effects.Count || _effects[i] is not CaptionEffect) return;
 
-        // A narration source: a recorded clip whose sidecar WAV is still on disk (mic/system/voiceover).
-        var narration = _audioClips.FirstOrDefault(c => c.Origin == Shrike.Core.Audio.AudioOrigin.LiveCapture && File.Exists(c.SidecarPath))
-                     ?? _audioClips.FirstOrDefault(c => File.Exists(c.SidecarPath));
-        if (narration is null) { SetCaptionStatus("Record narration (mic or voiceover) first, then generate captions."); return; }
+        // Narration sources: recorded clips whose sidecar WAV is still on disk (mic / system / voiceover),
+        // ordered mic → system → voiceover so the mic is the default.
+        var candidates = OrderedNarration(_audioClips.Where(c => File.Exists(c.SidecarPath)).ToList());
+        if (candidates.Count == 0) { SetCaptionStatus("Record narration (mic or voiceover) first, then generate captions."); return; }
+
+        Shrike.Core.Audio.AudioClip narration;
+        if (candidates.Count == 1)
+        {
+            narration = candidates[0];
+        }
+        else
+        {
+            // More than one source → ask which to caption (mic pre-selected).
+            var chosen = await ChooseNarrationAsync(candidates);
+            if (chosen is null) { SetCaptionStatus("Caption generation cancelled."); return; }
+            narration = chosen;
+        }
 
         // Ensure transcription is set up — this opens the setup dialog to install the engine and/or a model
         // from within the app when either is missing, then returns the model to use.
@@ -1313,6 +1326,73 @@ public partial class TimelineEditorWindow : Window
     }
 
     private void SetCaptionStatus(string text) { if (_captionStatus is not null) _captionStatus.Text = text; }
+
+    // Order narration candidates mic → system → voiceover, so the microphone is the sensible default.
+    private static List<Shrike.Core.Audio.AudioClip> OrderedNarration(List<Shrike.Core.Audio.AudioClip> clips)
+        => clips.OrderBy(c => c.SidecarPath.EndsWith(".mic.wav", StringComparison.OrdinalIgnoreCase) ? 0
+                            : c.SidecarPath.EndsWith(".sys.wav", StringComparison.OrdinalIgnoreCase) ? 1 : 2)
+                .ThenBy(c => c.OutputStartMs)
+                .ToList();
+
+    private static string NarrationLabel(Shrike.Core.Audio.AudioClip c)
+    {
+        var p = c.SidecarPath;
+        if (p.EndsWith(".mic.wav", StringComparison.OrdinalIgnoreCase)) return "Microphone";
+        if (p.EndsWith(".sys.wav", StringComparison.OrdinalIgnoreCase)) return "System sound";
+        var name = System.IO.Path.GetFileNameWithoutExtension(p); // …name.voN → show the take number if present
+        var m = System.Text.RegularExpressions.Regex.Match(name, @"\.vo(\d*)$");
+        if (m.Success) return "Voiceover" + (m.Groups[1].Value.Length > 0 ? " " + m.Groups[1].Value : "");
+        return System.IO.Path.GetFileName(p);
+    }
+
+    // A tiny modal picker: choose which recorded audio to transcribe. Returns null if cancelled.
+    private async Task<Shrike.Core.Audio.AudioClip?> ChooseNarrationAsync(IReadOnlyList<Shrike.Core.Audio.AudioClip> options)
+    {
+        var combo = new ComboBox
+        {
+            ItemsSource = options.Select(NarrationLabel).ToList(),
+            SelectedIndex = 0,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+        };
+        var ok = new Button { Content = "Transcribe", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+        ok.Classes.Add("tool"); ok.Classes.Add("accent");
+        var cancel = new Button { Content = "Cancel" };
+        cancel.Classes.Add("tool");
+
+        Shrike.Core.Audio.AudioClip? result = null;
+        var dlg = new Window
+        {
+            Title = "Caption which audio?",
+            Width = 340,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Avalonia.Media.Brush.Parse("#140F0A"),
+            Content = new StackPanel
+            {
+                Margin = new Thickness(18),
+                Spacing = 14,
+                Children =
+                {
+                    new TextBlock { Text = "Which recording should the captions come from?",
+                        Foreground = Avalonia.Media.Brush.Parse("#EDE6DA"), TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    combo,
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { cancel, ok },
+                    },
+                },
+            },
+        };
+        ok.Click += (_, _) => { result = options[Math.Max(0, combo.SelectedIndex)]; dlg.Close(); };
+        cancel.Click += (_, _) => { result = null; dlg.Close(); };
+        await dlg.ShowDialog(this);
+        return result;
+    }
 
     // English-only models transcribe as English; multilingual models auto-detect the language.
     private static string ModelLanguage(string? modelId)
