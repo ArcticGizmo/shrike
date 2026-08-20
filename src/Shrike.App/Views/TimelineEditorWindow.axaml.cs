@@ -1193,7 +1193,9 @@ public partial class TimelineEditorWindow : Window
         if (_smoothed is null || _smoothed.IsEmpty)
         {
             _preview.SetCursor(null); _preview.SetViewport(null); _preview.SetRipples([]); _preview.SetSpotlight(null);
-            _preview.SetCanvasLayers(CanvasLayersAt(_timeline.EditedToSourceMs(_currentEditedMs)));
+            var noCursorSrcMs = _timeline.EditedToSourceMs(_currentEditedMs);
+            _preview.SetCanvasLayers(CanvasLayersAt(noCursorSrcMs));
+            _preview.SetCaption(CaptionPreviewAt(noCursorSrcMs));
             return;
         }
         var i = Math.Clamp((int)Math.Round(_currentEditedMs * _smoothed.Fps / 1000.0), 0, _smoothed.Frames.Count - 1);
@@ -1232,6 +1234,20 @@ public partial class TimelineEditorWindow : Window
             : null);
 
         _preview.SetCanvasLayers(CanvasLayersAt(srcMs));
+        _preview.SetCaption(CaptionPreviewAt(srcMs));
+    }
+
+    // The caption active at a source time, as a preview overlay (first caption effect with a cue covering it),
+    // mirroring the export's ResolveCaptions so the preview matches the file. Null when none is active.
+    private PreviewSurface.PreviewCaption? CaptionPreviewAt(long srcMs)
+    {
+        foreach (var cap in CurrentEffects.OfKind<CaptionEffect>())
+        {
+            if (cap.Cues.Count == 0) continue;
+            var f = EffectTrack.CaptionAt(cap, srcMs);
+            if (f.Active) return new PreviewSurface.PreviewCaption(cap.Cues[f.CueIndex].Text, cap.Style, f.Alpha);
+        }
+        return null;
     }
 
     // The canvas layers active at a source time, as preview overlays (skipped while inline-editing, since the

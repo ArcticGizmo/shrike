@@ -186,11 +186,15 @@ relaunch the dev exe on every change (kill running Shrike first — [`CLAUDE.md`
   selection, off-frame clipping, empty/null-sprite safety. Suite **404 passed**; App build clean, boots OK.
 - **Exit:** ✅ a clip with captions bakes legible, correctly-timed text into the export; audio mux unaffected.
 
-### C4 · Preview WYSIWYG
-- `PreviewSurface.SetCaption(text, style, alpha)` + a draw block in `Render` (after the screen-canvas block)
-  + per-frame update alongside `SetCanvasLayers` in the playhead/scrub update path. Preview draws text with
-  Avalonia `FormattedText` (cheap, live) matching the export's placement/wrap/box.
-- **Exit:** scrubbing shows the active caption live, matching what the export bakes.
+### ✅ C4 · Preview WYSIWYG
+- ✅ `PreviewSurface.PreviewCaption` + `SetCaption(...)` + a `DrawCaption` block in `Render` (topmost
+  screen-space overlay, after the screen canvas, before the aim overlay) — Avalonia `FormattedText` box +
+  wrapped, centred text at the **same proportions as `CaptionRasterizer`** scaled to the drawn frame, faded
+  together via the eased alpha (the accepted dual-path preview).
+- ✅ `TimelineEditorWindow.CaptionPreviewAt(srcMs)` resolves the active cue via the shared
+  `EffectTrack.CaptionAt`, wired into both `UpdateCursorOverlay` branches alongside `SetCanvasLayers`, so
+  scrubbing/playback shows the live caption.
+- **Exit:** ✅ scrubbing shows the active caption live, matching what the export bakes. App build clean, boots OK.
 
 ### C5 · Editor authoring — the full loop  *(decision #4)*
 - Add-effect menu / a **"Generate captions"** action: pick the narration source (mic / voiceover if both),

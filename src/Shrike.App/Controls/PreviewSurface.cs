@@ -37,6 +37,12 @@ public sealed class PreviewSurface : Control
     public readonly record struct PreviewCanvas(IImage Layer, bool ContentSpace, LayerTransform Transform);
     private IReadOnlyList<PreviewCanvas> _canvasLayers = [];
 
+    /// <summary>The caption line active at the current time — its text + style + eased alpha. Drawn screen-space
+    /// (fixed, on top, ignoring the zoom crop), sized relative to the drawn frame so it matches the export's
+    /// burned-in look. Null clears it.</summary>
+    public readonly record struct PreviewCaption(string Text, CaptionStyle Style, double Alpha);
+    private PreviewCaption? _caption;
+
     // Zoom-aim: draw / move / resize a box on the frame to define a zoom event's focus + factor. The box is a
     // normalised square (the crop is always the frame's aspect ratio, so a square in normalised space), and
     // corner handles resize it aspect-locked with the opposite corner anchored.
@@ -110,6 +116,13 @@ public sealed class PreviewSurface : Control
     public void SetSpotlight(PreviewSpotlight? spotlight)
     {
         _spotlight = spotlight;
+        InvalidateVisual();
+    }
+
+    /// <summary>Overlay the caption active at the current time (null to clear), mirroring the export's burn-in.</summary>
+    public void SetCaption(PreviewCaption? caption)
+    {
+        _caption = caption;
         InvalidateVisual();
     }
 
@@ -286,6 +299,10 @@ public sealed class PreviewSurface : Control
                 using (ctx.PushOpacity(cv.Transform.Opacity))
                     ctx.DrawImage(cv.Layer, new Rect(cv.Layer.Size), rect);
 
+        // Captions — the topmost screen-space overlay (fixed, ignores the zoom crop), matching the export.
+        if (_caption is { } cap && cap.Alpha > 0 && !string.IsNullOrWhiteSpace(cap.Text))
+            DrawCaption(ctx, rect, cap);
+
         // Zoom-aim overlay: dim outside the target square, outline it, and draw aspect-locked corner handles.
         if (AimMode && _targetBox is { } tb)
         {
@@ -322,6 +339,48 @@ public sealed class PreviewSurface : Control
         ctx.FillRectangle(dim, new Rect(frame.X, box.Y, box.X - frame.X, box.Height));                    // left
         ctx.FillRectangle(dim, new Rect(box.Right, box.Y, frame.Right - box.Right, box.Height));          // right
     }
+
+    // Draw the active caption box + wrapped text over the drawn frame — same proportions as CaptionRasterizer,
+    // scaled to the display so the preview matches the export (the accepted dual-path preview pattern). The whole
+    // caption fades together via the eased alpha.
+    private static void DrawCaption(DrawingContext ctx, Rect rect, PreviewCaption cap)
+    {
+        var style = cap.Style;
+        var fontPx = Math.Clamp(rect.Height * 0.042 * style.FontScale, 8, rect.Height * 0.2);
+        var padX = fontPx * 0.6;
+        var padY = fontPx * 0.32;
+        var radius = fontPx * 0.25;
+        var margin = rect.Height * 0.055;
+        var maxTextWidth = Math.Max(20, rect.Width * Math.Clamp(style.MaxWidthFraction, 0.2, 1.0) - 2 * padX);
+
+        var textColor = TryColor(style.TextColor, Colors.White);
+        var boxBase = TryColor(style.BoxColor, Colors.Black);
+        var boxBrush = new SolidColorBrush(
+            Color.FromArgb((byte)Math.Clamp(style.BoxOpacity * 255, 0, 255), boxBase.R, boxBase.G, boxBase.B));
+
+        var ft = new FormattedText(cap.Text.Trim(), System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.SemiBold),
+            fontPx, new SolidColorBrush(textColor))
+        {
+            MaxTextWidth = maxTextWidth,
+            TextAlignment = TextAlignment.Center,
+        };
+
+        var boxW = ft.Width + 2 * padX;
+        var boxH = ft.Height + 2 * padY;
+        var boxX = Math.Clamp(rect.X + (rect.Width - boxW) / 2, rect.X, Math.Max(rect.X, rect.Right - boxW));
+        var boxY = style.Position == CaptionPosition.Top ? rect.Y + margin : rect.Bottom - boxH - margin;
+        boxY = Math.Clamp(boxY, rect.Y, Math.Max(rect.Y, rect.Bottom - boxH));
+
+        using (ctx.PushOpacity(Math.Clamp(cap.Alpha, 0, 1)))
+        {
+            ctx.DrawRectangle(boxBrush, null, new RoundedRect(new Rect(boxX, boxY, boxW, boxH), radius));
+            ctx.DrawText(ft, new Point(boxX + padX, boxY + padY));
+        }
+    }
+
+    private static Color TryColor(string? hex, Color fallback)
+        => !string.IsNullOrWhiteSpace(hex) && Color.TryParse(hex, out var c) ? c : fallback;
 
     private static readonly IBrush CursorFill = new SolidColorBrush(Color.FromRgb(0xFB, 0xF6, 0xEC));
     private static readonly IPen CursorPen = new Pen(new SolidColorBrush(Color.FromRgb(0x14, 0x11, 0x0D)), 1.4);
