@@ -53,6 +53,9 @@ public static class CaptionRasterizer
                 MaxWidth = maxTextWidth,
             },
         };
+        // Grayscale antialiasing — ClearType subpixel rendering leaves coloured fringes on the glyph edges
+        // once the sprite is composited over the video. The attached property inherits to the TextBlock child.
+        TextOptions.SetTextRenderingMode(box, TextRenderingMode.Antialias);
 
         // Measure to the natural (wrapped) size, then render exactly that big.
         box.Measure(new Size(maxTextWidth + 2 * padX, double.PositiveInfinity));

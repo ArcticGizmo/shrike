@@ -63,6 +63,13 @@ public sealed class PreviewSurface : Control
     /// <summary>Raised (continuously during a drag) with the normalised [0..1] target square.</summary>
     public event Action<Rect>? TargetBoxDrawn;
 
+    public PreviewSurface()
+    {
+        // Draw any overlay text (captions) with grayscale antialiasing so it composites over the video frame
+        // without ClearType subpixel colour fringes — matching the export bake.
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Antialias);
+    }
+
     /// <summary>Set (or refresh) the frame to display and repaint immediately.</summary>
     public void Show(IImage image)
     {
@@ -362,16 +369,22 @@ public sealed class PreviewSurface : Control
             FlowDirection.LeftToRight, new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.SemiBold),
             fontPx, new SolidColorBrush(textColor))
         {
-            MaxTextWidth = maxTextWidth,
+            MaxTextWidth = maxTextWidth,     // wrap long lines at the max width…
             TextAlignment = TextAlignment.Center,
         };
+        // …then shrink the alignment slot to the actual text block width, so centring doesn't push a short
+        // single line to the right of a box sized to hug it (that was the preview overflow).
+        var textW = ft.Width;
+        var textH = ft.Height;
+        ft.MaxTextWidth = textW;
 
-        var boxW = ft.Width + 2 * padX;
-        var boxH = ft.Height + 2 * padY;
+        var boxW = textW + 2 * padX;
+        var boxH = textH + 2 * padY;
         var boxX = Math.Clamp(rect.X + (rect.Width - boxW) / 2, rect.X, Math.Max(rect.X, rect.Right - boxW));
         var boxY = style.Position == CaptionPosition.Top ? rect.Y + margin : rect.Bottom - boxH - margin;
         boxY = Math.Clamp(boxY, rect.Y, Math.Max(rect.Y, rect.Bottom - boxH));
 
+        // (Grayscale text — no ClearType colour fringes — is set once on the control via TextOptions in the ctor.)
         using (ctx.PushOpacity(Math.Clamp(cap.Alpha, 0, 1)))
         {
             ctx.DrawRectangle(boxBrush, null, new RoundedRect(new Rect(boxX, boxY, boxW, boxH), radius));
