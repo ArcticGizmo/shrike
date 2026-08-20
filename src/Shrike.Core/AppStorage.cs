@@ -69,4 +69,23 @@ public static class AppStorage
 
     /// <summary>The audio sidecar suffixes, for the retention sweep to evict alongside a recording.</summary>
     public static IReadOnlyList<string> AudioSidecarSuffixes { get; } = [".mic.wav", ".sys.wav", ".vo.wav"];
+
+    /// <summary>Folder holding the whisper.cpp engine and its downloaded transcription models
+    /// (<c>%LOCALAPPDATA%\Shrike\whisper</c>). The engine binary may be bundled next to the app instead;
+    /// models are always an opt-in, in-app download (never shipped in the installer) and land under
+    /// <see cref="WhisperModelsDirectory"/>.</summary>
+    public static string WhisperDirectory()
+    {
+        var dir = System.IO.Path.Combine(LocalRoot, "whisper");
+        System.IO.Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>Folder for downloaded whisper transcription models (<c>…\whisper\models</c>), created on demand.</summary>
+    public static string WhisperModelsDirectory()
+    {
+        var dir = System.IO.Path.Combine(WhisperDirectory(), "models");
+        System.IO.Directory.CreateDirectory(dir);
+        return dir;
+    }
 }
