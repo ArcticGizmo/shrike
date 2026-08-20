@@ -49,7 +49,7 @@
             <Setter Property="Background" Value="#F5A524" />
             <Setter Property="Foreground" Value="#140F0A" />
         </Style>
-        <!-- Segmented pair: spotlight toggle joined to its settings button. -->
+        <!-- Segmented pair: a toggle joined to its settings button (used for the mic arm + settings). -->
         <Style Selector="ToggleButton.seg-left">
             <Setter Property="CornerRadius" Value="7,0,0,7" />
         </Style>
@@ -80,9 +80,17 @@
 
             <!-- Setup state: adjust the region with handles, then record. -->
             <StackPanel Name="SetupPanel" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <!-- Mic check: device, live meter, test-and-play-back, system sound — before recording starts. -->
-                <Button Name="MicButton" Classes="hud" Content="🎤 Mic…" Click="OnOpenMicCheck"
-                        ToolTip.Tip="Choose and test your microphone before recording" />
+                <!-- Audio: a mic on/off toggle joined to its settings (device / live meter / 3-second test), plus a
+                     stand-alone system-sound toggle. The gear is the once-in-a-while trip; the toggles are the
+                     everyday arm/disarm. -->
+                <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+                    <ToggleButton Name="MicToggle" Classes="hud seg-left" Content="🎤 Mic" Click="OnToggleMic"
+                                  ToolTip.Tip="Record your microphone into this clip" />
+                    <Button Name="MicSettingsButton" Classes="hud seg-right" Content="⚙" Click="OnOpenMicCheck"
+                            ToolTip.Tip="Choose and test your microphone (device, level, 3-second test)" />
+                </StackPanel>
+                <ToggleButton Name="SystemToggle" Classes="hud" Content="🔊 System" Click="OnToggleSystem"
+                              ToolTip.Tip="Also capture system sound (loopback of what you hear)" />
                 <Border Width="1" Background="#322A1E" Margin="2,1" />
                 <Button Name="RecordButton" Classes="hud accent" Content="● Record" Click="OnRecord" />
                 <Button Name="CancelButton" Classes="hud" Content="Cancel" Click="OnCancel" />

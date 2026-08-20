@@ -275,6 +275,21 @@
                     <TextBlock Classes="hint" TextWrapping="Wrap"
                                Text="Captured audio rides the cuts automatically. Nudge the offset if voice and picture drift (+ = audio later)." />
 
+                    <!-- Clip operations. Drag the block on the lane to move, drag its edges to crop. -->
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Clip" Classes="hint" />
+                        <WrapPanel>
+                            <Button Name="SplitAudioButton" Classes="tool" Content="Split (S)"
+                                    Margin="0,0,6,6" Click="OnSplitAudio" />
+                            <Button Name="DuplicateAudioButton" Classes="tool" Content="Duplicate (Ctrl+D)"
+                                    Margin="0,0,6,6" Click="OnDuplicateAudio" />
+                            <Button Name="DeleteAudioButton" Classes="tool" Content="Delete (Del)"
+                                    Margin="0,0,0,6" Click="OnDeleteAudio" />
+                        </WrapPanel>
+                        <TextBlock Classes="hint" TextWrapping="Wrap"
+                                   Text="Drag the clip to move it; drag its left or right edge to crop it in place. Split cuts at the playhead." />
+                    </StackPanel>
+
                     <!-- Punch-in re-record (voiceover clips): select a span on the strip, then re-record just it. -->
                     <Button Name="PunchButton" Classes="tool" Content="⦿ Re-record selected span"
                             HorizontalAlignment="Stretch" Click="OnPunchIn" IsVisible="False" />

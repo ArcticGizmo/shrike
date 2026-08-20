@@ -62,8 +62,11 @@ public static class RecordingsRetention
         {
             if (TryDelete(f.Path)) deleted++;
             TryDelete(AppStorage.SidecarFor(f.Path)); // the track sidecar shares the recording's fate
-            foreach (var suffix in AppStorage.AudioSidecarSuffixes) // audio sidecars go with it too
+            foreach (var suffix in AppStorage.AudioSidecarSuffixes) // mic / sys sidecars go with it too
                 TryDelete(Path.ChangeExtension(f.Path, suffix));
+            // Voiceover takes (name.vo.wav, name.vo2.wav, …) and any punch backup (name.vo.bak.wav).
+            var stem = Path.GetFileNameWithoutExtension(f.Path);
+            foreach (var vo in Directory.EnumerateFiles(directory, stem + ".vo*.wav")) TryDelete(vo);
         }
 
         // Clear orphaned sidecars (a sidecar whose recording is gone).
@@ -76,6 +79,15 @@ public static class RecordingsRetention
                 var mp4 = Path.Combine(directory, name[..^suffix.Length] + ".mp4");
                 if (!File.Exists(mp4)) TryDelete(sidecar);
             }
+
+        // Orphaned voiceover takes: match everything up to the ".vo" marker back to its recording.
+        foreach (var vo in Directory.EnumerateFiles(directory, "*.vo*.wav"))
+        {
+            var name = Path.GetFileName(vo);
+            var i = name.IndexOf(".vo", StringComparison.OrdinalIgnoreCase);
+            if (i <= 0) continue;
+            if (!File.Exists(Path.Combine(directory, name[..i] + ".mp4"))) TryDelete(vo);
+        }
 
         return deleted;
     }

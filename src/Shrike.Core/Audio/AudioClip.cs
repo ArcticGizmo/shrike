@@ -69,4 +69,28 @@ public sealed record AudioClip
 
     /// <summary>True while this clip covers output time <paramref name="outputMs"/> (half-open [start,end)).</summary>
     public bool CoversOutput(long outputMs) => outputMs >= EffectiveStartMs && outputMs < EffectiveEndMs;
+
+    /// <summary>Razor-split this clip at output time <paramref name="outputMs"/> into two adjacent clips that
+    /// together cover the same span and reference the same sidecar (the left keeps the head, the right takes the
+    /// tail with its sidecar in-point advanced). Returns null when the point is at or outside the clip, so there
+    /// is nothing to split. Gain, mute, A/V offset and origin carry to both halves; a live-capture clip's
+    /// <see cref="CaptureLink"/> is likewise split so each half stays tied to its own source span.</summary>
+    public (AudioClip Left, AudioClip Right)? SplitAtOutput(long outputMs)
+    {
+        var d = outputMs - EffectiveStartMs; // ms into the clip at the cut (measured where the user sees it)
+        if (d <= 0 || d >= DurationMs) return null;
+
+        var left = this with { DurationMs = d };
+        var right = this with
+        {
+            OutputStartMs = OutputStartMs + d,
+            SidecarOffsetMs = SidecarOffsetMs + d,
+            DurationMs = DurationMs - d,
+            CaptureLink = CaptureLink is { } link
+                ? new SourceSpan(link.SourceStartMs + d, link.SourceEndMs)
+                : null,
+        };
+        if (CaptureLink is { } l) left = left with { CaptureLink = new SourceSpan(l.SourceStartMs, l.SourceStartMs + d) };
+        return (left, right);
+    }
 }

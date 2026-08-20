@@ -139,6 +139,25 @@ public partial class MicCheckWindow : Window
 
     private void OnDone(object? sender, RoutedEventArgs e) => Close();
 
+    /// <summary>Mirror the mic arm state set elsewhere (the HUD toggle) into this dialog's checkbox, without
+    /// re-raising the change event. Setting <c>IsChecked</c> doesn't fire <c>Click</c>, and the guard covers it.</summary>
+    internal void ReflectMicEnabled(bool on)
+    {
+        if (_micEnabledBox is null || _micEnabledBox.IsChecked == on) return;
+        _initializing = true;
+        _micEnabledBox.IsChecked = on;
+        _initializing = false;
+    }
+
+    /// <summary>Mirror the system-sound arm state set elsewhere (the HUD toggle) into this dialog's checkbox.</summary>
+    internal void ReflectSystemSound(bool on)
+    {
+        if (_systemSoundBox is null || _systemSoundBox.IsChecked == on) return;
+        _initializing = true;
+        _systemSoundBox.IsChecked = on;
+        _initializing = false;
+    }
+
     // ---- live meter ----
 
     private void StartMonitoring()

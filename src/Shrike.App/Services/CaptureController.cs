@@ -411,6 +411,8 @@ internal sealed class CaptureController
         hud.CancelRequested += TeardownRecordingSetup;
         hud.Finished += OnRecordingFinished;
         hud.ShowCursorToggled += OnShowCursorToggled;
+        hud.MicToggled += OnMicEnabledChanged;
+        hud.SystemSoundToggled += OnSystemSoundChanged;
         hud.MicCheckRequested += OnMicCheckRequested;
         hud.Closed += (_, _) => { if (ReferenceEquals(_hud, hud)) _hud = null; };
 
@@ -451,7 +453,7 @@ internal sealed class CaptureController
         dialog.Closed += (_, _) =>
         {
             if (ReferenceEquals(_micCheck, dialog)) _micCheck = null;
-            _hud?.ReflectMicState(_micEnabled || _systemSound);
+            _hud?.ReflectAudioState(_micEnabled, _systemSound);
         };
 
         _micCheck = dialog;
@@ -462,7 +464,8 @@ internal sealed class CaptureController
     private void OnMicEnabledChanged(bool on)
     {
         _micEnabled = on;
-        _hud?.ReflectMicState(_micEnabled || _systemSound);
+        _hud?.ReflectAudioState(_micEnabled, _systemSound); // keep the HUD toggle + mic-check dialog in step
+        _micCheck?.ReflectMicEnabled(on);
         if (_settings is not null && _settings.Current.MicEnabled != on)
             _settings.Update(_settings.Current with { MicEnabled = on });
     }
@@ -477,7 +480,8 @@ internal sealed class CaptureController
     private void OnSystemSoundChanged(bool on)
     {
         _systemSound = on;
-        _hud?.ReflectMicState(_micEnabled || _systemSound);
+        _hud?.ReflectAudioState(_micEnabled, _systemSound); // keep the HUD toggle + mic-check dialog in step
+        _micCheck?.ReflectSystemSound(on);
         if (_settings is not null && _settings.Current.SystemSoundEnabled != on)
             _settings.Update(_settings.Current with { SystemSoundEnabled = on });
     }
