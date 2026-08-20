@@ -83,6 +83,12 @@ public sealed record AppSettings
     /// <summary>Draw the expanding ring on each click.</summary>
     public bool CursorRippleEnabled { get; init; } = true;
 
+    // ---- Captions (transcription): the model is an opt-in, in-app download, not bundled. ----
+
+    /// <summary>Remembered transcription model id (e.g. <c>base.en</c>); null = none chosen yet, so the
+    /// first "Generate captions" prompts the user to pick + download one.</summary>
+    public string? CaptionModelId { get; init; }
+
     public static AppSettings Default { get; } = new();
 
     /// <summary>Clamp any out-of-range values a hand-edited or corrupt file might carry.</summary>

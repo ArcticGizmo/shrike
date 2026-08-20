@@ -189,4 +189,71 @@ public class ClipEditTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
+    // --- v4 captions persistence --------------------------------------------------------------------------
+
+    [Fact]
+    public void Round_trips_a_caption_effect_with_cues_and_style()
+    {
+        var style = new CaptionStyle(1.25, "#FFEE00", "#101010", 0.7, CaptionPosition.Top, 0.6, 120);
+        var effects = new EffectTrack(
+        [
+            new ZoomEffect(0, 1000, 100, 100, 0.5, 0.5, 2.0), // a sibling effect to prove captions slot in beside others
+            CaptionEffect.FromCues(
+            [
+                new CaptionCue(0, 1500, "First line."),
+                new CaptionCue(1500, 3000, "Second line, with a comma."),
+            ], style),
+        ]);
+
+        var back = ClipEdit.FromJson(new ClipEdit(effects).ToJson());
+
+        Assert.True(back.HasEffectTrack);
+        var caption = Assert.Single(back.Effects.OfKind<CaptionEffect>());
+        Assert.Equal(2, caption.Cues.Count);
+        Assert.Equal("First line.", caption.Cues[0].Text);
+        Assert.Equal(1500, caption.Cues[1].StartMs);
+        Assert.Equal("Second line, with a comma.", caption.Cues[1].Text);
+
+        Assert.Equal(1.25, caption.Style.FontScale, 6);
+        Assert.Equal("#FFEE00", caption.Style.TextColor);
+        Assert.Equal("#101010", caption.Style.BoxColor);
+        Assert.Equal(0.7, caption.Style.BoxOpacity, 6);
+        Assert.Equal(CaptionPosition.Top, caption.Style.Position);
+        Assert.Equal(0.6, caption.Style.MaxWidthFraction, 6);
+        Assert.Equal(120, caption.Style.FadeMs);
+
+        Assert.Single(back.Effects.OfKind<ZoomEffect>()); // the sibling survived too
+    }
+
+    [Fact]
+    public void Caption_makes_an_edit_non_empty_and_malformed_cues_are_dropped()
+    {
+        // A captions block (even style-only) is authored state worth persisting.
+        Assert.False(new ClipEdit(new EffectTrack([CaptionEffect.FromCues([new CaptionCue(0, 500, "x")])])).IsEmpty);
+
+        // Empty-text and zero/negative-length cues are filtered on load; a valid one survives.
+        var effect = new CaptionEffect(0, 3000, 0, 0)
+        {
+            Cues =
+            [
+                new CaptionCue(0, 1000, "keep"),
+                new CaptionCue(1000, 1000, "zero length"),
+                new CaptionCue(2000, 2500, "   "),      // whitespace only
+            ],
+        };
+        var back = ClipEdit.FromJson(new ClipEdit(new EffectTrack([effect])).ToJson());
+        var caption = Assert.Single(back.Effects.OfKind<CaptionEffect>());
+        Assert.Equal("keep", Assert.Single(caption.Cues).Text);
+    }
+
+    [Fact]
+    public void A_v3_document_without_captions_still_loads()
+    {
+        // Backward compat: a document from before captions existed (no Caption array) reads cleanly with none.
+        var v3 = new ClipEdit(new EffectTrack([new SpotlightEffect(0, 1000, 100, 100, "#FFD24A", 0.3, 30)]));
+        var back = ClipEdit.FromJson(v3.ToJson());
+        Assert.Empty(back.Effects.OfKind<CaptionEffect>());
+        Assert.Single(back.Effects.OfKind<SpotlightEffect>());
+    }
 }

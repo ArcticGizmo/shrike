@@ -8,6 +8,7 @@ using Avalonia.Platform.Storage;
 using Shrike.App.Services;
 using Shrike.Core.Hotkeys;
 using Shrike.Core.Imaging;
+using Shrike.Core.Recording;
 using Shrike.Core.Settings;
 
 namespace Shrike.App.Views;
@@ -112,4 +113,14 @@ public partial class SettingsWindow : Window
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
+
+    // Opens the transcription-model manager. The chosen default is persisted immediately (independent of this
+    // dialog's Save/Cancel) since model management is its own action.
+    private async void OnManageModels(object? sender, RoutedEventArgs e)
+    {
+        var store = new WhisperModelStore();
+        var dlg = new WhisperModelWindow(store, _settings.Current.CaptionModelId,
+            id => _settings.Update(_settings.Current with { CaptionModelId = id }));
+        await dlg.ShowDialog(this);
+    }
 }

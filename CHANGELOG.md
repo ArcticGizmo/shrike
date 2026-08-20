@@ -8,6 +8,18 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.2] - 2026-08-20
+
+- **Auto-captions** — transcribe your recorded narration on your machine, nothing uploaded
+- Captions preview live in the editor and bake into every export
+- Edit the transcribed wording and delete stray lines
+- Style captions — text size, colour, background box, position and width
+- Install the transcription engine and language models from within the app, on demand
+- Pick English or a multilingual model
+- Choose which recording to caption when a clip has more than one audio source
+
+---
+
 ## [v0.3.1] - 2026-08-20
 
 - **Record your microphone and system sound** while capturing

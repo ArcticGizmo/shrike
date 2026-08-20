@@ -40,7 +40,7 @@
     </Window.Styles>
 
     <StackPanel Margin="20" Spacing="14">
-        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
 
             <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="Capture hotkey" />
             <TextBox   Grid.Row="0" Grid.Column="1" Name="CaptureHotkeyBox" PlaceholderText="e.g. Alt+Shift+Q" />
@@ -66,6 +66,12 @@
             <StackPanel Grid.Row="5" Grid.Column="1" Spacing="8">
                 <CheckBox Name="AutostartBox" Content="Launch Shrike at login" />
                 <CheckBox Name="ChangelogBox" Content="Show what's new after updates" />
+            </StackPanel>
+
+            <TextBlock Grid.Row="6" Grid.Column="0" Classes="label" Text="Captions" />
+            <StackPanel Grid.Row="6" Grid.Column="1" Spacing="4">
+                <Button Classes="tool" Content="Manage transcription models…" Click="OnManageModels" HorizontalAlignment="Left" />
+                <TextBlock Classes="hint" Text="Download a local model for auto-captions (nothing is uploaded)." />
             </StackPanel>
         </Grid>
 

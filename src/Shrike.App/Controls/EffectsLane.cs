@@ -64,10 +64,13 @@ public sealed class EffectsLane : Control
 
     public void SetPlayhead(long sourceMs) { PlayheadMs = sourceMs; InvalidateVisual(); }
 
-    public void Select(int index)
+    /// <summary>Select an effect by index (-1 clears). <paramref name="force"/> re-raises
+    /// <see cref="SelectionChanged"/> even when the index is unchanged — used on a direct click so the
+    /// properties pane always (re)shows for the block you clicked, even if it was already selected.</summary>
+    public void Select(int index, bool force = false)
     {
         index = index >= 0 && index < Events.Count ? index : -1;
-        if (index == SelectedIndex) return;
+        if (index == SelectedIndex && !force) return;
         SelectedIndex = index;
         SelectionChanged?.Invoke(index);
         InvalidateVisual();
@@ -134,7 +137,7 @@ public sealed class EffectsLane : Control
         if (e.ClickCount == 2) { if (HitTest(pos) < 0) AddRequested?.Invoke(EffectKind.Zoom, MsAt(pos.X)); return; }
 
         var hit = HitTest(pos);
-        Select(hit);
+        Select(hit, force: true); // a click always (re)shows the block's settings, even if already selected
         if (hit < 0) return;
 
         // Decide move vs resize from where in the block the press landed.
@@ -247,6 +250,7 @@ public sealed class EffectsLane : Control
         AddItem("Click ripple", EffectKind.Ripple);
         AddItem("Mouse visibility", EffectKind.Visibility);
         AddItem("Canvas", EffectKind.Canvas);
+        AddItem("Captions", EffectKind.Caption);
         if (hitIndex >= 0 && hitIndex < Events.Count)
         {
             flyout.Items.Add(new Separator());
@@ -324,6 +328,7 @@ public sealed class EffectsLane : Control
         EffectKind.Ripple     => ("#1E3A4E", "#274A63", "#5AA6CF"),
         EffectKind.Visibility => ("#2E2E36", "#3A3A44", "#8A8A9A"),
         EffectKind.Canvas     => ("#3A2548", "#4A2F5E", "#B07AD0"),
+        EffectKind.Caption    => ("#1E3A2E", "#27503C", "#5FC28A"),
         _                     => ("#264F4A", "#2F6E67", "#5FA9A1"),
     };
 
@@ -338,6 +343,7 @@ public sealed class EffectsLane : Control
             RippleEffect      => "Ripple · " + secs,
             VisibilityEffect v => (v.Visible ? "Cursor shown" : "Cursor hidden") + " · " + secs,
             CanvasEffect c    => "Canvas (" + (c.Space == CanvasSpace.Screen ? "screen" : "content") + ") · " + secs,
+            CaptionEffect cap => (cap.Cues.Count == 0 ? "Captions (empty)" : "Captions ×" + cap.Cues.Count) + " · " + secs,
             _                 => secs,
         };
     }
@@ -352,6 +358,7 @@ public sealed class EffectsLane : Control
             RippleEffect      => "Ripple",
             VisibilityEffect v => v.Visible ? "Show" : "Hide",
             CanvasEffect      => "Canvas",
+            CaptionEffect     => "CC",
             _                 => "",
         };
     }

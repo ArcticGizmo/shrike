@@ -12,6 +12,7 @@ public enum EffectKind
     Ripple,
     Visibility,
     Canvas,
+    Caption,
 }
 
 /// <summary>

@@ -217,7 +217,8 @@ public partial class ExportDialog : Window
         var wantsCursor = track is { Points.Count: > 0 };
         var wantsZoom = !_authoredZoom.IsEmpty;
         var wantsCanvas = _effects.OfKind<CanvasEffect>().Any(c => c.Annotations.Count > 0);
-        if (wantsCursor || wantsZoom || wantsCanvas)
+        var wantsCaption = _effects.HasCaptions;
+        if (wantsCursor || wantsZoom || wantsCanvas || wantsCaption)
         {
             await CompositeExport(profile, hardware, wantsCursor ? track : null, outputPath, progress, ct);
             return;
@@ -299,6 +300,17 @@ public partial class ExportDialog : Window
                 _effects.ResolveRipplesEnabled(_timeline, frameCount, fps)));
         }
         effects.AddRange(screenCanvas);                                    // screen canvas — fixed, on top
+
+        // Captions — the topmost screen-space overlay. Each cue rasterises to a small sprite here (UI thread),
+        // then a CaptionCompositor blits the active one per frame from the resolved track.
+        foreach (var cap in _effects.OfKind<CaptionEffect>().Where(c => c.Cues.Count > 0))
+        {
+            var sprites = cap.Cues
+                .Select(q => Controls.CaptionRasterizer.Render(q.Text, cap.Style, w, h))
+                .ToArray();
+            effects.Add(new CaptionCompositor(EffectTrack.ResolveCaptions(cap, _timeline, frameCount, fps), sprites));
+        }
+
         if (effects.Count == 0)
         {
             var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath, ExportAudio());
