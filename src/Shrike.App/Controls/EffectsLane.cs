@@ -64,10 +64,13 @@ public sealed class EffectsLane : Control
 
     public void SetPlayhead(long sourceMs) { PlayheadMs = sourceMs; InvalidateVisual(); }
 
-    public void Select(int index)
+    /// <summary>Select an effect by index (-1 clears). <paramref name="force"/> re-raises
+    /// <see cref="SelectionChanged"/> even when the index is unchanged — used on a direct click so the
+    /// properties pane always (re)shows for the block you clicked, even if it was already selected.</summary>
+    public void Select(int index, bool force = false)
     {
         index = index >= 0 && index < Events.Count ? index : -1;
-        if (index == SelectedIndex) return;
+        if (index == SelectedIndex && !force) return;
         SelectedIndex = index;
         SelectionChanged?.Invoke(index);
         InvalidateVisual();
@@ -134,7 +137,7 @@ public sealed class EffectsLane : Control
         if (e.ClickCount == 2) { if (HitTest(pos) < 0) AddRequested?.Invoke(EffectKind.Zoom, MsAt(pos.X)); return; }
 
         var hit = HitTest(pos);
-        Select(hit);
+        Select(hit, force: true); // a click always (re)shows the block's settings, even if already selected
         if (hit < 0) return;
 
         // Decide move vs resize from where in the block the press landed.

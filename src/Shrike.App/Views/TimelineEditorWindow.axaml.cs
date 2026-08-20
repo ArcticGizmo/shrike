@@ -1135,7 +1135,7 @@ public partial class TimelineEditorWindow : Window
     {
         if (_effectsLane is null) return;
         var idx = _effects.FindIndex(ev => ev is CaptionEffect);
-        if (idx >= 0) _effectsLane.Select(idx);
+        if (idx >= 0) _effectsLane.Select(idx, force: true); // (re)show its pane even if already selected
         else OnAddEffect(EffectKind.Caption, _playheadSourceMs);
     }
 
