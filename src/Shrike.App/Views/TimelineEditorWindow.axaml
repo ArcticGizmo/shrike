@@ -244,6 +244,48 @@
                     </StackPanel>
                 </StackPanel>
 
+                <!-- Captions editor: generate from narration, fix the text, and style the burned-in look. -->
+                <StackPanel Name="CaptionEditor" Spacing="12" IsVisible="False">
+                    <Button Name="CaptionGenerateButton" Classes="tool accent" HorizontalAlignment="Stretch"
+                            Content="Generate from narration" Click="OnGenerateCaptions" />
+                    <ProgressBar Name="CaptionProgress" Minimum="0" Maximum="1" Height="6" IsVisible="False"
+                                 Foreground="#5FC28A" Background="#2A2318" CornerRadius="3" />
+                    <TextBlock Name="CaptionStatus" Classes="hint" TextWrapping="Wrap"
+                               Text="Transcribes your recorded narration on this machine (nothing is uploaded)." />
+
+                    <TextBlock Text="Lines" Classes="hint" />
+                    <StackPanel Name="CaptionCueList" Spacing="6" />
+
+                    <TextBlock Text="Style" Classes="hint" Margin="0,4,0,0" />
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Text size" Classes="hint" />
+                        <Slider Name="CaptionFontScale" Minimum="0.5" Maximum="2.0" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Text colour (hex)" Classes="hint" />
+                        <TextBox Name="CaptionTextColor" PlaceholderText="#FFFFFF" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Box colour (hex)" Classes="hint" />
+                        <TextBox Name="CaptionBoxColor" PlaceholderText="#000000" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Box opacity" Classes="hint" />
+                        <Slider Name="CaptionBoxOpacity" Minimum="0" Maximum="1.0" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Position" Classes="hint" />
+                        <ComboBox Name="CaptionPositionCombo" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="Bottom" />
+                            <ComboBoxItem Content="Top" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Max width" Classes="hint" />
+                        <Slider Name="CaptionMaxWidth" Minimum="0.3" Maximum="1.0" />
+                    </StackPanel>
+                </StackPanel>
+
                 <!-- Segment editor (a strip span selected by double-click). -->
                 <StackPanel Name="SegmentEditor" Spacing="12" IsVisible="False">
                     <StackPanel Spacing="5">

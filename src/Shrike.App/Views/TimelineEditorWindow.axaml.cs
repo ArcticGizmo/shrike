@@ -149,6 +149,20 @@ public partial class TimelineEditorWindow : Window
     private bool _suppressCanvasToggle;
     private readonly Dictionary<IReadOnlyList<Annotation>, Bitmap> _canvasLayerCache = new(ReferenceEqualityComparer.Instance);
 
+    // Captions editor.
+    private Control? _captionEditor;
+    private Button? _captionGenerateButton;
+    private ProgressBar? _captionProgress;
+    private TextBlock? _captionStatus;
+    private StackPanel? _captionCueList;
+    private Slider? _captionFontScale;
+    private TextBox? _captionTextColor;
+    private TextBox? _captionBoxColor;
+    private Slider? _captionBoxOpacity;
+    private ComboBox? _captionPositionCombo;
+    private Slider? _captionMaxWidth;
+    private bool _captionBusy;
+
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
 
@@ -465,6 +479,29 @@ public partial class TimelineEditorWindow : Window
         if (_canvasEditToggle is not null) _canvasEditToggle.IsCheckedChanged += (_, _) => OnCanvasEditToggled();
         if (_canvasScreenSpace is not null) _canvasScreenSpace.IsCheckedChanged += (_, _) => OnCanvasSpaceChanged();
         if (_canvasAnimCombo is not null) _canvasAnimCombo.SelectionChanged += (_, _) => OnCanvasAnimChanged();
+
+        _captionEditor = this.FindControl<StackPanel>("CaptionEditor");
+        _captionGenerateButton = this.FindControl<Button>("CaptionGenerateButton");
+        _captionProgress = this.FindControl<ProgressBar>("CaptionProgress");
+        _captionStatus = this.FindControl<TextBlock>("CaptionStatus");
+        _captionCueList = this.FindControl<StackPanel>("CaptionCueList");
+        _captionFontScale = this.FindControl<Slider>("CaptionFontScale");
+        _captionTextColor = this.FindControl<TextBox>("CaptionTextColor");
+        _captionBoxColor = this.FindControl<TextBox>("CaptionBoxColor");
+        _captionBoxOpacity = this.FindControl<Slider>("CaptionBoxOpacity");
+        _captionPositionCombo = this.FindControl<ComboBox>("CaptionPositionCombo");
+        _captionMaxWidth = this.FindControl<Slider>("CaptionMaxWidth");
+        if (_captionFontScale is not null)
+            _captionFontScale.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnCaptionStyleChanged(); };
+        if (_captionBoxOpacity is not null)
+            _captionBoxOpacity.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnCaptionStyleChanged(); };
+        if (_captionMaxWidth is not null)
+            _captionMaxWidth.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnCaptionStyleChanged(); };
+        if (_captionTextColor is not null)
+            _captionTextColor.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) OnCaptionStyleChanged(); };
+        if (_captionBoxColor is not null)
+            _captionBoxColor.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) OnCaptionStyleChanged(); };
+        if (_captionPositionCombo is not null) _captionPositionCombo.SelectionChanged += (_, _) => OnCaptionStyleChanged();
     }
 
     // The zoom effects, as the track the preview + export consume. Non-zoom effects don't affect framing.
@@ -525,6 +562,7 @@ public partial class TimelineEditorWindow : Window
         var spot = effect as SpotlightEffect;
         var vis = effect as VisibilityEffect;
         var canvas = effect as CanvasEffect;
+        var caption = effect as CaptionEffect;
 
         // A segment, an effect, and an audio clip are mutually exclusive selections in the pane.
         if (_segmentEditor is not null) _segmentEditor.IsVisible = false;
@@ -538,11 +576,12 @@ public partial class TimelineEditorWindow : Window
         if (_spotlightEditor is not null) _spotlightEditor.IsVisible = spot is not null;
         if (_visibilityEditor is not null) _visibilityEditor.IsVisible = vis is not null;
         if (_canvasEditor is not null) _canvasEditor.IsVisible = canvas is not null;
+        if (_captionEditor is not null) _captionEditor.IsVisible = caption is not null;
         if (_timingEditor is not null) _timingEditor.IsVisible = effect is not null; // start/end for every kind
         if (_deleteButton is not null) _deleteButton.IsVisible = effect is not null;
         if (_paneEmpty is not null)
         {
-            var hasEditor = zoom is not null || spot is not null || vis is not null || canvas is not null;
+            var hasEditor = zoom is not null || spot is not null || vis is not null || canvas is not null || caption is not null;
             _paneEmpty.IsVisible = !hasEditor;
             _paneEmpty.Text = effect is null
                 ? "Select an effect on the timeline to edit it, or right-click the timeline to add one."
@@ -583,6 +622,10 @@ public partial class TimelineEditorWindow : Window
             if (_canvasAnimCombo is not null) _canvasAnimCombo.SelectedIndex = 0;
             if (_canvasTools is not null) _canvasTools.IsVisible = false;
             if (_canvasEditToggle is not null) { _suppressCanvasToggle = true; _canvasEditToggle.IsChecked = false; _suppressCanvasToggle = false; }
+        }
+        else if (caption is not null)
+        {
+            PopulateCaptionEditor(caption);
         }
         _suppressInspector = false;
 
@@ -1083,6 +1126,193 @@ public partial class TimelineEditorWindow : Window
         UpdateCursorOverlay();
     }
 
+    // ---- captions authoring ----
+
+    // Reflect a caption effect into the pane: style controls + an editable cue list.
+    private void PopulateCaptionEditor(CaptionEffect cap)
+    {
+        _suppressInspector = true;
+        if (_captionFontScale is not null) _captionFontScale.Value = cap.Style.FontScale;
+        if (_captionTextColor is not null) _captionTextColor.Text = cap.Style.TextColor;
+        if (_captionBoxColor is not null) _captionBoxColor.Text = cap.Style.BoxColor;
+        if (_captionBoxOpacity is not null) _captionBoxOpacity.Value = cap.Style.BoxOpacity;
+        if (_captionPositionCombo is not null) _captionPositionCombo.SelectedIndex = cap.Style.Position == CaptionPosition.Top ? 1 : 0;
+        if (_captionMaxWidth is not null) _captionMaxWidth.Value = cap.Style.MaxWidthFraction;
+        _suppressInspector = false;
+        BuildCueRows(cap);
+        if (_captionStatus is not null && cap.Cues.Count == 0 && !_captionBusy)
+            _captionStatus.Text = "Transcribes your recorded narration on this machine (nothing is uploaded).";
+    }
+
+    // Build one editable row per cue (text box + delete), or a hint when empty. Rebuilt on generate/delete,
+    // never on a keystroke (which would steal focus) — a text edit patches just its cue in place.
+    private void BuildCueRows(CaptionEffect cap)
+    {
+        if (_captionCueList is null) return;
+        _captionCueList.Children.Clear();
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        for (var idx = 0; idx < cap.Cues.Count; idx++)
+        {
+            var cue = cap.Cues[idx];
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            var box = new TextBox
+            {
+                Text = cue.Text,
+                FontSize = 12,
+                Tag = idx,
+                PlaceholderText = (cue.StartMs / 1000.0).ToString("0.0", inv) + "s",
+            };
+            box.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) OnCueTextEdited(box); };
+            var del = new Button { Content = "✕", Tag = idx, Margin = new Thickness(6, 0, 0, 0) };
+            del.Classes.Add("tool");
+            del.Click += (_, _) => OnDeleteCue(del);
+            Grid.SetColumn(del, 1);
+            row.Children.Add(box);
+            row.Children.Add(del);
+            _captionCueList.Children.Add(row);
+        }
+        if (cap.Cues.Count == 0)
+        {
+            var hint = new TextBlock { Text = "No lines yet — click Generate.", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            hint.Classes.Add("hint");
+            _captionCueList.Children.Add(hint);
+        }
+    }
+
+    // A cue's text changed — patch just that cue (no row rebuild, so focus is kept) and refresh the preview.
+    private void OnCueTextEdited(TextBox box)
+    {
+        if (_suppressInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not CaptionEffect cap) return;
+        if (box.Tag is not int idx || idx < 0 || idx >= cap.Cues.Count) return;
+        var cues = cap.Cues.ToList();
+        cues[idx] = cues[idx] with { Text = box.Text ?? "" };
+        _effects[i] = cap with { Cues = cues };
+        UpdateCursorOverlay();
+    }
+
+    private void OnDeleteCue(Button del)
+    {
+        if (_effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not CaptionEffect cap) return;
+        if (del.Tag is not int idx || idx < 0 || idx >= cap.Cues.Count) return;
+        var cues = cap.Cues.ToList();
+        cues.RemoveAt(idx);
+        _effects[i] = cap with { Cues = cues };
+        OnEffectsChanged();
+        _effectsLane.Refresh();
+        BuildCueRows((CaptionEffect)_effects[i]);
+        PersistEdit();
+    }
+
+    // Style controls changed — rebuild the selected caption's shared style and refresh the preview.
+    private void OnCaptionStyleChanged()
+    {
+        if (_suppressInspector || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not CaptionEffect cap) return;
+        var pos = _captionPositionCombo?.SelectedIndex == 1 ? CaptionPosition.Top : CaptionPosition.Bottom;
+        var style = new CaptionStyle(
+            Math.Clamp(_captionFontScale?.Value ?? cap.Style.FontScale, 0.5, 2.0),
+            string.IsNullOrWhiteSpace(_captionTextColor?.Text) ? cap.Style.TextColor : _captionTextColor!.Text!.Trim(),
+            string.IsNullOrWhiteSpace(_captionBoxColor?.Text) ? cap.Style.BoxColor : _captionBoxColor!.Text!.Trim(),
+            Math.Clamp(_captionBoxOpacity?.Value ?? cap.Style.BoxOpacity, 0, 1),
+            pos,
+            Math.Clamp(_captionMaxWidth?.Value ?? cap.Style.MaxWidthFraction, 0.2, 1.0),
+            cap.Style.FadeMs);
+        _effects[i] = cap with { Style = style };
+        UpdateCursorOverlay();
+    }
+
+    // Transcribe the recorded narration into cues, on this machine, and fill the selected caption effect.
+    private async void OnGenerateCaptions(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_captionBusy || _effectsLane is null) return;
+        var i = _effectsLane.SelectedIndex;
+        if (i < 0 || i >= _effects.Count || _effects[i] is not CaptionEffect) return;
+
+        // A narration source: a recorded clip whose sidecar WAV is still on disk (mic/system/voiceover).
+        var narration = _audioClips.FirstOrDefault(c => c.Origin == Shrike.Core.Audio.AudioOrigin.LiveCapture && File.Exists(c.SidecarPath))
+                     ?? _audioClips.FirstOrDefault(c => File.Exists(c.SidecarPath));
+        if (narration is null) { SetCaptionStatus("Record narration (mic or voiceover) first, then generate captions."); return; }
+
+        var engine = WhisperTranscriber.TryCreate();
+        if (engine is null) { SetCaptionStatus("Transcription engine not found — it ships with released builds."); return; }
+
+        var store = new WhisperModelStore();
+        var settings = Services.SettingsService.Instance;
+        var modelPath = await WhisperModelWindow.EnsureModelAsync(this, store, settings?.Current.CaptionModelId,
+            id => settings?.Update(settings.Current with { CaptionModelId = id }));
+        if (modelPath is null) { SetCaptionStatus("No transcription model installed — download one to generate captions."); return; }
+
+        _captionBusy = true;
+        if (_captionGenerateButton is not null) _captionGenerateButton.IsEnabled = false;
+        if (_captionProgress is not null) { _captionProgress.IsVisible = true; _captionProgress.Value = 0; }
+        SetCaptionStatus("Transcribing…");
+        var progress = new Progress<double>(v => { if (_captionProgress is not null) _captionProgress.Value = v; });
+        try
+        {
+            var lang = ModelLanguage(settings?.Current.CaptionModelId);
+            var raw = await engine.TranscribeAsync(narration.SidecarPath, modelPath, new WhisperOptions(Language: lang), progress);
+            var cues = MapCuesToSource(raw, narration);
+            if (cues.Count == 0) { SetCaptionStatus("No speech found in the narration."); return; }
+
+            var j = _effectsLane.SelectedIndex; // selection may have moved during the await
+            if (j < 0 || j >= _effects.Count || _effects[j] is not CaptionEffect cur) return;
+            _effects[j] = cur with { Cues = cues, StartMs = cues.Min(c => c.StartMs), EndMs = cues.Max(c => c.EndMs) };
+            OnEffectsChanged();
+            _effectsLane.Refresh();
+            BuildCueRows((CaptionEffect)_effects[j]);
+            PersistEdit();
+            SetCaptionStatus($"Transcribed {cues.Count} line{(cues.Count == 1 ? "" : "s")}. Fix any wording below.");
+        }
+        catch (Exception ex)
+        {
+            SetCaptionStatus("Couldn't transcribe: " + ex.Message);
+        }
+        finally
+        {
+            _captionBusy = false;
+            if (_captionGenerateButton is not null) _captionGenerateButton.IsEnabled = true;
+            if (_captionProgress is not null) _captionProgress.IsVisible = false;
+        }
+    }
+
+    private void SetCaptionStatus(string text) { if (_captionStatus is not null) _captionStatus.Text = text; }
+
+    // English-only models transcribe as English; multilingual models auto-detect the language.
+    private static string ModelLanguage(string? modelId)
+        => modelId is not null && modelId.EndsWith(".en", StringComparison.Ordinal) ? "en" : "auto";
+
+    // Map audio-file-local cue times into source time (decision #1: captions are linked to the source). A
+    // live-captured sidecar shares the source (pause-excluded) axis, so its cues map by the sidecar offset; an
+    // editor voiceover is output-anchored, so cues project output→source through the timeline.
+    private List<CaptionCue> MapCuesToSource(IReadOnlyList<CaptionCue> raw, Shrike.Core.Audio.AudioClip clip)
+    {
+        var dur = _timeline.DurationMs;
+        var mapped = new List<CaptionCue>();
+        foreach (var q in raw)
+        {
+            long s, en;
+            if (clip.Origin == Shrike.Core.Audio.AudioOrigin.LiveCapture)
+            {
+                s = q.StartMs + clip.SidecarOffsetMs;
+                en = q.EndMs + clip.SidecarOffsetMs;
+            }
+            else
+            {
+                s = _timeline.EditedToSourceMs(clip.OutputStartMs + q.StartMs);
+                en = _timeline.EditedToSourceMs(clip.OutputStartMs + q.EndMs);
+            }
+            s = Math.Clamp(s, 0, Math.Max(0, dur - 1));
+            en = Math.Clamp(en, s + 1, dur);
+            if (en > s && !string.IsNullOrWhiteSpace(q.Text)) mapped.Add(new CaptionCue(s, en, q.Text.Trim()));
+        }
+        return mapped;
+    }
+
     private static string KindName(EffectKind kind) => kind switch
     {
         EffectKind.Zoom => "Zoom",
@@ -1090,6 +1320,7 @@ public partial class TimelineEditorWindow : Window
         EffectKind.Ripple => "Click ripple",
         EffectKind.Visibility => "Mouse visibility",
         EffectKind.Canvas => "Canvas",
+        EffectKind.Caption => "Captions",
         _ => "Effect",
     };
 
@@ -1145,7 +1376,11 @@ public partial class TimelineEditorWindow : Window
     {
         if (_effectsLane is null) return;
         var full = _timeline.DurationMs;
-        var wanted = kind == EffectKind.Ripple ? 600 : kind == EffectKind.Zoom || kind == EffectKind.Spotlight ? 1500 : 2000;
+        // Captions cover the whole clip by default (Generate then retimes to span the transcribed cues).
+        var wanted = kind == EffectKind.Ripple ? 600
+            : kind == EffectKind.Zoom || kind == EffectKind.Spotlight ? 1500
+            : kind == EffectKind.Caption ? full
+            : 2000;
         var dur = Math.Min(wanted, full);
         var start = Math.Clamp(sourceMs, 0, Math.Max(0, full - dur));
         var end = Math.Min(full, start + dur);
@@ -1159,6 +1394,7 @@ public partial class TimelineEditorWindow : Window
             EffectKind.Ripple => new RippleEffect(start, end),
             EffectKind.Visibility => new VisibilityEffect(start, end, Visible: false), // a "hide" span (default is shown)
             EffectKind.Canvas => new CanvasEffect(start, end, 0, 0, CanvasSpace.Content), // hard cut so redaction stays opaque
+            EffectKind.Caption => new CaptionEffect(start, end, 0, 0), // empty — "Generate" fills + retimes it
             _ => new ZoomEffect(start, end, 400, 400, 0.5, 0.5, 1.8),
         };
         _effects.Add(effect);

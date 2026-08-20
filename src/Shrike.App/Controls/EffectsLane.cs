@@ -247,6 +247,7 @@ public sealed class EffectsLane : Control
         AddItem("Click ripple", EffectKind.Ripple);
         AddItem("Mouse visibility", EffectKind.Visibility);
         AddItem("Canvas", EffectKind.Canvas);
+        AddItem("Captions", EffectKind.Caption);
         if (hitIndex >= 0 && hitIndex < Events.Count)
         {
             flyout.Items.Add(new Separator());
@@ -324,6 +325,7 @@ public sealed class EffectsLane : Control
         EffectKind.Ripple     => ("#1E3A4E", "#274A63", "#5AA6CF"),
         EffectKind.Visibility => ("#2E2E36", "#3A3A44", "#8A8A9A"),
         EffectKind.Canvas     => ("#3A2548", "#4A2F5E", "#B07AD0"),
+        EffectKind.Caption    => ("#1E3A2E", "#27503C", "#5FC28A"),
         _                     => ("#264F4A", "#2F6E67", "#5FA9A1"),
     };
 
@@ -338,6 +340,7 @@ public sealed class EffectsLane : Control
             RippleEffect      => "Ripple · " + secs,
             VisibilityEffect v => (v.Visible ? "Cursor shown" : "Cursor hidden") + " · " + secs,
             CanvasEffect c    => "Canvas (" + (c.Space == CanvasSpace.Screen ? "screen" : "content") + ") · " + secs,
+            CaptionEffect cap => (cap.Cues.Count == 0 ? "Captions (empty)" : "Captions ×" + cap.Cues.Count) + " · " + secs,
             _                 => secs,
         };
     }
@@ -352,6 +355,7 @@ public sealed class EffectsLane : Control
             RippleEffect      => "Ripple",
             VisibilityEffect v => v.Visible ? "Show" : "Hide",
             CanvasEffect      => "Canvas",
+            CaptionEffect     => "CC",
             _                 => "",
         };
     }

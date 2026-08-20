@@ -196,13 +196,23 @@ relaunch the dev exe on every change (kill running Shrike first — [`CLAUDE.md`
   scrubbing/playback shows the live caption.
 - **Exit:** ✅ scrubbing shows the active caption live, matching what the export bakes. App build clean, boots OK.
 
-### C5 · Editor authoring — the full loop  *(decision #4)*
-- Add-effect menu / a **"Generate captions"** action: pick the narration source (mic / voiceover if both),
-  run transcription off the UI thread with progress, create the `CaptionEffect`.
-- **Cue editor pane:** editable cue list (text, start/end, split / merge / delete a cue), and **style
-  controls** (font size, text colour, background box colour/opacity, top/bottom, wrap width). Selection +
-  preview refresh on every edit. Anchoring per the model note above.
-- **Exit:** transcribe narration → fix a mis-heard word → nudge a cue → restyle → see it live → export.
+### ✅ C5 · Editor authoring — the full loop  *(decision #4)*
+- ✅ Captions are a first-class effect kind on the lane — added to `EffectsLane` (menu, green palette,
+  "Captions ×N" / "CC" labels), `OnAddEffect` (empty `CaptionEffect` spanning the whole clip), and `KindName`.
+- ✅ **"Generate from narration"** (`OnGenerateCaptions`) — picks a recorded narration sidecar (live mic/
+  system preferred, else voiceover), ensures a model via `WhisperModelWindow.EnsureModelAsync` (prompts to
+  download only when none is installed), runs `WhisperTranscriber` off the UI thread with a progress bar,
+  maps cues into **source time** (`MapCuesToSource`: live-capture by sidecar offset, voiceover output→source
+  via the timeline — decision #1), fills + retimes the effect, persists. English models → `en`, multilingual
+  → auto.
+- ✅ **Cue editor pane** — an editable text box per line (patched in place on keystroke so focus is kept) with
+  a per-line delete; plus **style controls**: text size, text colour, box colour, box opacity, position
+  (bottom/top), max width. Every edit rebuilds the effect and refreshes the live preview.
+- ✅ **Exit:** transcribe narration → fix a mis-heard word → restyle → see it live → export (captions flow
+  through `CurrentEffects` into `ExportDialog`). App build clean (0 warnings), boots OK; suite **404 passed**.
+- *Deferred (documented gap):* per-cue **timing nudge / split / merge** — v1 ships text-edit + delete +
+  restyle + regenerate (the transcription-error fix loop). Timing edits ride the effect's shared Start/End and
+  the underlying cut model; per-cue retiming is a natural follow-up.
 
 ### C6 · Polish & QA
 - Multi-source narration (mic + voiceover) ordering; empty/near-silent audio produces no cues gracefully;
