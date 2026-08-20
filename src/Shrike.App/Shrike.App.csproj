@@ -10,7 +10,7 @@
     <Product>Shrike</Product>
     <Company>Shrike</Company>
     <Description>A snappy, tray-resident capture studio for Windows.</Description>
-    <Version>0.3.1</Version>
+    <Version>0.3.2</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- The .exe icon (taskbar, Explorer, installer) — generated from shrike.svg by tools/gen-icons.ps1. -->
