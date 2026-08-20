@@ -8,9 +8,9 @@ namespace Shrike.Core.Recording;
 public static class WhisperEngine
 {
     // ggml-org/whisper.cpp ships prebuilt Windows binaries as whisper-bin-x64.zip (a plain CPU x64 build).
-    public const string Version = "v1.7.4";
-    public const string Url = "https://github.com/ggml-org/whisper.cpp/releases/download/v1.7.4/whisper-bin-x64.zip";
-    public const long ApproxBytes = 40L * 1024 * 1024; // ~ download size, for the UI prompt
+    public const string Version = "v1.9.2";
+    public const string Url = "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip";
+    public const long ApproxBytes = 10L * 1024 * 1024; // ~ download size (zip ~8 MB), for the UI prompt
     // NOTE(release): pin by downloading once and recording the zip's SHA-256 (blank = no verification).
     public const string Sha256 = "";
 

@@ -137,18 +137,19 @@ public partial class WhisperModelWindow : Window
         UpdateState();
 
         var progress = new Progress<double>(v => _downloadBar.Value = v);
+        string outcome;
         try
         {
             await _engine.DownloadAsync(progress, _cts.Token);
-            _statusText.Text = "Transcription engine installed. Now download a model below.";
+            outcome = "Transcription engine installed. Now download a model below.";
         }
         catch (OperationCanceledException)
         {
-            _statusText.Text = "Engine download cancelled.";
+            outcome = "Engine download cancelled.";
         }
         catch (Exception ex)
         {
-            _statusText.Text = "Couldn't install the engine: " + ex.Message;
+            outcome = "Couldn't install the engine: " + Describe(ex);
         }
         finally
         {
@@ -158,6 +159,7 @@ public partial class WhisperModelWindow : Window
             _engineButton.Content = "Install engine";
             Refresh();
         }
+        _statusText.Text = outcome; // after Refresh so the resting text doesn't clobber the result
     }
 
     private void OnModelChanged(object? sender, SelectionChangedEventArgs e) => UpdateState();
@@ -188,19 +190,20 @@ public partial class WhisperModelWindow : Window
         UpdateState();
 
         var progress = new Progress<double>(v => _downloadBar.Value = v);
+        string outcome;
         try
         {
             await _store.DownloadAsync(model, progress, _cts.Token);
             SetDefault(model.Id); // a freshly downloaded model becomes the one captions use
-            _statusText.Text = $"Downloaded {model.DisplayName}. It's now your caption model.";
+            outcome = $"Downloaded {model.DisplayName}. It's now your caption model.";
         }
         catch (OperationCanceledException)
         {
-            _statusText.Text = "Download cancelled.";
+            outcome = "Download cancelled.";
         }
         catch (Exception ex)
         {
-            _statusText.Text = "Couldn't download that model: " + ex.Message;
+            outcome = "Couldn't download that model: " + Describe(ex);
         }
         finally
         {
@@ -209,6 +212,16 @@ public partial class WhisperModelWindow : Window
             _cts = null;
             Refresh();
         }
+        _statusText.Text = outcome; // after Refresh so the resting text doesn't clobber the result
+    }
+
+    // A readable one-line reason from an exception (unwraps the inner cause when the message is generic).
+    private static string Describe(Exception ex)
+    {
+        var msg = ex.Message;
+        if (ex.InnerException is { } inner && !string.IsNullOrWhiteSpace(inner.Message))
+            msg += " (" + inner.Message + ")";
+        return msg;
     }
 
     private void OnDelete(object? sender, RoutedEventArgs e)
@@ -216,8 +229,8 @@ public partial class WhisperModelWindow : Window
         if (_busy || Selected is not { } model || !_store.IsInstalled(model)) return;
         _store.Delete(model);
         if (_defaultId == model.Id) SetDefault(null); // it was the caption model — clear it
-        _statusText.Text = $"Deleted {model.DisplayName}.";
         Refresh();
+        _statusText.Text = $"Deleted {model.DisplayName}."; // after Refresh so it isn't clobbered
     }
 
     private void OnClose(object? sender, RoutedEventArgs e)

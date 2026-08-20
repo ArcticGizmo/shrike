@@ -32,7 +32,7 @@ $ErrorActionPreference = 'Stop'
 # ggml-org/whisper.cpp publishes prebuilt Windows binaries as 'whisper-bin-x64.zip' on GitHub Releases
 # (a plain CPU x64 build - portable, no GPU/driver assumptions; a GPU build is a later opt-in).
 # Verify the tag + asset name at https://github.com/ggml-org/whisper.cpp/releases before bumping.
-$Version = 'v1.7.4'
+$Version = 'v1.9.2'
 $Url     = "https://github.com/ggml-org/whisper.cpp/releases/download/$Version/whisper-bin-x64.zip"
 # Run once with this empty to have the script print the downloaded zip's hash, then paste it here.
 $Sha256  = ''
