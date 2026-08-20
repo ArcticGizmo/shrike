@@ -86,6 +86,7 @@
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,0,6">
                     <TextBlock Text="✦ Effects" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
                     <Button Name="AddEffectButton" Classes="tool" Content="+ Add effect" />
+                    <Button Name="CaptionsButton" Classes="tool" Content="✦ Captions" Click="OnCaptionsButton" />
                     <TextBlock Name="EffectsHint" Classes="hint" VerticalAlignment="Center"
                                Text="right-click to add · drag to move / resize · double-click adds a zoom · Ctrl+scroll to zoom the timeline, Shift+scroll to pan" />
                 </StackPanel>

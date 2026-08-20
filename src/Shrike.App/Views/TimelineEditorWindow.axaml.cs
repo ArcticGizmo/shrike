@@ -1129,6 +1129,16 @@ public partial class TimelineEditorWindow : Window
 
     // ---- captions authoring ----
 
+    // Toolbar "Captions" button — the discoverable entry point. Selects the existing captions effect if there
+    // is one (revealing its pane with Generate), otherwise adds one spanning the clip and selects it.
+    private void OnCaptionsButton(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_effectsLane is null) return;
+        var idx = _effects.FindIndex(ev => ev is CaptionEffect);
+        if (idx >= 0) _effectsLane.Select(idx);
+        else OnAddEffect(EffectKind.Caption, _playheadSourceMs);
+    }
+
     // Reflect a caption effect into the pane: style controls + an editable cue list.
     private void PopulateCaptionEditor(CaptionEffect cap)
     {
