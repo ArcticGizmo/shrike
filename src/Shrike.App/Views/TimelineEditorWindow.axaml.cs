@@ -1240,14 +1240,26 @@ public partial class TimelineEditorWindow : Window
                      ?? _audioClips.FirstOrDefault(c => File.Exists(c.SidecarPath));
         if (narration is null) { SetCaptionStatus("Record narration (mic or voiceover) first, then generate captions."); return; }
 
-        var engine = WhisperTranscriber.TryCreate();
-        if (engine is null) { SetCaptionStatus("Transcription engine not found — it ships with released builds."); return; }
-
+        // Ensure transcription is set up — this opens the setup dialog to install the engine and/or a model
+        // from within the app when either is missing, then returns the model to use.
         var store = new WhisperModelStore();
         var settings = Services.SettingsService.Instance;
         var modelPath = await WhisperModelWindow.EnsureModelAsync(this, store, settings?.Current.CaptionModelId,
             id => settings?.Update(settings.Current with { CaptionModelId = id }));
-        if (modelPath is null) { SetCaptionStatus("No transcription model installed — download one to generate captions."); return; }
+        if (modelPath is null)
+        {
+            SetCaptionStatus("Transcription needs the engine and a model — use Captions setup to install them.");
+            return;
+        }
+
+        var engine = WhisperTranscriber.TryCreate();
+        if (engine is null)
+        {
+            SetCaptionStatus(Whisper.IsAvailable
+                ? "Video tools (ffmpeg) weren't found — they're needed to prepare audio for transcription."
+                : "Transcription engine isn't installed yet.");
+            return;
+        }
 
         _captionBusy = true;
         _captionCts = new System.Threading.CancellationTokenSource();

@@ -46,6 +46,16 @@
         <TextBlock Classes="hint"
                    Text="Captions are transcribed on your machine — nothing is uploaded. Download a model once and it's reused after. English (.en) models are smaller and more accurate for English; the multilingual models cover other languages." />
 
+        <!-- Engine install — shown only when the whisper binary isn't available yet. -->
+        <Border Name="EngineRow" IsVisible="False" Background="#241C12" CornerRadius="7" Padding="12" >
+            <StackPanel Spacing="8">
+                <TextBlock Classes="label" Text="Transcription engine not installed" />
+                <TextBlock Classes="hint" Text="A one-time download enables on-device transcription." />
+                <Button Name="EngineButton" Classes="tool accent" HorizontalAlignment="Left"
+                        Content="Install engine" Click="OnInstallEngine" />
+            </StackPanel>
+        </Border>
+
         <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="Model" />
             <ComboBox Name="ModelBox" HorizontalAlignment="Stretch" SelectionChanged="OnModelChanged" />

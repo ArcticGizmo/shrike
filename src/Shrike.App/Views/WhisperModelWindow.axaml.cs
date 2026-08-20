@@ -19,6 +19,7 @@ namespace Shrike.App.Views;
 public partial class WhisperModelWindow : Window
 {
     private readonly WhisperModelStore _store;
+    private readonly WhisperEngineInstaller _engine;
     private readonly Action<string?> _onDefaultChanged;
     private string? _defaultId;
 
@@ -26,6 +27,8 @@ public partial class WhisperModelWindow : Window
     private ProgressBar _downloadBar = null!;
     private TextBlock _statusText = null!;
     private Button _primaryButton = null!, _deleteButton = null!, _closeButton = null!;
+    private Border _engineRow = null!;
+    private Button _engineButton = null!;
 
     private CancellationTokenSource? _cts;
     private bool _busy;
@@ -33,9 +36,11 @@ public partial class WhisperModelWindow : Window
     // Parameterless ctor for the XAML designer only.
     public WhisperModelWindow() : this(new WhisperModelStore(), null, _ => { }) { }
 
-    internal WhisperModelWindow(WhisperModelStore store, string? defaultId, Action<string?> onDefaultChanged)
+    internal WhisperModelWindow(WhisperModelStore store, string? defaultId, Action<string?> onDefaultChanged,
+        WhisperEngineInstaller? engine = null)
     {
         _store = store;
+        _engine = engine ?? new WhisperEngineInstaller();
         _defaultId = defaultId;
         _onDefaultChanged = onDefaultChanged;
         InitializeComponent();
@@ -46,6 +51,8 @@ public partial class WhisperModelWindow : Window
         _primaryButton = this.FindControl<Button>("PrimaryButton")!;
         _deleteButton = this.FindControl<Button>("DeleteButton")!;
         _closeButton = this.FindControl<Button>("CloseButton")!;
+        _engineRow = this.FindControl<Border>("EngineRow")!;
+        _engineButton = this.FindControl<Button>("EngineButton")!;
 
         // Seed the picker on the remembered default (or the suggested one), then paint state.
         var startId = _defaultId ?? WhisperModelCatalog.DefaultId;
@@ -77,17 +84,22 @@ public partial class WhisperModelWindow : Window
         var model = Selected;
         var installed = model is not null && _store.IsInstalled(model);
 
+        // The engine-install prompt shows whenever the whisper binary isn't resolvable yet.
+        _engineRow.IsVisible = !Whisper.IsAvailable;
+
         if (_busy)
         {
             _primaryButton.Content = "Cancel";
             _primaryButton.IsEnabled = true;
             _deleteButton.IsEnabled = false;
             _closeButton.IsEnabled = false;
+            _engineButton.IsEnabled = false;
             return;
         }
 
         _downloadBar.IsVisible = false;
         _closeButton.IsEnabled = true;
+        _engineButton.IsEnabled = true;
 
         if (model is null) { _primaryButton.IsEnabled = false; _deleteButton.IsEnabled = false; return; }
 
@@ -108,12 +120,44 @@ public partial class WhisperModelWindow : Window
         var currentName = WhisperModelCatalog.Find(_defaultId) is { } d && _store.InstalledPath(_defaultId) is not null
             ? d.DisplayName
             : null;
-        var engineNote = Whisper.IsAvailable
-            ? ""
-            : "  ·  transcription engine not found — captions need the whisper binary (bundled in releases).";
-        _statusText.Text = (currentName is not null
+        _statusText.Text = currentName is not null
             ? $"In use for captions: {currentName}."
-            : "No caption model chosen yet.") + engineNote;
+            : "No caption model chosen yet.";
+    }
+
+    private async void OnInstallEngine(object? sender, RoutedEventArgs e)
+    {
+        if (_busy) { _cts?.Cancel(); return; }
+        _busy = true;
+        _cts = new CancellationTokenSource();
+        _downloadBar.IsVisible = true;
+        _downloadBar.Value = 0;
+        _statusText.Text = $"Downloading transcription engine ({WhisperEngine.ApproxSize})…";
+        _engineButton.Content = "Cancel";
+        UpdateState();
+
+        var progress = new Progress<double>(v => _downloadBar.Value = v);
+        try
+        {
+            await _engine.DownloadAsync(progress, _cts.Token);
+            _statusText.Text = "Transcription engine installed. Now download a model below.";
+        }
+        catch (OperationCanceledException)
+        {
+            _statusText.Text = "Engine download cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = "Couldn't install the engine: " + ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _cts?.Dispose();
+            _cts = null;
+            _engineButton.Content = "Install engine";
+            Refresh();
+        }
     }
 
     private void OnModelChanged(object? sender, SelectionChangedEventArgs e) => UpdateState();
@@ -189,20 +233,22 @@ public partial class WhisperModelWindow : Window
     }
 
     /// <summary>
-    /// Ensure a transcription model is available, returning the path of the model captions should use — or
-    /// null if the user closes the picker without installing one. Returns immediately (no UI) when a model is
-    /// already installed; otherwise opens this window so the user can download one.
+    /// Ensure transcription is ready — both the engine binary and a model — returning the path of the model
+    /// captions should use, or null if the user closes the setup without completing it. Returns immediately
+    /// (no UI) only when the engine is present <b>and</b> a model is installed; otherwise opens this window so
+    /// the user can install whatever is missing (engine and/or model) from within the app.
     /// </summary>
     public static async Task<string?> EnsureModelAsync(
         Window owner, WhisperModelStore store, string? defaultId, Action<string?> onDefaultChanged)
     {
-        var have = store.InstalledPath(defaultId)
-                   ?? (store.Installed().FirstOrDefault() is { } m ? store.PathFor(m) : null);
-        if (have is not null) return have;
+        string? ModelPath(string? id) => store.InstalledPath(id)
+            ?? (store.Installed().FirstOrDefault() is { } m ? store.PathFor(m) : null);
+
+        if (Whisper.IsAvailable && ModelPath(defaultId) is { } ready) return ready;
 
         var dlg = new WhisperModelWindow(store, defaultId, onDefaultChanged);
         await dlg.ShowDialog(owner);
-        return store.InstalledPath(dlg._defaultId)
-               ?? (store.Installed().FirstOrDefault() is { } m2 ? store.PathFor(m2) : null);
+        Whisper.ResetCache(); // the engine may have just been installed in the dialog
+        return Whisper.IsAvailable ? ModelPath(dlg._defaultId) : null;
     }
 }

@@ -167,10 +167,18 @@ relaunch the dev exe on every change (kill running Shrike first — [`CLAUDE.md`
   note; the chosen default persists via an injected callback (decoupled from the settings service). A static
   `EnsureModelAsync(...)` returns the model path C5's Generate action needs (opening the picker only when
   nothing is installed). Entry point: **Settings → Captions → "Manage transcription models…"**.
-- ✅ **Tests** (`WhisperModelStoreTests`, 6): catalog lookup/default, size formatting, installed-state,
-  download+verify+place, checksum-mismatch cleanup, HTTP-error. Suite **398 passed**; App build clean, boot OK.
-- **Exit:** ✅ pick a model, watch it download + verify; it becomes the caption model and is reused silently;
-  a second (e.g. multilingual) model installs alongside. *(Interactive download exercised live in C6.)*
+- ✅ **In-app engine install:** `WhisperEngine` (pinned build) + `WhisperEngineInstaller` — downloads the
+  whisper-cli binary + its DLLs into the managed `%LOCALAPPDATA%\Shrike\whisper` folder (the locator's path),
+  so transcription can be enabled from within the app, not only from a release bundle. Surfaced as an
+  **"Install engine"** prompt in `WhisperModelWindow` (shown whenever the binary isn't resolvable), and
+  `EnsureModelAsync` now requires **both** the engine and a model before returning ready — so hitting
+  **Generate** with nothing installed opens setup and offers to install both.
+- ✅ **Tests** (`WhisperModelStoreTests` 6 + `WhisperEngineInstallerTests` 3): catalog lookup/default, size
+  formatting, installed-state, model download+verify+place, checksum-mismatch cleanup, HTTP-error; engine
+  zip extraction (CLI + sibling DLLs flattened, others skipped), missing-CLI + HTTP-error. Suite **408 passed**.
+- **Exit:** ✅ from a clean machine, hitting Generate (or Settings → Captions) installs the engine and a model
+  from within the app; the model becomes the caption model and is reused silently; a second model installs
+  alongside. *(Live download exercised in C6.)*
 
 ### ✅ C3 · Burn-in rendering  *(export)*
 - ✅ `CaptionCompositor : IFrameCompositor` + `CaptionSprite` (`CaptionCompositor.cs`) — pre-resolved

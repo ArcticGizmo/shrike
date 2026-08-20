@@ -58,7 +58,10 @@ public static class Whisper
         foreach (var name in ExeNames) yield return Path.Combine(baseDir, name);
         foreach (var name in ExeNames) yield return Path.Combine(baseDir, "whisper", name);
 
-        // Shrike-managed copy (same folder the model store uses).
+        // Shrike-managed copy — the in-app engine installer writes here (profile-aware, matches the model store).
+        foreach (var name in ExeNames) yield return Path.Combine(AppStorage.LocalRoot, "whisper", name);
+
+        // Also honour a copy under a non-profile "Shrike" folder (e.g. a release install shared with a dev build).
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (!string.IsNullOrEmpty(local))
             foreach (var name in ExeNames) yield return Path.Combine(local, "Shrike", "whisper", name);
