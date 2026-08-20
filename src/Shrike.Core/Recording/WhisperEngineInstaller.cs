@@ -93,9 +93,15 @@ public sealed class WhisperEngineInstaller
     private string Extract(string zipPath)
     {
         using var za = ZipFile.OpenRead(zipPath);
-        var cli = za.Entries.FirstOrDefault(e =>
-            NameIs(e, "whisper-cli.exe") || NameIs(e, "whisper.exe") || NameIs(e, "main.exe"))
-            ?? throw new InvalidOperationException("The downloaded archive did not contain a whisper CLI.");
+        // Choose the CLI by PRIORITY, not zip order: recent builds ship both whisper-cli.exe and a deprecated
+        // main.exe stub (which just prints "use whisper-cli.exe" and exits 1), and main.exe sorts first.
+        ZipArchiveEntry? cli = null;
+        foreach (var name in new[] { "whisper-cli.exe", "whisper.exe", "main.exe" })
+        {
+            cli = za.Entries.FirstOrDefault(e => NameIs(e, name));
+            if (cli is not null) break;
+        }
+        if (cli is null) throw new InvalidOperationException("The downloaded archive did not contain a whisper CLI.");
 
         var prefix = DirPrefix(cli.FullName);
         foreach (var e in za.Entries)

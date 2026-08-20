@@ -29,6 +29,23 @@ public class WhisperEngineInstallerTests
     }
 
     [Fact]
+    public async Task DownloadAsync_prefers_whisper_cli_over_the_deprecated_main()
+    {
+        // Real zips ship both; main.exe sorts first but is a deprecation stub that exits 1. Pick whisper-cli.exe.
+        var zip = BuildZip(
+            ("Release/main.exe", [1]),
+            ("Release/whisper-cli.exe", [2]),
+            ("Release/ggml.dll", [3]));
+
+        using var dir = new TempDir();
+        var installer = new WhisperEngineInstaller(dir.Path, new HttpClient(new FakeHandler(zip)));
+        var cliPath = await installer.DownloadAsync();
+
+        Assert.Equal(Path.Combine(dir.Path, "whisper-cli.exe"), cliPath);
+        Assert.True(File.Exists(Path.Combine(dir.Path, "whisper-cli.exe")));
+    }
+
+    [Fact]
     public async Task DownloadAsync_throws_when_the_archive_has_no_cli()
     {
         var zip = BuildZip(("bin/ggml.dll", [1]));
