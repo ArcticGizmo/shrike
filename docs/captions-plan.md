@@ -136,15 +136,24 @@ relaunch the dev exe on every change (kill running Shrike first — [`CLAUDE.md`
   doc loads with no captions. Suite **384 passed**; Core build clean, 0 warnings.
 - **Exit:** ✅ a hand-authored cue list resolves per frame and round-trips; no UI yet.
 
-### C1 · Transcription engine  *(Core + release tooling)*
-- `Whisper` locator (env → bundled → `%LOCALAPPDATA%\Shrike\whisper` → PATH), `ITranscriber` +
-  `WhisperTranscriber`: bundled ffmpeg resamples the sidecar to 16 kHz mono → `whisper-cli.exe -m … -f … -oj`
-  → parse the JSON segments → `CaptionCue[]`. Graceful, explicit errors when binary/model absent.
-- `tools/fetch-whisper.ps1` — mirrors `fetch-ffmpeg.ps1` (pin `$Version`/`$Url`/`$Sha256`, download, verify,
-  place the **binary**) so the release workflow bundles `whisper-cli.exe`. **Models are NOT fetched here.**
-- **Tests:** JSON→cue parser against fixture transcripts (no model needed); locator resolution order;
-  resample arg-builder.
-- **Exit:** given a WAV + a model on disk, produce cues headlessly; parser fully unit-tested.
+### ✅ C1 · Transcription engine  *(Core + release tooling)*
+- ✅ `Whisper` locator (`Whisper.cs`) — mirrors `Ffmpeg`: `SHRIKE_WHISPER` override → bundled next to app
+  (`whisper-cli.exe`, also `whisper/…` and the legacy `main.exe`) → `%LOCALAPPDATA%\Shrike\whisper` → PATH;
+  cached, `ResetCache()` for tests, null when absent so callers prompt to install.
+- ✅ `ITranscriber` + `WhisperTranscriber` (`WhisperTranscriber.cs`): ffmpeg resamples the sidecar to 16 kHz
+  mono PCM → `whisper-cli -oj` → `ParseJson` → `CaptionCue[]` (in the audio file's own time; the caller maps
+  to source time). `TryCreate()` returns null when either binary is missing. Pure, testable arg builders
+  (`ResampleArgs`/`WhisperArgs`) + a forgiving JSON parser (offsets, timestamp-string fallback, junk → none);
+  process runner shells out like `VideoExporter`, draining stderr for `progress = NN%` → a real 0..1 bar,
+  cancellable, clear errors on non-zero exit.
+- ✅ `tools/fetch-whisper.ps1` — mirrors `fetch-ffmpeg.ps1` (pin/download/verify), places the **binary + its
+  DLLs** in `publish/whisper` for the release bundle. **Models are NOT fetched here** (opt-in in-app, C2).
+  Parse-clean on PowerShell 5.1, pure ASCII.
+- ✅ **Tests** (`WhisperTranscriberTests`, 8): parser reads offset segments + trims + drops empty/zero-length,
+  timestamp-string fallback, junk tolerance; `ResampleArgs`/`WhisperArgs` (translate + word-level variants,
+  blank-language → auto); locator honours an existing override and ignores a missing one. Suite **392 passed**.
+- **Exit:** ✅ given a WAV + a model on disk, produce cues headlessly; parser + arg builders fully unit-tested.
+  *(Live transcription against a real model is exercised in C6's hardware pass.)*
 
 ### C2 · In-app model manager  *(the opt-in download — decision #2)*
 - `WhisperModelCatalog` (id, language, size, URL, SHA) + `WhisperModelStore` (download → verify → place in
