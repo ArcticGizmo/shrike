@@ -1,0 +1,208 @@
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Markup.Xaml;
+using Shrike.Core.Recording;
+
+namespace Shrike.App.Views;
+
+/// <summary>
+/// The transcription-model manager — the opt-in, in-app download surface for whisper models (they are never
+/// shipped in the installer). Lists the catalog with each model's size and installed state, downloads one
+/// with a progress bar (cancellable), lets the user pick which installed model captions use, and deletes one
+/// to reclaim disk. The chosen default is persisted through an injected callback so this window stays
+/// decoupled from the settings service.
+/// </summary>
+public partial class WhisperModelWindow : Window
+{
+    private readonly WhisperModelStore _store;
+    private readonly Action<string?> _onDefaultChanged;
+    private string? _defaultId;
+
+    private ComboBox _modelBox = null!;
+    private ProgressBar _downloadBar = null!;
+    private TextBlock _statusText = null!;
+    private Button _primaryButton = null!, _deleteButton = null!, _closeButton = null!;
+
+    private CancellationTokenSource? _cts;
+    private bool _busy;
+
+    // Parameterless ctor for the XAML designer only.
+    public WhisperModelWindow() : this(new WhisperModelStore(), null, _ => { }) { }
+
+    internal WhisperModelWindow(WhisperModelStore store, string? defaultId, Action<string?> onDefaultChanged)
+    {
+        _store = store;
+        _defaultId = defaultId;
+        _onDefaultChanged = onDefaultChanged;
+        InitializeComponent();
+
+        _modelBox = this.FindControl<ComboBox>("ModelBox")!;
+        _downloadBar = this.FindControl<ProgressBar>("DownloadBar")!;
+        _statusText = this.FindControl<TextBlock>("StatusText")!;
+        _primaryButton = this.FindControl<Button>("PrimaryButton")!;
+        _deleteButton = this.FindControl<Button>("DeleteButton")!;
+        _closeButton = this.FindControl<Button>("CloseButton")!;
+
+        // Seed the picker on the remembered default (or the suggested one), then paint state.
+        var startId = _defaultId ?? WhisperModelCatalog.DefaultId;
+        Refresh(WhisperModelCatalog.Models.ToList().FindIndex(m => m.Id == startId));
+    }
+
+    private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private WhisperModel? Selected =>
+        _modelBox.SelectedIndex >= 0 && _modelBox.SelectedIndex < WhisperModelCatalog.Models.Count
+            ? WhisperModelCatalog.Models[_modelBox.SelectedIndex]
+            : null;
+
+    private void Refresh(int selectIndex = -1)
+    {
+        var keep = selectIndex >= 0 ? selectIndex : Math.Max(0, _modelBox.SelectedIndex);
+        _modelBox.ItemsSource = WhisperModelCatalog.Models.Select(m =>
+        {
+            var marks = _store.IsInstalled(m) ? "installed" : m.ApproxSize;
+            var isDefault = m.Id == _defaultId && _store.IsInstalled(m);
+            return $"{m.DisplayName} — {marks}{(isDefault ? "  ✓ in use" : "")}";
+        }).ToList();
+        _modelBox.SelectedIndex = Math.Clamp(keep, 0, WhisperModelCatalog.Models.Count - 1);
+        UpdateState();
+    }
+
+    private void UpdateState()
+    {
+        var model = Selected;
+        var installed = model is not null && _store.IsInstalled(model);
+
+        if (_busy)
+        {
+            _primaryButton.Content = "Cancel";
+            _primaryButton.IsEnabled = true;
+            _deleteButton.IsEnabled = false;
+            _closeButton.IsEnabled = false;
+            return;
+        }
+
+        _downloadBar.IsVisible = false;
+        _closeButton.IsEnabled = true;
+
+        if (model is null) { _primaryButton.IsEnabled = false; _deleteButton.IsEnabled = false; return; }
+
+        if (installed)
+        {
+            var isDefault = model.Id == _defaultId;
+            _primaryButton.Content = isDefault ? "In use" : "Use for captions";
+            _primaryButton.IsEnabled = !isDefault;
+            _deleteButton.IsEnabled = true;
+        }
+        else
+        {
+            _primaryButton.Content = $"Download ({model.ApproxSize})";
+            _primaryButton.IsEnabled = true;
+            _deleteButton.IsEnabled = false;
+        }
+
+        var currentName = WhisperModelCatalog.Find(_defaultId) is { } d && _store.InstalledPath(_defaultId) is not null
+            ? d.DisplayName
+            : null;
+        var engineNote = Whisper.IsAvailable
+            ? ""
+            : "  ·  transcription engine not found — captions need the whisper binary (bundled in releases).";
+        _statusText.Text = (currentName is not null
+            ? $"In use for captions: {currentName}."
+            : "No caption model chosen yet.") + engineNote;
+    }
+
+    private void OnModelChanged(object? sender, SelectionChangedEventArgs e) => UpdateState();
+
+    private async void OnPrimary(object? sender, RoutedEventArgs e)
+    {
+        if (_busy) { _cts?.Cancel(); return; }
+        if (Selected is not { } model) return;
+
+        if (_store.IsInstalled(model))
+        {
+            // Already downloaded → just make it the caption model.
+            SetDefault(model.Id);
+            Refresh();
+            return;
+        }
+
+        await DownloadAsync(model);
+    }
+
+    private async Task DownloadAsync(WhisperModel model)
+    {
+        _busy = true;
+        _cts = new CancellationTokenSource();
+        _downloadBar.IsVisible = true;
+        _downloadBar.Value = 0;
+        _statusText.Text = $"Downloading {model.DisplayName} ({model.ApproxSize})…";
+        UpdateState();
+
+        var progress = new Progress<double>(v => _downloadBar.Value = v);
+        try
+        {
+            await _store.DownloadAsync(model, progress, _cts.Token);
+            SetDefault(model.Id); // a freshly downloaded model becomes the one captions use
+            _statusText.Text = $"Downloaded {model.DisplayName}. It's now your caption model.";
+        }
+        catch (OperationCanceledException)
+        {
+            _statusText.Text = "Download cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _statusText.Text = "Couldn't download that model: " + ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _cts?.Dispose();
+            _cts = null;
+            Refresh();
+        }
+    }
+
+    private void OnDelete(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || Selected is not { } model || !_store.IsInstalled(model)) return;
+        _store.Delete(model);
+        if (_defaultId == model.Id) SetDefault(null); // it was the caption model — clear it
+        _statusText.Text = $"Deleted {model.DisplayName}.";
+        Refresh();
+    }
+
+    private void OnClose(object? sender, RoutedEventArgs e)
+    {
+        if (_busy) { _cts?.Cancel(); return; }
+        Close();
+    }
+
+    private void SetDefault(string? id)
+    {
+        _defaultId = id;
+        _onDefaultChanged(id);
+    }
+
+    /// <summary>
+    /// Ensure a transcription model is available, returning the path of the model captions should use — or
+    /// null if the user closes the picker without installing one. Returns immediately (no UI) when a model is
+    /// already installed; otherwise opens this window so the user can download one.
+    /// </summary>
+    public static async Task<string?> EnsureModelAsync(
+        Window owner, WhisperModelStore store, string? defaultId, Action<string?> onDefaultChanged)
+    {
+        var have = store.InstalledPath(defaultId)
+                   ?? (store.Installed().FirstOrDefault() is { } m ? store.PathFor(m) : null);
+        if (have is not null) return have;
+
+        var dlg = new WhisperModelWindow(store, defaultId, onDefaultChanged);
+        await dlg.ShowDialog(owner);
+        return store.InstalledPath(dlg._defaultId)
+               ?? (store.Installed().FirstOrDefault() is { } m2 ? store.PathFor(m2) : null);
+    }
+}

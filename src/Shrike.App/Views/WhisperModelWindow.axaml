@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Shrike.App.Views.WhisperModelWindow"
+        Title="Transcription models"
+        Width="440"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#140F0A">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="#9A8F7D" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Button.tool">
+            <Setter Property="Padding" Value="11,7" />
+            <Setter Property="Background" Value="#2A2318" />
+            <Setter Property="Foreground" Value="#EDE6DA" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3A2F1E" />
+            <Setter Property="BorderBrush" Value="#F5A524" />
+        </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="#F5A524" />
+            <Setter Property="Foreground" Value="#140F0A" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FFB840" />
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="18" Spacing="14">
+        <TextBlock Text="Transcription models" FontSize="16" FontWeight="SemiBold" Foreground="#EDE6DA" />
+
+        <TextBlock Classes="hint"
+                   Text="Captions are transcribed on your machine — nothing is uploaded. Download a model once and it's reused after. English (.en) models are smaller and more accurate for English; the multilingual models cover other languages." />
+
+        <StackPanel Spacing="6">
+            <TextBlock Classes="label" Text="Model" />
+            <ComboBox Name="ModelBox" HorizontalAlignment="Stretch" SelectionChanged="OnModelChanged" />
+        </StackPanel>
+
+        <ProgressBar Name="DownloadBar" Minimum="0" Maximum="1" Height="14" IsVisible="False"
+                     Foreground="#F5A524" Background="#2A2318" CornerRadius="4" />
+
+        <TextBlock Name="StatusText" Classes="hint" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Name="DeleteButton" Classes="tool" Content="Delete" Click="OnDelete" />
+            <Button Name="PrimaryButton" Classes="tool accent" Content="Download" Click="OnPrimary" />
+            <Button Name="CloseButton" Classes="tool" Content="Close" Click="OnClose" />
+        </StackPanel>
+    </StackPanel>
+</Window>

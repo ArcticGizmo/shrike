@@ -155,14 +155,21 @@ relaunch the dev exe on every change (kill running Shrike first — [`CLAUDE.md`
 - **Exit:** ✅ given a WAV + a model on disk, produce cues headlessly; parser + arg builders fully unit-tested.
   *(Live transcription against a real model is exercised in C6's hardware pass.)*
 
-### C2 · In-app model manager  *(the opt-in download — decision #2)*
-- `WhisperModelCatalog` (id, language, size, URL, SHA) + `WhisperModelStore` (download → verify → place in
-  `%LOCALAPPDATA%\Shrike\whisper\models`, presence check, remembered default in `AppSettings`).
-- UI: first "Generate captions" with no model → a **model picker** dialog (language + size, shows download
-  size, progress bar, cancel). Remembered thereafter; a "Manage models" affordance to add another language.
-- **Tests:** catalog lookup, store presence/selection, checksum-mismatch rejection (download mocked).
-- **Exit:** pick a model, watch it download + verify; next run uses it silently; a second language installs
-  alongside.
+### ✅ C2 · In-app model manager  *(the opt-in download — decision #2)*
+- ✅ `WhisperModel` + `WhisperModelCatalog` (`WhisperModel.cs`) — tiny/base/small English + base/small
+  multilingual GGML weights on Hugging Face; `base.en` default; friendly `ApproxSize`; SHAs blank to pin at
+  release. `WhisperModelStore` (`WhisperModelStore.cs`) — `PathFor`/`IsInstalled`/`Installed`/`InstalledPath`
+  and `DownloadAsync` (streamed 0..1 progress, SHA-256 verify when pinned, atomic `.part`→final, cleanup on
+  error/cancel) over an **injectable `HttpClient`**. `AppStorage.Whisper*Directory`; `AppSettings.CaptionModelId`.
+- ✅ `WhisperModelWindow` (Avalonia) — picker with per-model installed/size state, **Download** with a
+  progress bar (cancellable), **Use for captions** (sets the default), **Delete**, and an engine-missing
+  note; the chosen default persists via an injected callback (decoupled from the settings service). A static
+  `EnsureModelAsync(...)` returns the model path C5's Generate action needs (opening the picker only when
+  nothing is installed). Entry point: **Settings → Captions → "Manage transcription models…"**.
+- ✅ **Tests** (`WhisperModelStoreTests`, 6): catalog lookup/default, size formatting, installed-state,
+  download+verify+place, checksum-mismatch cleanup, HTTP-error. Suite **398 passed**; App build clean, boot OK.
+- **Exit:** ✅ pick a model, watch it download + verify; it becomes the caption model and is reused silently;
+  a second (e.g. multilingual) model installs alongside. *(Interactive download exercised live in C6.)*
 
 ### C3 · Burn-in rendering  *(export)*
 - `CaptionCompositor : IFrameCompositor` — pre-resolved `CaptionFrame[]` + pre-baked per-cue premultiplied
