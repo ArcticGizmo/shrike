@@ -28,9 +28,7 @@ public partial class App : Application
     private HotkeyService? _hotkeys;
     private CaptureController? _capture;
     private TrayIcon? _tray;
-    private NativeMenuItem? _recentMenu;
     private SettingsWindow? _settingsWindow;
-    private AboutWindow? _aboutWindow;
     private ChangelogWindow? _changelogWindow;
     private IReadOnlyList<ChangelogSection>? _pendingChangelog;
     private bool _overlayMarked;
@@ -115,56 +113,27 @@ public partial class App : Application
     {
         var icon = new WindowIcon(AssetLoader.Open(new Uri("avares://shrike/Assets/tray.png")));
 
-        // One capture entry point (the chooser), plus the individual modes for discoverability.
-        var capture = new NativeMenuItem("Capture…")
+        // Read-only version header (mirrors perch). The (Dev) suffix marks an isolated dev instance.
+        var versionItem = new NativeMenuItem($"Shrike{AppProfile.DisplaySuffix} - {AppVersion.Current}")
         {
-            Gesture = new KeyGesture(Key.Q, KeyModifiers.Alt | KeyModifiers.Shift),
+            IsEnabled = false,
         };
-        capture.Click += (_, _) => _capture?.ShowCaptureMenu();
-
-        var region = new NativeMenuItem("Region or window");
-        region.Click += (_, _) => _capture?.BeginRegionCapture();
-        var monitor = new NativeMenuItem("This monitor");
-        monitor.Click += (_, _) => _capture?.CaptureMonitorUnderCursor();
-        var full = new NativeMenuItem("All monitors");
-        full.Click += (_, _) => _capture?.CaptureFullScreen();
-        var record = new NativeMenuItem("Record region");
-        record.Click += (_, _) => _capture?.BeginRegionRecording();
-
-        var recent = new NativeMenuItem("Recent") { Menu = new NativeMenu() };
-        _recentMenu = recent;
-        _recentRing.Changed += () => Dispatcher.UIThread.Post(RebuildRecentMenu);
-        RebuildRecentMenu();
 
         var settings = new NativeMenuItem("Settings…");
         settings.Click += (_, _) => OpenSettings();
 
-        var about = new NativeMenuItem("About Shrike…");
-        about.Click += (_, _) => OpenAbout();
-
-#if DEBUG
-        // Dev affordance: jump straight to the recordings working folder to inspect MP4s + track sidecars.
-        var openWorkingDir = new NativeMenuItem("Open working folder (debug)");
-        openWorkingDir.Click += (_, _) => OpenWorkingFolder();
-#endif
+        // Sits below Settings; opens Settings (which now hosts About + updates) and runs a check straight away.
+        var checkUpdates = new NativeMenuItem("Check for updates…");
+        checkUpdates.Click += (_, _) => OpenSettingsAndCheckForUpdates();
 
         var quit = new NativeMenuItem("Quit Shrike");
         quit.Click += (_, _) => desktop.Shutdown();
 
         var menu = new NativeMenu();
-        menu.Add(capture);
+        menu.Add(versionItem);
         menu.Add(new NativeMenuItemSeparator());
-        menu.Add(region);
-        menu.Add(monitor);
-        menu.Add(full);
-        menu.Add(record);
-        menu.Add(new NativeMenuItemSeparator());
-        menu.Add(recent);
         menu.Add(settings);
-        menu.Add(about);
-#if DEBUG
-        menu.Add(openWorkingDir);
-#endif
+        menu.Add(checkUpdates);
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(quit);
 
@@ -175,68 +144,10 @@ public partial class App : Application
             Menu = menu,
             IsVisible = true,
         };
+        // Left-click stays the fast path to a capture: it opens the chooser (hotkey Alt+Shift+Q too).
         _tray.Clicked += (_, _) => _capture?.ShowCaptureMenu();
 
         TrayIcon.SetIcons(this, [_tray]);
-    }
-
-    /// <summary>
-    /// Rebuild the tray "Recent" submenu from the ring (newest first). Each entry gets a thumbnail icon
-    /// and a submenu of per-item actions: copy again, open in editor, delete. A trailing "Clear recent"
-    /// empties the ring. When empty, a single disabled placeholder is shown.
-    /// </summary>
-    private void RebuildRecentMenu()
-    {
-        if (_recentMenu?.Menu is not { } menu)
-            return;
-
-        menu.Items.Clear();
-
-        if (_recentRing.Count == 0)
-        {
-            menu.Add(new NativeMenuItem("No recent captures") { IsEnabled = false });
-            _recentMenu.Header = "Recent";
-            return;
-        }
-
-        _recentMenu.Header = $"Recent ({_recentRing.Count})";
-
-        foreach (var item in _recentRing.Items)
-        {
-            var label = $"{item.CapturedAt.LocalDateTime:HH:mm:ss}  ·  {item.Image.Width}×{item.Image.Height}";
-            var entry = new NativeMenuItem(label)
-            {
-                Icon = BitmapConverter.ToBitmap(item.Thumbnail),
-                Menu = new NativeMenu(),
-            };
-
-            var captured = item; // capture for the closures
-
-            var copy = new NativeMenuItem("Copy");
-            copy.Click += (_, _) => CopyToClipboard(captured.Image);
-            var open = new NativeMenuItem("Open in editor");
-            open.Click += (_, _) => _capture?.OpenInEditor(captured.Image);
-            var delete = new NativeMenuItem("Delete");
-            delete.Click += (_, _) => _recentRing.Remove(captured);
-
-            entry.Menu.Add(copy);
-            entry.Menu.Add(open);
-            entry.Menu.Add(delete);
-            menu.Add(entry);
-        }
-
-        menu.Add(new NativeMenuItemSeparator());
-        var clear = new NativeMenuItem("Clear recent");
-        clear.Click += (_, _) => _recentRing.Clear();
-        menu.Add(clear);
-    }
-
-    private void CopyToClipboard(CapturedImage image)
-    {
-        if (!OperatingSystem.IsWindows())
-            return;
-        // No owning window for the tray path — OpenClipboard(NULL) is valid.
-        CaptureClipboard.Copy(IntPtr.Zero, image);
     }
 
     private void OnAction(CaptureAction action)
@@ -263,45 +174,22 @@ public partial class App : Application
         }
     }
 
-    private void OpenSettings()
+    private SettingsWindow? OpenSettings()
     {
-        if (!OperatingSystem.IsWindows() || _settings is null) return;
-        if (_settingsWindow is not null) { _settingsWindow.Activate(); return; }
+        if (!OperatingSystem.IsWindows() || _settings is null) return null;
+        if (_settingsWindow is not null) { _settingsWindow.Activate(); return _settingsWindow; }
 
         var win = new SettingsWindow(_settings);
         win.Closed += (_, _) => { if (ReferenceEquals(_settingsWindow, win)) _settingsWindow = null; };
         _settingsWindow = win;
         win.Show();
         win.Activate();
+        return win;
     }
 
-    private void OpenAbout()
-    {
-        if (_aboutWindow is not null) { _aboutWindow.Activate(); return; }
-
-        var win = new AboutWindow();
-        win.Closed += (_, _) => { if (ReferenceEquals(_aboutWindow, win)) _aboutWindow = null; };
-        _aboutWindow = win;
-        win.Show();
-        win.Activate();
-    }
-
-#if DEBUG
-    /// <summary>Debug-only: open the recordings working folder in Explorer (created if absent).</summary>
-    private static void OpenWorkingFolder()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-        try
-        {
-            var dir = AppStorage.RecordingsDirectory();
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dir}\"")
-            {
-                UseShellExecute = true,
-            });
-        }
-        catch { /* best effort — dev convenience only */ }
-    }
-#endif
+    /// <summary>Tray "Check for updates…": open Settings (now home to About + updates) and kick off a check
+    /// so the result lands where the user can also install it.</summary>
+    private void OpenSettingsAndCheckForUpdates() => OpenSettings()?.CheckForUpdates();
 
     private static void CheckForUpdatesInBackground()
     {

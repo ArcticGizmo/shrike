@@ -1,4 +1,3 @@
-using System.IO;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -6,6 +5,8 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Shrike.App.Services;
+using Shrike.App.Updates;
+using Shrike.Core.Changelog;
 using Shrike.Core.Hotkeys;
 using Shrike.Core.Imaging;
 using Shrike.Core.Recording;
@@ -30,6 +31,11 @@ public partial class SettingsWindow : Window
     private CheckBox _autostartBox = null!, _changelogBox = null!;
     private TextBlock _errorText = null!;
 
+    // About + updates (merged in from the old About window).
+    private TextBlock _versionText = null!, _updateStatus = null!;
+    private Button _checkButton = null!, _applyButton = null!;
+    private UpdateCheckResult? _pendingUpdate;
+
     // Parameterless ctor for the XAML designer only.
     public SettingsWindow() : this(null!) { }
 
@@ -46,6 +52,13 @@ public partial class SettingsWindow : Window
         _autostartBox = this.FindControl<CheckBox>("AutostartBox")!;
         _changelogBox = this.FindControl<CheckBox>("ChangelogBox")!;
         _errorText = this.FindControl<TextBlock>("ErrorText")!;
+
+        _versionText = this.FindControl<TextBlock>("VersionText")!;
+        _updateStatus = this.FindControl<TextBlock>("UpdateStatus")!;
+        _checkButton = this.FindControl<Button>("CheckButton")!;
+        _applyButton = this.FindControl<Button>("ApplyButton")!;
+
+        _versionText.Text = "v" + AppVersion.Current;
 
         _desktopBox.ItemsSource = new[] { "Bring the window to me", "Open a new window here" };
         _formatBox.ItemsSource = new[] { "PNG", "JPEG", "WebP" };
@@ -113,6 +126,64 @@ public partial class SettingsWindow : Window
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e) => Close();
+
+    // ---- About + updates (merged in from the old About window) ----
+
+    /// <summary>Trigger an update check from outside (the tray's "Check for updates…").</summary>
+    public void CheckForUpdates() => _ = RunUpdateCheck();
+
+    private void OnCheckUpdates(object? sender, RoutedEventArgs e) => _ = RunUpdateCheck();
+
+    private async Task RunUpdateCheck()
+    {
+        _checkButton.IsEnabled = false;
+        _updateStatus.Text = "Checking…";
+        _applyButton.IsVisible = false;
+        _pendingUpdate = null;
+
+        var result = await UpdateChecker.CheckDetailedAsync();
+
+        _updateStatus.Text = result.Availability switch
+        {
+            UpdateAvailability.Available => $"v{result.AvailableVersion} is available (you have v{result.CurrentVersion}).",
+            UpdateAvailability.UpToDate => "You're on the latest version.",
+            UpdateAvailability.NotApplicable => "Updates apply to installed builds only.",
+            _ => "Couldn't check right now.",
+        };
+
+        if (result.Availability == UpdateAvailability.Available)
+        {
+            _pendingUpdate = result;
+            _applyButton.IsVisible = true;
+        }
+
+        _checkButton.IsEnabled = true;
+    }
+
+    private async void OnApply(object? sender, RoutedEventArgs e)
+    {
+        if (_pendingUpdate is null) return;
+        _applyButton.IsEnabled = false;
+        _updateStatus.Text = "Downloading update…";
+        await UpdateChecker.ApplyAsync(_pendingUpdate);   // restarts the app on success
+    }
+
+    /// <summary>Open the same "what's new" card the app pops after an update — here on demand, showing the
+    /// full changelog. "Don't show changelogs again" flips the same setting the post-update popup does.</summary>
+    private async void OnViewChangelog(object? sender, RoutedEventArgs e)
+    {
+        var markdown = ChangelogView.LoadEmbedded();
+        var sections = markdown is null
+            ? Array.Empty<ChangelogSection>()
+            : ChangelogParser.Parse(markdown);
+
+        var win = new ChangelogWindow("What's new in Shrike", $"Shrike v{AppVersion.Current}", sections,
+            onSuppress: () =>
+            {
+                if (_settings is { } s) s.Update(s.Current with { ShowChangelogOnUpdate = false });
+            });
+        await win.ShowDialog(this);
+    }
 
     // Opens the transcription-model manager. The chosen default is persisted immediately (independent of this
     // dialog's Save/Cancel) since model management is its own action.

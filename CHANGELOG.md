@@ -8,6 +8,14 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.4] - 2026-08-20
+
+- Slimmed the tray menu to Settings, Check for updates and Quit
+- Tray menu now shows the version at the top
+- About folded into Settings, with a "What's new" changelog button
+
+---
+
 ## [v0.3.3] - 2026-08-20
 
 - **Screenshot self-timer** — a 3, 5 or 10-second delay before the shot
