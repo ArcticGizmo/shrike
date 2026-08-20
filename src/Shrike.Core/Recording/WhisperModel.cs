@@ -28,8 +28,9 @@ public sealed record WhisperModel(
 /// </summary>
 public static class WhisperModelCatalog
 {
-    // Canonical GGML weights published by the whisper.cpp project.
-    private const string Base = "https://huggingface.co/ggml-org/whisper.cpp/resolve/main/";
+    // Canonical GGML weights published by the whisper.cpp project (ggerganov's HF repo hosts the models;
+    // ggml-org/whisper.cpp is the source repo and 401s on model paths).
+    private const string Base = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
 
     // NOTE(release): pin each Sha256 by downloading once and recording the hash (leave blank = no verify).
     public static IReadOnlyList<WhisperModel> Models { get; } =
