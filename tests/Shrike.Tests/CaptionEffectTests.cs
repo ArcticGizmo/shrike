@@ -82,6 +82,17 @@ public class CaptionEffectTests
     }
 
     [Fact]
+    public void CaptionAt_clamps_fade_to_half_duration_for_short_cues()
+    {
+        // A 100ms cue with a 200ms fade: the fade clamps to 50ms each side, peaking at the midpoint and never
+        // overshooting — so a very short line still shows cleanly.
+        var effect = CaptionEffect.FromCues([new CaptionCue(0, 100, "quick")], CaptionStyle.Default with { FadeMs = 200 });
+        Assert.Equal(1.0, EffectTrack.CaptionAt(effect, 50).Alpha, 3);        // Smoothstep(50/50) = 1 at the middle
+        Assert.InRange(EffectTrack.CaptionAt(effect, 10).Alpha, 0.0, 1.0);    // ramping, never > 1
+        Assert.True(EffectTrack.CaptionAt(effect, 10).Alpha < 1.0);          // still inside the fade-in
+    }
+
+    [Fact]
     public void HasCaptions_only_when_a_caption_effect_carries_cues()
     {
         Assert.False(new EffectTrack([]).HasCaptions);

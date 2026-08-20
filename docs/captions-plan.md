@@ -7,7 +7,8 @@
 > track from M1 and the unified effects/compositor platform from
 > [`effects-timeline-plan.md`](effects-timeline-plan.md).
 
-**Status:** Planned · **Date:** 2026-08-20 · **Owner:** Jon
+**Status:** In progress (C0–C5 complete; C6 software-complete, live hardware pass outstanding) ·
+**Date:** 2026-08-20 · **Owner:** Jon · **Branch:** `feature/captions`
 **Depends on:** M1 audio (mic / voiceover sidecars, `AudioTrack`) — shipped in v0.3.1.
 **Companions:** [`recording-audio-roadmap.md`](recording-audio-roadmap.md) (feature line & ordering) ·
 [`recording-implementation-plan.md`](recording-implementation-plan.md) (audio detail, referenced M2 here).
@@ -214,12 +215,22 @@ relaunch the dev exe on every change (kill running Shrike first — [`CLAUDE.md`
   restyle + regenerate (the transcription-error fix loop). Timing edits ride the effect's shared Start/End and
   the underlying cut model; per-cue retiming is a natural follow-up.
 
-### C6 · Polish & QA
-- Multi-source narration (mic + voiceover) ordering; empty/near-silent audio produces no cues gracefully;
-  very long clip transcription runs off-thread with progress + cancel; snappy-load unaffected (lazy model).
-- **Real-hardware pass:** transcribe a genuine recording, confirm timing lands on the words, legibility on
-  light/dark/busy frames, and the model-download UX on a clean machine.
-- **Exit:** a short QA checklist run with no surprises.
+### ◧ C6 · Polish & QA  *(software-complete; live hardware pass outstanding)*
+- ✅ Empty/near-silent audio → "No speech found" (no cues, no crash); missing engine/model/narration each give
+  a clear, specific status rather than failing.
+- ✅ Transcription runs off the UI thread with a progress bar and is **cancellable** — the Generate button
+  doubles as Cancel while running (`OperationCanceledException` → "cancelled").
+- ✅ Snappy-load unaffected: no whisper process or model load at tray start; `WhisperTranscriber.TryCreate`
+  and model I/O happen only on Generate.
+- ✅ Short-cue hardening test (fade clamps to half-duration). Suite **405 passed**; App build clean, boots OK.
+- ⏳ **Real-hardware pass (outstanding gate):** transcribe a genuine narrated recording end-to-end, confirm
+  cue timing lands on the words, legibility on light/dark/busy frames, and the model-download UX on a clean
+  machine. Needs the whisper binary + a model + a narrated clip — not reproducible headlessly, mirroring the
+  audio milestone's real-mic gate.
+  - *Local test recipe:* point `SHRIKE_WHISPER` at a `whisper-cli.exe` (or run `tools/fetch-whisper.ps1`),
+    open **Settings → Captions → Manage transcription models…** to download `base.en`, record a clip with the
+    mic, then in the editor add a **Captions** effect → **Generate from narration**.
+- **Exit:** a short QA checklist run on real hardware with no surprises.
 
 ---
 

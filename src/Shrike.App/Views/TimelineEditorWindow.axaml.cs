@@ -162,6 +162,7 @@ public partial class TimelineEditorWindow : Window
     private ComboBox? _captionPositionCombo;
     private Slider? _captionMaxWidth;
     private bool _captionBusy;
+    private System.Threading.CancellationTokenSource? _captionCts;
 
     // Parameterless ctor for the XAML designer only.
     public TimelineEditorWindow() : this(new RecordingSource("", 16, 16, 30, TimeSpan.FromSeconds(1)), "") { }
@@ -1229,7 +1230,8 @@ public partial class TimelineEditorWindow : Window
     // Transcribe the recorded narration into cues, on this machine, and fill the selected caption effect.
     private async void OnGenerateCaptions(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_captionBusy || _effectsLane is null) return;
+        if (_captionBusy) { _captionCts?.Cancel(); return; } // the button doubles as Cancel while transcribing
+        if (_effectsLane is null) return;
         var i = _effectsLane.SelectedIndex;
         if (i < 0 || i >= _effects.Count || _effects[i] is not CaptionEffect) return;
 
@@ -1248,14 +1250,16 @@ public partial class TimelineEditorWindow : Window
         if (modelPath is null) { SetCaptionStatus("No transcription model installed — download one to generate captions."); return; }
 
         _captionBusy = true;
-        if (_captionGenerateButton is not null) _captionGenerateButton.IsEnabled = false;
+        _captionCts = new System.Threading.CancellationTokenSource();
+        if (_captionGenerateButton is not null) _captionGenerateButton.Content = "Cancel";
         if (_captionProgress is not null) { _captionProgress.IsVisible = true; _captionProgress.Value = 0; }
         SetCaptionStatus("Transcribing…");
         var progress = new Progress<double>(v => { if (_captionProgress is not null) _captionProgress.Value = v; });
         try
         {
             var lang = ModelLanguage(settings?.Current.CaptionModelId);
-            var raw = await engine.TranscribeAsync(narration.SidecarPath, modelPath, new WhisperOptions(Language: lang), progress);
+            var raw = await engine.TranscribeAsync(narration.SidecarPath, modelPath,
+                new WhisperOptions(Language: lang), progress, _captionCts.Token);
             var cues = MapCuesToSource(raw, narration);
             if (cues.Count == 0) { SetCaptionStatus("No speech found in the narration."); return; }
 
@@ -1268,6 +1272,10 @@ public partial class TimelineEditorWindow : Window
             PersistEdit();
             SetCaptionStatus($"Transcribed {cues.Count} line{(cues.Count == 1 ? "" : "s")}. Fix any wording below.");
         }
+        catch (OperationCanceledException)
+        {
+            SetCaptionStatus("Transcription cancelled.");
+        }
         catch (Exception ex)
         {
             SetCaptionStatus("Couldn't transcribe: " + ex.Message);
@@ -1275,7 +1283,9 @@ public partial class TimelineEditorWindow : Window
         finally
         {
             _captionBusy = false;
-            if (_captionGenerateButton is not null) _captionGenerateButton.IsEnabled = true;
+            _captionCts?.Dispose();
+            _captionCts = null;
+            if (_captionGenerateButton is not null) _captionGenerateButton.Content = "Generate from narration";
             if (_captionProgress is not null) _captionProgress.IsVisible = false;
         }
     }
