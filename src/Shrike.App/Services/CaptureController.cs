@@ -32,6 +32,7 @@ internal sealed class CaptureController
     private bool _colorPickHandled;
     private EditorWindow? _editor;
     private CaptureMenuWindow? _menu;
+    private DelayCountdownWindow? _delayPill;
     private Recorder? _recorder;
     private RecordingHudWindow? _hud;
     private RecordingRegionWindow? _regionWindow;
@@ -95,11 +96,14 @@ internal sealed class CaptureController
         }
 
         var (cx, cy) = CursorPosition.Get();
-        var menu = new CaptureMenuWindow(new PixelPoint(cx, cy), _ring.Count);
+        var initialDelay = _settings?.Current.CaptureDelaySeconds ?? 0;
+        var menu = new CaptureMenuWindow(new PixelPoint(cx, cy), _ring.Count, initialDelay);
+        menu.DelayChanged += OnCaptureDelayChanged;
         menu.Chosen += choice =>
         {
+            var delay = menu.DelaySeconds;
             TeardownChooser();
-            RunChoice(choice, frozen);
+            RunChoice(choice, frozen, delay);
         };
         menu.Cancelled += TeardownChooser;
         menu.Closed += (_, _) => { if (ReferenceEquals(_menu, menu)) _menu = null; };
@@ -122,7 +126,7 @@ internal sealed class CaptureController
     /// <summary>Time to let the editor's minimise settle before we freeze the screen for a new capture.</summary>
     private static readonly TimeSpan EditorHideSettle = TimeSpan.FromMilliseconds(200);
 
-    private void RunChoice(CaptureMenuChoice choice, CapturedImage? frozen)
+    private void RunChoice(CaptureMenuChoice choice, CapturedImage? frozen, int delaySeconds = 0)
     {
         // Remember the mode so the editor's quick "New capture" can repeat it. Recent just re-opens a
         // shot, and Pipette produces a colour (not an image), so neither is a "capture" to repeat.
@@ -132,13 +136,17 @@ internal sealed class CaptureController
         switch (choice)
         {
             case CaptureMenuChoice.Region:
-                BeginRegionCapture(frozen);
+                // With a self-timer, pick the region first, then count down and grab it live.
+                if (delaySeconds > 0)
+                    StartRegionSelection(frozen, region => StartDelayedGrab(region, delaySeconds));
+                else
+                    BeginRegionCapture(frozen);
                 break;
             case CaptureMenuChoice.Monitor:
-                CaptureFromFrozen(frozen, MonitorUnderCursorBounds());
+                RunStillCapture(MonitorUnderCursorBounds(), frozen, delaySeconds);
                 break;
             case CaptureMenuChoice.AllMonitors:
-                CaptureFromFrozen(frozen, ScreenCapture.VirtualScreenBounds());
+                RunStillCapture(ScreenCapture.VirtualScreenBounds(), frozen, delaySeconds);
                 break;
             case CaptureMenuChoice.Record:
                 BeginRegionRecording(frozen);
@@ -152,6 +160,57 @@ internal sealed class CaptureController
                     OpenInEditor(_ring.Items[0].Image);
                 break;
         }
+    }
+
+    /// <summary>Remember the self-timer delay chosen in the chooser as the default for next time.</summary>
+    private void OnCaptureDelayChanged(int seconds)
+    {
+        if (_settings is not null && _settings.Current.CaptureDelaySeconds != seconds)
+            _settings.Update(_settings.Current with { CaptureDelaySeconds = seconds });
+    }
+
+    /// <summary>Screenshot of fixed bounds: instant (crop the frozen plate) or, with a self-timer set,
+    /// count down on a clean screen and then grab live.</summary>
+    private void RunStillCapture(PixelBounds bounds, CapturedImage? frozen, int delaySeconds)
+    {
+        if (delaySeconds > 0)
+            StartDelayedGrab(bounds, delaySeconds);
+        else
+            CaptureFromFrozen(frozen, bounds);
+    }
+
+    /// <summary>Run the screenshot self-timer: leave the screen clean, count down on a capture-excluded
+    /// pill, then grab <paramref name="bounds"/> LIVE — never the stale frozen plate, since the whole point
+    /// of the delay is to let the screen change (open a menu, hover a tooltip) before the shot.</summary>
+    private void StartDelayedGrab(PixelBounds bounds, int seconds)
+    {
+        if (bounds.IsEmpty) return;
+
+        _delayPill?.Close();
+        var pill = new DelayCountdownWindow(seconds, MonitorContaining(bounds));
+        _delayPill = pill;
+        pill.Elapsed += () =>
+        {
+            pill.Close();
+            if (ReferenceEquals(_delayPill, pill)) _delayPill = null;
+            // Let the pill leave the screen before grabbing (belt-and-suspenders for pre-2004 Windows,
+            // where capture-exclusion degrades to a black box rather than true exclusion).
+            RunAfter(TimeSpan.FromMilliseconds(80), () => CaptureAndEdit(bounds));
+        };
+        pill.Start();
+    }
+
+    /// <summary>The monitor whose bounds contain the centre of <paramref name="bounds"/> (falls back to the
+    /// first monitor) — where the countdown pill is shown.</summary>
+    private static MonitorInfo MonitorContaining(PixelBounds bounds)
+    {
+        var cx = bounds.X + bounds.Width / 2;
+        var cy = bounds.Y + bounds.Height / 2;
+        var monitors = MonitorsOrFallback();
+        foreach (var m in monitors)
+            if (cx >= m.Bounds.X && cx < m.Bounds.Right && cy >= m.Bounds.Y && cy < m.Bounds.Bottom)
+                return m;
+        return monitors[0];
     }
 
     private void TeardownChooser()

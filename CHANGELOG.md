@@ -8,6 +8,15 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.3] - 2026-08-20
+
+- **Screenshot self-timer** — a 3, 5 or 10-second delay before the shot
+- Counts down on a clean screen, so you can open a menu or tooltip first
+- Redesigned capture menu, grouped into Screenshot, Record and Tools
+- Chosen delay is remembered between captures
+
+---
+
 ## [v0.3.2] - 2026-08-20
 
 - **Auto-captions** — transcribe your recorded narration on your machine, nothing uploaded

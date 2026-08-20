@@ -36,6 +36,11 @@ public sealed record AppSettings
 
     public ImageFormatKind DefaultImageFormat { get; init; } = ImageFormatKind.Png;
 
+    /// <summary>Self-timer delay (seconds) before a screenshot fires — a "capture in N" so you can arrange
+    /// transient UI first. 0 = off; only 3/5/10 are offered. Remembered across captures and sessions.
+    /// Applies to screenshots only; recording has its own 3-2-1 countdown.</summary>
+    public int CaptureDelaySeconds { get; init; } = 0;
+
     /// <summary>Draw the cursor into recordings.</summary>
     public bool CursorInRecording { get; init; } = true;
 
@@ -101,5 +106,7 @@ public sealed record AppSettings
         SpotlightColor = string.IsNullOrWhiteSpace(SpotlightColor) ? "#FFD24A" : SpotlightColor,
         CursorSmoothness = Math.Clamp(CursorSmoothness, 0.0, 1.0),
         CursorSize = Math.Clamp(CursorSize, 0.5, 2.0),
+        // Only the offered delays are valid; anything else (hand-edited, or a future value) falls back to off.
+        CaptureDelaySeconds = CaptureDelaySeconds is 3 or 5 or 10 ? CaptureDelaySeconds : 0,
     };
 }

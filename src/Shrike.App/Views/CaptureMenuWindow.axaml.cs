@@ -18,26 +18,37 @@ internal enum CaptureMenuChoice
 }
 
 /// <summary>
-/// A small popup that appears at the cursor when the single capture hotkey fires, letting the user
-/// pick a capture mode (1–3 or click; Esc / click-away cancels). This is deliberately the one entry
-/// point — the same chooser will grow a "Record" option when video capture lands.
+/// A small popup that appears at the cursor when the single capture hotkey fires, letting the user pick a
+/// capture mode (grouped as SCREENSHOT / RECORD / TOOLS; 1–6 or click; Esc / click-away cancels). It also
+/// carries a self-timer "Delay" modifier (D cycles Off → 3 → 5 → 10s) that applies to the screenshot
+/// modes only — the chosen delay is read back via <see cref="DelaySeconds"/> when a mode is picked.
 /// </summary>
 public partial class CaptureMenuWindow : Window
 {
+    // The delays we offer, in cycle order (0 = off). D steps through these and wraps.
+    private static readonly int[] DelayCycle = [0, 3, 5, 10];
+
     private readonly PixelPoint _anchor;
     private readonly int _recentCount;
+    private int _delaySeconds;
     private bool _done;
 
     internal event Action<CaptureMenuChoice>? Chosen;
     internal event Action? Cancelled;
+    /// <summary>Raised whenever the delay modifier changes, so the caller can remember it.</summary>
+    internal event Action<int>? DelayChanged;
+
+    /// <summary>The self-timer delay currently armed, in seconds (0 = off). Read when a mode is chosen.</summary>
+    internal int DelaySeconds => _delaySeconds;
 
     // Parameterless ctor for the XAML designer only.
     public CaptureMenuWindow() : this(new PixelPoint(0, 0)) { }
 
-    internal CaptureMenuWindow(PixelPoint anchor, int recentCount = 0)
+    internal CaptureMenuWindow(PixelPoint anchor, int recentCount = 0, int initialDelaySeconds = 0)
     {
         _anchor = anchor;
         _recentCount = recentCount;
+        _delaySeconds = NormaliseDelay(initialDelaySeconds);
         InitializeComponent();
 
         // Recent opens the editor on the newest shot; greyed out until there's something to open.
@@ -46,6 +57,8 @@ public partial class CaptureMenuWindow : Window
             recentButton.IsEnabled = _recentCount > 0;
         if (this.FindControl<TextBlock>("RecentText") is { } text)
             text.Text = _recentCount > 0 ? $"Recent captures ({_recentCount})" : "Recent captures";
+
+        UpdateDelayUi();
     }
 
     private bool HasRecent => _recentCount > 0;
@@ -85,6 +98,7 @@ public partial class CaptureMenuWindow : Window
             case Key.D4 or Key.NumPad4: Choose(CaptureMenuChoice.Record); break;
             case Key.D5 or Key.NumPad5: Choose(CaptureMenuChoice.Pipette); break;
             case Key.D6 or Key.NumPad6 when HasRecent: Choose(CaptureMenuChoice.Recent); break;
+            case Key.D: CycleDelay(); break;
             case Key.Escape: Cancel(); break;
         }
     }
@@ -95,6 +109,43 @@ public partial class CaptureMenuWindow : Window
     private void OnRecord(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Record);
     private void OnPickColour(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Pipette);
     private void OnRecent(object? sender, RoutedEventArgs e) => Choose(CaptureMenuChoice.Recent);
+    private void OnDelay(object? sender, RoutedEventArgs e) => CycleDelay();
+
+    /// <summary>Step the delay to the next offered value (wrapping), refresh the UI, and notify.</summary>
+    private void CycleDelay()
+    {
+        var i = Array.IndexOf(DelayCycle, _delaySeconds);
+        _delaySeconds = DelayCycle[(i + 1) % DelayCycle.Length];
+        UpdateDelayUi();
+        DelayChanged?.Invoke(_delaySeconds);
+    }
+
+    /// <summary>Reflect the armed delay: the value on the Delay row and the +Ns badges on screenshot rows.</summary>
+    private void UpdateDelayUi()
+    {
+        var armed = _delaySeconds > 0;
+        var label = armed ? $"{_delaySeconds}s" : "Off";
+        var badge = armed ? $"+{_delaySeconds}s" : "";
+
+        if (this.FindControl<TextBlock>("DelayValue") is { } value)
+        {
+            value.Text = label;
+            value.Foreground = armed
+                ? new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#F5A524"))
+                : new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#8A7C68"));
+        }
+
+        foreach (var name in new[] { "RegionBadge", "MonitorBadge", "AllBadge" })
+        {
+            if (this.FindControl<TextBlock>(name) is { } b)
+            {
+                b.Text = badge;
+                b.IsVisible = armed;
+            }
+        }
+    }
+
+    private static int NormaliseDelay(int seconds) => seconds is 3 or 5 or 10 ? seconds : 0;
 
     private void Choose(CaptureMenuChoice choice)
     {
