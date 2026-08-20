@@ -8,15 +8,16 @@ namespace Shrike.Core.Recording;
 /// <summary>
 /// The user's authored, non-destructive edit state for one clip — the per-clip "edit document" written next
 /// to the recording as <c>*.edit.json</c> (see <see cref="AppStorage.EditDocFor"/>). It stores the unified
-/// <see cref="EffectTrack"/> (zoom, spotlight, click-ripple, mouse-visibility; the canvas payload lands with
-/// that milestone). Two on-disk shapes are read: the legacy <b>v1</b> (an authored zoom list + a single
-/// <c>ShowCursor</c> flag), migrated on load, and the current <b>v2</b> effect track. Serialisation is
-/// forgiving — a missing or malformed file loads as an empty edit — so a clip always opens. UI-free; lives in
-/// Core with tests.
+/// <see cref="EffectTrack"/> (zoom, spotlight, click-ripple, mouse-visibility, drawing canvas, and captions)
+/// plus the recording's <see cref="AudioTrack"/>. On-disk shapes read: the legacy <b>v1</b> (an authored zoom
+/// list + a single <c>ShowCursor</c> flag), migrated on load, and the unified effect track (<b>v2</b> effects,
+/// <b>v3</b> adds audio, <b>v4</b> adds captions). Serialisation is forgiving — a missing or malformed file
+/// loads as an empty edit, unknown/older fields are simply absent — so a clip always opens and files stay
+/// forward/backward compatible. UI-free; lives in Core with tests.
 /// </summary>
 public sealed class ClipEdit
 {
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 4;
 
     /// <summary>The authored effects. For a v2 document this is the stored track; for a v1 document it is the
     /// zoom events only (visibility is migrated from <see cref="ShowCursor"/> by the editor, which knows the
@@ -109,6 +110,15 @@ public sealed class ClipEdit
                     AnimScale = FlatKeys(c.Animation.Scale), AnimRot = FlatKeys(c.Animation.Rotation),
                     AnimOpacity = FlatKeys(c.Animation.Opacity),
                 }).ToArray(),
+            Caption = Effects.OfKind<CaptionEffect>()
+                .Select(c => new CaptionDto
+                {
+                    Start = c.StartMs, End = c.EndMs, EaseIn = c.EaseInMs, EaseOut = c.EaseOutMs,
+                    FontScale = c.Style.FontScale, TextColor = c.Style.TextColor, BoxColor = c.Style.BoxColor,
+                    BoxOpacity = c.Style.BoxOpacity, Position = (int)c.Style.Position,
+                    MaxWidth = c.Style.MaxWidthFraction, Fade = c.Style.FadeMs,
+                    Cues = c.Cues.Select(q => new CueDto { Start = q.StartMs, End = q.EndMs, Text = q.Text }).ToArray(),
+                }).ToArray(),
             Audio = Audio.IsEmpty ? null : Audio.Clips.Select(AudioDtos).ToArray(),
         };
         return JsonSerializer.Serialize(dto, JsonOptions);
@@ -159,6 +169,21 @@ public sealed class ClipEdit
                     Annotations = AnnotationJson.FromDtos(c.Items),
                     Animation = new CanvasAnimation(Keys(c.AnimX), Keys(c.AnimY), Keys(c.AnimScale), Keys(c.AnimRot), Keys(c.AnimOpacity)),
                 });
+
+        // v4: captions (absent in older files → none). Drop malformed cues (empty text or non-positive length).
+        foreach (var c in dto.Caption ?? [])
+            if (c.End > c.Start)
+            {
+                var cues = (c.Cues ?? [])
+                    .Where(q => q.End > q.Start && !string.IsNullOrWhiteSpace(q.Text))
+                    .Select(q => new CaptionCue(q.Start, q.End, q.Text))
+                    .ToList();
+                var style = new CaptionStyle(
+                    c.FontScale, c.TextColor, c.BoxColor, c.BoxOpacity,
+                    c.Position == (int)CaptionPosition.Top ? CaptionPosition.Top : CaptionPosition.Bottom,
+                    c.MaxWidth, c.Fade);
+                events.Add(new CaptionEffect(c.Start, c.End, c.EaseIn, c.EaseOut) { Cues = cues, Style = style });
+            }
 
         // v3: audio clips (absent in v1/v2 → empty track). Drop malformed clips (no path or non-positive length).
         var clips = new List<AudioClip>();
@@ -230,6 +255,7 @@ public sealed class ClipEdit
         public SpotlightDto[]? Spotlight { get; set; }
         public CanvasDto[]? Canvas { get; set; }
         public AudioDto[]? Audio { get; set; } // v3+
+        public CaptionDto[]? Caption { get; set; } // v4+
     }
 
     private sealed class AudioDto
@@ -296,5 +322,28 @@ public sealed class ClipEdit
         public double[]? AnimScale { get; set; }
         public double[]? AnimRot { get; set; }
         public double[]? AnimOpacity { get; set; }
+    }
+
+    private sealed class CaptionDto
+    {
+        public long Start { get; set; }
+        public long End { get; set; }
+        public long EaseIn { get; set; }
+        public long EaseOut { get; set; }
+        public double FontScale { get; set; } = 1.0;
+        public string TextColor { get; set; } = "#FFFFFF";
+        public string BoxColor { get; set; } = "#000000";
+        public double BoxOpacity { get; set; } = 0.55;
+        public int Position { get; set; } // CaptionPosition: 0 = bottom, 1 = top
+        public double MaxWidth { get; set; } = 0.80;
+        public long Fade { get; set; } = 80;
+        public CueDto[]? Cues { get; set; }
+    }
+
+    private sealed class CueDto
+    {
+        public long Start { get; set; }
+        public long End { get; set; }
+        public string Text { get; set; } = "";
     }
 }

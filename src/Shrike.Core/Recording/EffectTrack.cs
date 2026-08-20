@@ -124,6 +124,50 @@ public sealed class EffectTrack
         return a;
     }
 
+    /// <summary>True when any captions effect actually carries cues — lets the caller skip the compositor.</summary>
+    public bool HasCaptions => OfKind<CaptionEffect>().Any(c => c.Cues.Count > 0);
+
+    /// <summary>The caption to draw for <paramref name="effect"/> at source time <paramref name="sourceMs"/> —
+    /// the active cue (last one wins on overlap) with its short crossfade alpha folded together with the
+    /// effect's own eased envelope, or <see cref="CaptionFrame.Inactive"/> when no cue covers the time.</summary>
+    public static CaptionFrame CaptionAt(CaptionEffect effect, long sourceMs)
+    {
+        int hit = -1;
+        for (var i = 0; i < effect.Cues.Count; i++)
+            if (effect.Cues[i].ActiveAt(sourceMs)) hit = i; // last active wins, matching lane draw order
+        if (hit < 0) return CaptionFrame.Inactive;
+
+        var cue = effect.Cues[hit];
+        double dur = cue.DurationMs;
+        double fade = Math.Clamp(effect.Style.FadeMs, 0, dur / 2.0);
+        double local = sourceMs - cue.StartMs;
+        double cueAlpha = 1.0;
+        if (fade > 0)
+        {
+            if (local < fade) cueAlpha = Smoothstep(local / fade);
+            else if (local > dur - fade) cueAlpha = Smoothstep((dur - local) / fade);
+        }
+        double alpha = cueAlpha * effect.RampAt(sourceMs);
+        return alpha > 0 ? new CaptionFrame(hit, alpha) : CaptionFrame.Inactive;
+    }
+
+    /// <summary>Per output frame: the caption cue + alpha to draw for <paramref name="effect"/> (inactive frames
+    /// draw nothing). Mirrors <see cref="ResolveCanvasTransforms"/> — edited frame → source time via the timeline
+    /// — so captions ride cuts identically to the drawing that shares the effect model.</summary>
+    public static CaptionFrame[] ResolveCaptions(CaptionEffect effect, Timeline timeline, int frameCount, int fps)
+    {
+        var a = new CaptionFrame[Math.Max(0, frameCount)];
+        for (var i = 0; i < a.Length; i++)
+            a[i] = CaptionAt(effect, timeline.EditedToSourceMs(fps > 0 ? (long)(i * 1000.0 / fps) : 0));
+        return a;
+    }
+
+    private static double Smoothstep(double x)
+    {
+        x = Math.Clamp(x, 0.0, 1.0);
+        return x * x * (3 - 2 * x);
+    }
+
     public EffectTrack With(IEnumerable<EffectEvent> events) => new(events);
 
     // Parse "#RRGGBB" / "RRGGBB" (and tolerate "#AARRGGBB"); fall back to the spotlight default amber.
