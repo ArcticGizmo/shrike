@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Shrike.Core.Audio;
 using static Shrike.Core.Recording.HardwareEncoders;
 
 namespace Shrike.Core.Recording;
@@ -27,10 +28,19 @@ public sealed record ExportCommand(
         IReadOnlyList<Segment> keptRanges,
         ExportProfile profile,
         HwEncoder? hardware,
-        string outputPath)
+        string outputPath,
+        AudioTrack? audio = null)
     {
         if (keptRanges.Count == 0)
             throw new ArgumentException("Nothing to export — no kept ranges.", nameof(keptRanges));
+
+        // Audio is output-time anchored, so clips place directly on the exported timeline. Muted/empty clips
+        // carry no signal; GIF/WebP are silent formats. With no audible audio the whole path below is
+        // untouched — "off means off".
+        var audioClips = audio is null
+            ? []
+            : audio.Clips.Where(c => !c.Muted && c.DurationMs > 0).ToArray();
+        var hasAudio = audioClips.Length > 0 && SupportsAudio(profile);
 
         var targetH = EvenClampDown(profile.MaxHeight ?? source.Height, source.Height);
         var targetW = targetH == source.Height
@@ -40,11 +50,14 @@ public sealed record ExportCommand(
         var scaleNeeded = targetH < source.Height;
         var fpsNeeded = targetFps < source.Fps;
 
-        // Stream-copy is only correct for a single range; anything else must decode.
-        if (profile.Codec == ExportCodec.Copy && keptRanges.Count == 1)
+        // Stream-copy is only correct for a single range with nothing to mux; audio forces a re-encode so the
+        // narration can be muxed (the recorded source itself is silent).
+        if (profile.Codec == ExportCodec.Copy && keptRanges.Count == 1 && !hasAudio)
             return StreamCopy(source, keptRanges[0], outputPath);
 
         var args = new List<string> { "-y", "-hide_banner", "-loglevel", "error", "-i", source.Path };
+        if (hasAudio)
+            foreach (var clip in audioClips) { args.Add("-i"); args.Add(clip.SidecarPath); }
 
         var chains = new List<string>();
         var body = TrimConcat(keptRanges, chains);
@@ -64,8 +77,11 @@ public sealed record ExportCommand(
 
             default: // H264 / H265 / multi-range Copy fallback
                 var map = AddScaleFps(chains, body, "[vout]", targetH, targetFps, scaleNeeded, fpsNeeded);
+                var audioMap = hasAudio ? AddAudioMix(audioClips, chains, inputOffset: 1) : null; // video is input 0
                 args.AddRange(new[] { "-filter_complex", string.Join(";", chains), "-map", map });
+                if (audioMap is not null) { args.Add("-map"); args.Add(audioMap); }
                 args.AddRange(VideoCodecArgs(profile, hardware));
+                if (audioMap is not null) args.AddRange(AudioCodecArgs());
                 args.AddRange(new[] { "-movflags", "+faststart" });
                 break;
         }
@@ -118,6 +134,57 @@ public sealed record ExportCommand(
         return f;
     }
 
+    // ---- audio graph ----
+
+    // Only the muxable video codecs carry audio; GIF/WebP stay silent.
+    private static bool SupportsAudio(ExportProfile profile) =>
+        profile.Codec is ExportCodec.H264 or ExportCodec.H265 or ExportCodec.Copy;
+
+    // One chain per clip: trim the used span from its sidecar (input i + inputOffset), reset PTS, delay to the
+    // clip's output position, apply gain. Then amix them. Returns the label to map. inputOffset is 1 for the
+    // export (video is input 0) and 0 for an audio-only mix.
+    private static string AddAudioMix(IReadOnlyList<AudioClip> clips, List<string> chains, int inputOffset)
+    {
+        for (var i = 0; i < clips.Count; i++)
+        {
+            var c = clips[i];
+            var filters = new List<string>
+            {
+                $"atrim=start={Sec(c.SidecarOffsetMs)}:end={Sec(c.SidecarOffsetMs + c.DurationMs)}",
+                "asetpts=PTS-STARTPTS",
+            };
+            if (c.EffectiveStartMs > 0) filters.Add($"adelay={c.EffectiveStartMs}:all=1");
+            if (Math.Abs(c.LinearGain - 1.0) > 1e-6) filters.Add($"volume={Num(c.LinearGain)}");
+            chains.Add($"[{i + inputOffset}:a]{string.Join(",", filters)}[a{i}]");
+        }
+
+        if (clips.Count == 1) return "[a0]";
+
+        var labels = string.Concat(Enumerable.Range(0, clips.Count).Select(i => $"[a{i}]"));
+        // normalize=0: keep authored gains rather than letting amix attenuate by input count.
+        chains.Add($"{labels}amix=inputs={clips.Count}:normalize=0[aout]");
+        return "[aout]";
+    }
+
+    private static IEnumerable<string> AudioCodecArgs() => new[] { "-c:a", "aac", "-b:a", "160k" };
+
+    /// <summary>Build an <b>audio-only</b> ffmpeg command that mixes <paramref name="audio"/> down to a PCM WAV
+    /// on the output timeline — used to pre-render the editor's preview mix (multiple clips + gains, exactly as
+    /// the export mixes them). Returns an empty-ish command (no filter/map) when nothing is audible; the caller
+    /// checks <see cref="AudioTrack.HasAudibleContent"/> first.</summary>
+    public static IReadOnlyList<string> BuildAudioMix(AudioTrack audio, string outputWavPath)
+    {
+        var clips = audio.Clips.Where(c => !c.Muted && c.DurationMs > 0).ToArray();
+        var args = new List<string> { "-y", "-hide_banner", "-loglevel", "error" };
+        foreach (var c in clips) { args.Add("-i"); args.Add(c.SidecarPath); }
+        if (clips.Length == 0) return args;
+
+        var chains = new List<string>();
+        var map = AddAudioMix(clips, chains, inputOffset: 0); // audio clips are inputs 0..N-1 (no video)
+        args.AddRange(new[] { "-filter_complex", string.Join(";", chains), "-map", map, "-c:a", "pcm_s16le", outputWavPath });
+        return args;
+    }
+
     // ---- codecs ----
 
     private static IEnumerable<string> VideoCodecArgs(ExportProfile profile, HwEncoder? hw)
@@ -163,6 +230,7 @@ public sealed record ExportCommand(
     // ---- helpers ----
 
     private static string Sec(long ms) => (ms / 1000.0).ToString("0.###", CultureInfo.InvariantCulture);
+    private static string Num(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
     private static int Even(int n) => n & ~1;
     private static int EvenClampDown(int desired, int ceiling) => Even(Math.Min(desired, ceiling));
 }

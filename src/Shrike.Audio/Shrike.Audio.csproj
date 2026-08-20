@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WASAPI capture/loopback + device enumeration via NAudio. Kept in its own assembly so Shrike.Core
+         stays dependency-free (ImageSharp only) and the Avalonia app doesn't carry NAudio's concerns —
+         this is the concrete implementation of Core's IAudioSource / IAudioDeviceCatalog / IAudioPlayer. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Shrike.Audio</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Shrike.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Newest v3 line (confirmed on NuGet): WasapiCapture, WasapiLoopbackCapture, MMDeviceEnumerator, WasapiOut. -->
+    <PackageReference Include="NAudio" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shrike.Core\Shrike.Core.csproj" />
+  </ItemGroup>
+
+</Project>

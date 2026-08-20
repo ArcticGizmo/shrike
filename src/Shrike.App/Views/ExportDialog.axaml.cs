@@ -9,6 +9,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using Shrike.App.Native;
 using Shrike.App.Services;
+using Shrike.Core.Audio;
 using Shrike.Core.Capture;
 using Shrike.Core.Recording;
 using static Shrike.Core.Recording.HardwareEncoders;
@@ -78,7 +79,7 @@ public partial class ExportDialog : Window
 
         long? sourceBytes = TryFileLength(_source.Path);
         var est = ExportSize.EstimateBytes(profile, cmd.TargetWidth, cmd.TargetHeight, cmd.TargetFps,
-            _timeline.KeptDurationMs, sourceBytes, _source.DurationMs);
+            _timeline.KeptDurationMs, sourceBytes, _source.DurationMs, ExportAudio());
         _sizeText.Text = est is { } b ? "~" + HumanBytes(b) : "—";
     }
 
@@ -183,6 +184,7 @@ public partial class ExportDialog : Window
     private EffectTrack _effects = EffectTrack.Empty;
     private ZoomTrack _authoredZoom = ZoomTrack.Empty;
     private double _cursorSize = 1.0;
+    private AudioTrack _authoredAudio = AudioTrack.Empty;
 
     /// <summary>Carry the editor's tuned smoothing + the authored effect track into the export so what you saw
     /// in the preview is what gets rendered. Zoom is a frame transform; the cursor / ripple / spotlight / mouse
@@ -194,6 +196,15 @@ public partial class ExportDialog : Window
         _effects = effects;
         _authoredZoom = effects.ZoomTrack;
     }
+
+    /// <summary>Carry the clip's audio into the export. An empty track leaves the encode untouched
+    /// ("off means off").</summary>
+    internal void ConfigureAudio(AudioTrack audio) => _authoredAudio = audio;
+
+    /// <summary>The audio to mux, mapped through the timeline's cuts so live-captured clips ride them and stay
+    /// in lip-sync. Placed on the concatenated output timeline — the same one the video trim+concat produces,
+    /// and the one the composite intermediate carries — so it aligns in both export paths.</summary>
+    private AudioTrack ExportAudio() => CaptureAudio.ForOutput(_authoredAudio, _timeline.KeptRanges);
 
     private async Task Encode(ExportProfile profile, HwEncoder? hardware, string outputPath,
         IProgress<double> progress, CancellationToken ct)
@@ -212,7 +223,7 @@ public partial class ExportDialog : Window
             return;
         }
 
-        var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
+        var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath, ExportAudio());
         await new VideoExporter(_ffmpegPath).ExportAsync(cmd, _timeline.KeptDurationMs, progress, ct);
     }
 
@@ -290,7 +301,7 @@ public partial class ExportDialog : Window
         effects.AddRange(screenCanvas);                                    // screen canvas — fixed, on top
         if (effects.Count == 0)
         {
-            var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath);
+            var plain = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware, outputPath, ExportAudio());
             await new VideoExporter(_ffmpegPath).ExportAsync(plain, _timeline.KeptDurationMs, progress, ct);
             return;
         }
@@ -305,9 +316,10 @@ public partial class ExportDialog : Window
             var pipeline = new FrameCompositePipeline(_ffmpegPath);
             await Task.Run(() => pipeline.Run(_source, _timeline.KeptRanges, w, h, fps, interBitrate, intermediate, compositor, stage1, ct), ct);
 
-            // Stage 2 — encode the already trimmed/scaled intermediate to the chosen preset (50..100%).
+            // Stage 2 — encode the already trimmed/scaled intermediate to the chosen preset (50..100%). The
+            // intermediate carries the concatenated (cut) timeline, so the same mapped audio aligns onto it.
             var interSource = new RecordingSource(intermediate, w, h, fps, TimeSpan.FromMilliseconds(_timeline.KeptDurationMs));
-            var cmd = ExportCommand.Build(interSource, new Timeline(interSource).KeptRanges, profile, hardware, outputPath);
+            var cmd = ExportCommand.Build(interSource, new Timeline(interSource).KeptRanges, profile, hardware, outputPath, ExportAudio());
             var stage2 = new Progress<double>(v => progress.Report(0.5 + v * 0.5));
             await new VideoExporter(_ffmpegPath).ExportAsync(cmd, _timeline.KeptDurationMs, stage2, ct);
         }

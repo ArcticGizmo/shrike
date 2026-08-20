@@ -35,4 +35,38 @@ public static class AppStorage
     /// lifecycle from the capture-time <c>*.track.json</c>, so it's a separate sidecar.</summary>
     public static string EditDocFor(string recordingPath) =>
         System.IO.Path.ChangeExtension(recordingPath, ".edit.json");
+
+    /// <summary>The microphone audio sidecar for a recording (<c>name.mp4</c> → <c>name.mic.wav</c>).
+    /// Captured live during recording; consumed by the editor/export. Same one-owner convention as the
+    /// other sidecars so the retention sweep can find and evict it.</summary>
+    public static string MicWavFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".mic.wav");
+
+    /// <summary>The system-sound (loopback) audio sidecar (<c>name.mp4</c> → <c>name.sys.wav</c>).</summary>
+    public static string SystemWavFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".sys.wav");
+
+    /// <summary>The first in-editor voiceover sidecar (<c>name.mp4</c> → <c>name.vo.wav</c>). Kept for
+    /// back-compat and as the first take's name; further takes get <c>.vo2.wav</c>, <c>.vo3.wav</c>, … via
+    /// <see cref="NewVoiceoverWavFor"/>.</summary>
+    public static string VoiceoverWavFor(string recordingPath) =>
+        System.IO.Path.ChangeExtension(recordingPath, ".vo.wav");
+
+    /// <summary>Pick a fresh voiceover sidecar path for a new take, so multiple takes coexist rather than
+    /// overwriting one file: <c>name.vo.wav</c> if free, else <c>name.vo2.wav</c>, <c>name.vo3.wav</c>, … The
+    /// first free name on disk is returned (a deleted take's clip is dropped from the edit but its file lingers,
+    /// so this never clobbers a take still referenced elsewhere).</summary>
+    public static string NewVoiceoverWavFor(string recordingPath)
+    {
+        var first = VoiceoverWavFor(recordingPath);
+        if (!System.IO.File.Exists(first)) return first;
+        for (var n = 2; ; n++)
+        {
+            var candidate = System.IO.Path.ChangeExtension(recordingPath, $".vo{n}.wav");
+            if (!System.IO.File.Exists(candidate)) return candidate;
+        }
+    }
+
+    /// <summary>The audio sidecar suffixes, for the retention sweep to evict alongside a recording.</summary>
+    public static IReadOnlyList<string> AudioSidecarSuffixes { get; } = [".mic.wav", ".sys.wav", ".vo.wav"];
 }

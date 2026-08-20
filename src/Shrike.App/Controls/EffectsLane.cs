@@ -73,8 +73,9 @@ public sealed class EffectsLane : Control
         InvalidateVisual();
     }
 
-    /// <summary>Recompute the row-stacking + lane height, then redraw. Call after the event list changes.</summary>
-    public void Refresh() { AssignRows(); InvalidateVisual(); }
+    /// <summary>Recompute the row-stacking + lane height, then redraw. Call after the event list changes.
+    /// Skipped mid-drag so a move/resize doesn't reshuffle rows under the pointer (they settle on release).</summary>
+    public void Refresh() { if (_drag == Drag.None) AssignRows(); InvalidateVisual(); }
 
     // ---- axis helpers ----
     private double Dur => Timeline is { DurationMs: > 0 } tl ? tl.DurationMs : 1;
@@ -177,7 +178,8 @@ public sealed class EffectsLane : Control
                 break;
             }
         }
-        AssignRows();       // a drag can change which row things land on
+        // Rows are frozen during the drag so blocks don't hop between rows under the pointer; they re-stack on
+        // release. AssignRows() is skipped here on purpose.
         Changed?.Invoke();
         InvalidateVisual();
     }
@@ -189,6 +191,8 @@ public sealed class EffectsLane : Control
         _drag = Drag.None;
         _dragIndex = -1;
         e.Pointer.Capture(null);
+        AssignRows();       // settle the row layout now the drag is finished
+        InvalidateVisual();
     }
 
     // Index of the effect whose block contains the point, or -1. Prefers the selected effect when blocks overlap.

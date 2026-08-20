@@ -8,8 +8,19 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
-## [v0.3.1] - 2026-08-19
+## [v0.3.1] - 2026-08-20
 
+- **Record your microphone and system sound** while capturing
+- **Mic check** before recording — pick a device, watch the level, test three seconds
+- Toggle mic and system sound right from the recording bar
+- Recorded audio is **mixed into the export**
+- **Record voiceovers** in the editor, over the playing preview
+- **Layer multiple voiceover takes**
+- **Re-record just a fumbled span** (punch-in)
+- **Waveform lane** in the timeline editor
+- **Move, crop, split and duplicate** audio clips
+- Per-clip **gain, mute and A/V sync offset**
+- **Hear the audio** as you scrub and play
 - One unified **effects timeline** — right-click a lane to add any effect
 - Mouse **spotlight** effect — a glow that follows the cursor
 - Click **ripples** and **cursor visibility** are now timed effects, not clip-wide toggles

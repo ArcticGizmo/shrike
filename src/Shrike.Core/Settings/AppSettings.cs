@@ -39,6 +39,17 @@ public sealed record AppSettings
     /// <summary>Draw the cursor into recordings.</summary>
     public bool CursorInRecording { get; init; } = true;
 
+    // ---- Audio capture (recording): opt-in, off by default so no recording silently opens the mic. ----
+
+    /// <summary>Capture the microphone into recordings. Off by default.</summary>
+    public bool MicEnabled { get; init; } = false;
+
+    /// <summary>Remembered microphone endpoint id; null = the system default input device.</summary>
+    public string? MicDeviceId { get; init; }
+
+    /// <summary>Also capture system sound (WASAPI loopback on the default render device). Off by default.</summary>
+    public bool SystemSoundEnabled { get; init; } = false;
+
     /// <summary>Show a glowing "spotlight" under the mouse (visible on screen and in the recording). Off by default.</summary>
     public bool SpotlightCursorEnabled { get; init; } = false;
 

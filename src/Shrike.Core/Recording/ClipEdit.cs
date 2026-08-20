@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Shrike.Core.Annotations;
+using Shrike.Core.Audio;
 
 namespace Shrike.Core.Recording;
 
@@ -15,7 +16,7 @@ namespace Shrike.Core.Recording;
 /// </summary>
 public sealed class ClipEdit
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
 
     /// <summary>The authored effects. For a v2 document this is the stored track; for a v1 document it is the
     /// zoom events only (visibility is migrated from <see cref="ShowCursor"/> by the editor, which knows the
@@ -35,12 +36,17 @@ public sealed class ClipEdit
     /// for v2 it's derived (a hide span starting at 0 flips it). Default true.</summary>
     public bool ShowCursor { get; }
 
-    /// <summary>Build a v2 edit from a full effect track (the editor's save path).</summary>
-    public ClipEdit(EffectTrack effects)
+    /// <summary>The recording's audio — narration and/or system-sound clips (v3). Empty for v1/v2 documents
+    /// and any clip without audio; output-time anchored (see <see cref="AudioTrack"/>).</summary>
+    public AudioTrack Audio { get; }
+
+    /// <summary>Build a v3 edit from a full effect track and (optionally) an audio track — the editor's save path.</summary>
+    public ClipEdit(EffectTrack effects, AudioTrack? audio = null)
     {
         Effects = effects;
         HasEffectTrack = true;
         ShowCursor = !effects.OfKind<VisibilityEffect>().Any(v => v.StartMs <= 0 && !v.Visible);
+        Audio = audio ?? AudioTrack.Empty;
     }
 
     /// <summary>Build a v1-shaped edit (authored zoom + the cursor-shown flag). Kept for the capture-time
@@ -50,12 +56,14 @@ public sealed class ClipEdit
         Effects = new EffectTrack((zoom ?? ZoomTrack.Empty).Events.Select(ZoomEffect.FromZoomEvent));
         HasEffectTrack = false;
         ShowCursor = showCursor;
+        Audio = AudioTrack.Empty;
     }
 
     public static ClipEdit Empty { get; } = new();
 
-    /// <summary>Nothing to persist. v1: no authored zoom and the cursor is shown. v2: no effects at all.</summary>
-    public bool IsEmpty => HasEffectTrack ? Effects.IsEmpty : (Zoom.IsEmpty && ShowCursor);
+    /// <summary>Nothing to persist. v1: no authored zoom and the cursor is shown. v2/v3: no effects and no
+    /// audio. An audio-only edit (narration but no effects) is <b>not</b> empty — it must save.</summary>
+    public bool IsEmpty => Audio.IsEmpty && (HasEffectTrack ? Effects.IsEmpty : (Zoom.IsEmpty && ShowCursor));
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -101,9 +109,18 @@ public sealed class ClipEdit
                     AnimScale = FlatKeys(c.Animation.Scale), AnimRot = FlatKeys(c.Animation.Rotation),
                     AnimOpacity = FlatKeys(c.Animation.Opacity),
                 }).ToArray(),
+            Audio = Audio.IsEmpty ? null : Audio.Clips.Select(AudioDtos).ToArray(),
         };
         return JsonSerializer.Serialize(dto, JsonOptions);
     }
+
+    private static AudioDto AudioDtos(AudioClip c) => new()
+    {
+        Path = c.SidecarPath, Rate = c.Format.SampleRate, Ch = c.Format.Channels,
+        Start = c.OutputStartMs, Dur = c.DurationMs, Offset = c.SidecarOffsetMs,
+        Gain = c.GainDb, Muted = c.Muted, Av = c.AvOffsetMs, Origin = (int)c.Origin,
+        LinkStart = c.CaptureLink?.SourceStartMs, LinkEnd = c.CaptureLink?.SourceEndMs,
+    };
 
     private static ZoomDto[] ZoomDtos(EffectTrack effects) => effects.OfKind<ZoomEffect>()
         .Select(z => new ZoomDto
@@ -142,7 +159,22 @@ public sealed class ClipEdit
                     Annotations = AnnotationJson.FromDtos(c.Items),
                     Animation = new CanvasAnimation(Keys(c.AnimX), Keys(c.AnimY), Keys(c.AnimScale), Keys(c.AnimRot), Keys(c.AnimOpacity)),
                 });
-        return new ClipEdit(new EffectTrack(events));
+
+        // v3: audio clips (absent in v1/v2 → empty track). Drop malformed clips (no path or non-positive length).
+        var clips = new List<AudioClip>();
+        foreach (var a in dto.Audio ?? [])
+            if (a.Dur > 0 && !string.IsNullOrEmpty(a.Path))
+                clips.Add(new AudioClip
+                {
+                    SidecarPath = a.Path,
+                    Format = new AudioFormat(a.Rate, a.Ch, 16),
+                    OutputStartMs = a.Start, DurationMs = a.Dur, SidecarOffsetMs = a.Offset,
+                    GainDb = a.Gain, Muted = a.Muted, AvOffsetMs = a.Av,
+                    Origin = a.Origin == (int)AudioOrigin.LiveCapture ? AudioOrigin.LiveCapture : AudioOrigin.EditorVoiceover,
+                    CaptureLink = a is { LinkStart: { } ls, LinkEnd: { } le } ? new SourceSpan(ls, le) : null,
+                });
+
+        return new ClipEdit(new EffectTrack(events), new AudioTrack(clips));
     }
 
     // Keyframe channel ↔ flat [at0,v0,at1,v1,…] pairs (null when empty). Read back sorted by time.
@@ -197,6 +229,23 @@ public sealed class ClipEdit
         public RippleDto[]? Ripple { get; set; }
         public SpotlightDto[]? Spotlight { get; set; }
         public CanvasDto[]? Canvas { get; set; }
+        public AudioDto[]? Audio { get; set; } // v3+
+    }
+
+    private sealed class AudioDto
+    {
+        public string Path { get; set; } = "";
+        public int Rate { get; set; } = 48_000;
+        public int Ch { get; set; } = 2;
+        public long Start { get; set; }
+        public long Dur { get; set; }
+        public long Offset { get; set; }
+        public double Gain { get; set; }
+        public bool Muted { get; set; }
+        public long Av { get; set; }
+        public int Origin { get; set; } // AudioOrigin: 0 = live capture, 1 = editor voiceover
+        public long? LinkStart { get; set; }
+        public long? LinkEnd { get; set; }
     }
 
     private sealed class ZoomDto

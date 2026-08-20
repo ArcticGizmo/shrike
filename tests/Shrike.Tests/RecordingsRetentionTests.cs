@@ -118,4 +118,50 @@ public class RecordingsRetentionTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+
+    [Fact]
+    public void Sweep_evicts_audio_sidecars_with_their_recording()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "shrike-rettest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            Make(dir, "a", Now); // newest — kept
+            var stale = Make(dir, "c", Now.AddDays(-10));
+            var mic = AppStorage.MicWavFor(stale.mp4);
+            var sys = AppStorage.SystemWavFor(stale.mp4);
+            File.WriteAllBytes(mic, new byte[8]);
+            File.WriteAllBytes(sys, new byte[8]);
+            var policy = new RecordingRetention(MaxCount: 100, MaxBytes: long.MaxValue, MaxAge: TimeSpan.FromDays(7));
+
+            RecordingsRetention.Sweep(dir, policy, Now);
+
+            Assert.False(File.Exists(stale.mp4));
+            Assert.False(File.Exists(mic)); // audio sidecars go with the recording
+            Assert.False(File.Exists(sys));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void Sweep_removes_orphaned_audio_sidecars()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "shrike-rettest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var live = Make(dir, "live", Now);
+            var orphanMic = Path.Combine(dir, "shrike-gone.mic.wav");
+            var orphanSys = Path.Combine(dir, "shrike-gone.sys.wav");
+            File.WriteAllBytes(orphanMic, new byte[8]);
+            File.WriteAllBytes(orphanSys, new byte[8]);
+
+            RecordingsRetention.Sweep(dir, RecordingRetention.Default, Now);
+
+            Assert.True(File.Exists(live.mp4));
+            Assert.False(File.Exists(orphanMic));
+            Assert.False(File.Exists(orphanSys));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

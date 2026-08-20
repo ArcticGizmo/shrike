@@ -10,7 +10,9 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Shrike.App.Controls;
+using Shrike.Audio;
 using Shrike.Core.Annotations;
+using Shrike.Core.Audio;
 using Shrike.Core.Capture;
 using Shrike.Core.Imaging;
 using Shrike.Core.Recording;
@@ -54,6 +56,40 @@ public partial class TimelineEditorWindow : Window
     // Streaming playback: one persistent ffmpeg feeds frames into this reused bitmap.
     private FramePlayer? _player;
     private WriteableBitmap? _playBitmap;
+
+    // Preview audio (WYSIWYG): plays the primary capture sidecar in sync with the video playhead. It's an
+    // honest approximation — the mic at unity gain; the export is the accurate mix of every clip. Slaved to
+    // the source playhead and re-synced past the resync threshold, so it stays aligned across cuts.
+    private IAudioPlayer? _audioPlayer;
+    private string? _previewAudioPath;
+    private WaveformLane? _waveLane;
+    private readonly HashSet<string> _loadedPeaks = new(); // sidecars whose waveform peaks are already in the lane
+    private string? _mixPath;          // temp WAV: the whole audio track pre-mixed on the output timeline
+    private bool _mixDirty = true;     // re-render the mix when the audio track or the cuts change
+    // Only re-seek the preview audio once it drifts this far from the video clock. Kept generous so ordinary
+    // timer jitter never yanks the audio mid-word (the frame-count clock below removes the systematic drift).
+    private const long AudioResyncMs = 250;
+    private long _playStartEditedMs;   // output ms the current playback run began at
+    private long _framesPlayed;        // frames shown since it began — drives the clock without integer drift
+
+    // In-editor voiceover: record the mic over the playing preview into a single .vo.wav clip.
+    private Button? _voiceoverButton;
+    private AudioCaptureRecorder? _voiceoverRecorder;
+    private string? _voiceoverPath;
+    private long _voiceoverStartMs;
+    private bool _voiceoverActive;
+
+    // Punch-in re-record: re-record a span of the voiceover and splice it into .vo.wav (backup kept for undo).
+    private Button? _punchButton;
+    private Button? _undoPunchButton;
+    private TextBlock? _punchHint;
+    private AudioCaptureRecorder? _punchRecorder;
+    private string? _punchTempPath;
+    private string? _voiceoverBackupPath;
+    private long _punchSidecarStartMs;
+    private long _punchSidecarEndMs;
+    private long _punchOutEnd;
+    private bool _punchActive;
 
     // Scrub preview pump: coalesces rapid seek requests to one in-flight ffmpeg extraction.
     private long _wantMs = -1;
@@ -164,7 +200,7 @@ public partial class TimelineEditorWindow : Window
         if (this.FindControl<Button>("KeepOnlySelectionButton") is { } keepOnlyBtn) keepOnlyBtn.Click += (_, _) => KeepOnlySelection();
         if (this.FindControl<Button>("ClearSelectionButton") is { } clrBtn) clrBtn.Click += (_, _) => DropSelection();
         // Any edit changes the kept ranges, so a running playback is now stale — stop and show a still.
-        _timeline.Changed += () => { StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
+        _timeline.Changed += () => { _mixDirty = true; StopPlayback(showStill: true); _strip.Refresh(); UpdateLabels(); };
         // A cut/keep changes where the cursor is at each edited time — re-project the overlay to match.
         _timeline.Changed += ReprojectSmoothTrack;
         SeedTuningFromSettings();
@@ -172,7 +208,13 @@ public partial class TimelineEditorWindow : Window
         SetupEffectsLane();
         InitTimelineView();
 
-        Closed += (_, _) => { ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop(); _player?.Dispose(); };
+        Closed += (_, _) =>
+        {
+            _voiceoverActive = false; _voiceoverRecorder?.Dispose();
+            _punchActive = false; _punchRecorder?.Dispose();
+            ExitCanvasEdit(); PersistTuning(); PersistEdit(); _cts.Cancel(); _playTimer.Stop();
+            _player?.Dispose(); DisposeAudioPlayer(); DeleteMix(); DeletePunchArtifacts();
+        };
 
 #if DEBUG
         // Dev affordance: reveal this recording (and its .track.json sidecar) in Explorer.
@@ -241,6 +283,17 @@ public partial class TimelineEditorWindow : Window
         }
         _authoredZoom = ZoomTrackFromEffects();
 
+        // Audio: use the persisted track if the edit document already carries one; otherwise seed a
+        // full-length clip from each capture sidecar (.mic.wav / .sys.wav) that exists next to the recording.
+        _audioClips.Clear();
+        if (!edit.Audio.IsEmpty)
+            _audioClips.AddRange(edit.Audio.Clips);
+        else
+            _audioClips.AddRange(SeedAudioFromSidecars());
+
+        RefreshAudioUi();
+        if (_voiceoverButton is not null) _voiceoverButton.IsVisible = !string.IsNullOrEmpty(_source.Path);
+
         // Seed the lane from the loaded effects, and mark where clicks fired (snap targets).
         if (_effectsLane is not null)
         {
@@ -254,12 +307,50 @@ public partial class TimelineEditorWindow : Window
         // The tuning panel + effects lane + properties pane only make sense for a clip that carries a track.
         // The pane stays visible for the whole session then (empty until a selection), so selecting an effect
         // never widens the window / reflows the editor.
-        var hasTrack = _smoothTrack is not null;
+        var hasTrack = _smoothTrack is not null || _audioClips.Count > 0;
         if (this.FindControl<Grid>("EffectsPanel") is { } effectsPanel) effectsPanel.IsVisible = hasTrack;
         if (_propsPane is not null) _propsPane.IsVisible = hasTrack;
         OnEffectSelectionChanged(-1); // seed the pane's empty state
 
         ReprojectSmoothTrack();
+    }
+
+    /// <summary>Build a full-length live-capture clip for each capture sidecar present next to the recording.
+    /// The sidecar shares the recording's (pause-excluded) time axis, so the clip spans [0, sidecar length];
+    /// cuts are applied later at export/preview by <see cref="CaptureAudio"/>.</summary>
+    private IEnumerable<AudioClip> SeedAudioFromSidecars()
+    {
+        foreach (var path in new[]
+                 {
+                     Shrike.Core.AppStorage.MicWavFor(_source.Path),
+                     Shrike.Core.AppStorage.SystemWavFor(_source.Path),
+                 })
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+
+            AudioFormat format;
+            long durationMs;
+            try
+            {
+                var (fmt, dataBytes) = WavFile.ReadInfo(path);
+                format = fmt;
+                durationMs = fmt.BytesToMs(dataBytes);
+            }
+            catch { continue; } // unreadable sidecar — skip it
+
+            if (durationMs <= 0) continue;
+
+            yield return new AudioClip
+            {
+                SidecarPath = path, // absolute; used verbatim as an ffmpeg input
+                Format = format,
+                OutputStartMs = 0,
+                SidecarOffsetMs = 0,
+                DurationMs = durationMs,
+                Origin = AudioOrigin.LiveCapture,
+                CaptureLink = new SourceSpan(0, durationMs),
+            };
+        }
     }
 
     private void ReprojectSmoothTrack()
@@ -312,6 +403,37 @@ public partial class TimelineEditorWindow : Window
             _effectsLane.ZoomRequested += OnTimelineZoom;
             _effectsLane.PanRequested += OnTimelinePan;
         }
+
+        _voiceoverButton = this.FindControl<Button>("VoiceoverButton");
+
+        _waveLane = this.FindControl<WaveformLane>("WaveLane");
+        if (_waveLane is not null)
+        {
+            _waveLane.Timeline = _timeline;
+            _waveLane.Clips = _audioClips;
+            _waveLane.ZoomRequested += OnTimelineZoom;
+            _waveLane.PanRequested += OnTimelinePan;
+            _waveLane.SelectionChanged += OnAudioClipSelected;
+            _waveLane.Changed += OnAudioClipDragging;
+            _waveLane.Committed += OnAudioClipCommitted;
+            _waveLane.SplitRequested += SplitAudioClip;
+            _waveLane.DuplicateRequested += DuplicateAudioClip;
+            _waveLane.DeleteRequested += DeleteAudioClip;
+        }
+
+        _audioEditor = this.FindControl<StackPanel>("AudioEditor");
+        _audioGainInput = this.FindControl<Slider>("AudioGainInput");
+        _audioGainValue = this.FindControl<TextBlock>("AudioGainValue");
+        _audioMuteInput = this.FindControl<CheckBox>("AudioMuteInput");
+        _audioOffsetInput = this.FindControl<NumericUpDown>("AudioOffsetInput");
+        _punchButton = this.FindControl<Button>("PunchButton");
+        _undoPunchButton = this.FindControl<Button>("UndoPunchButton");
+        _punchHint = this.FindControl<TextBlock>("PunchHint");
+        if (_audioGainInput is not null)
+            _audioGainInput.PropertyChanged += (_, e) => { if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) OnAudioPropsChanged(); };
+        if (_audioMuteInput is not null) _audioMuteInput.IsCheckedChanged += (_, _) => OnAudioPropsChanged();
+        if (_audioOffsetInput is not null) _audioOffsetInput.ValueChanged += (_, _) => OnAudioPropsChanged();
+
         _preview.TargetBoxDrawn += OnTargetBoxDrawn;
         if (this.FindControl<Button>("AddEffectButton") is { } add)
             add.Click += (_, _) => _effectsLane?.ShowAddMenu(add, atPointer: false, _playheadSourceMs, hitIndex: -1);
@@ -352,6 +474,19 @@ public partial class TimelineEditorWindow : Window
     // The current authored effects as an immutable track — for per-frame preview lookups + export.
     private EffectTrack CurrentEffects => new(_effects);
 
+    // The clip's audio (narration / system sound). Seeded from the .mic.wav/.sys.wav sidecars on first open,
+    // then persisted in the edit document. Anchored in output time; live clips ride the cuts at export/preview.
+    private readonly List<AudioClip> _audioClips = [];
+    private AudioTrack CurrentAudio => new(_audioClips);
+
+    // Audio clip inspector (gain / mute / A-V offset), selected by clicking the waveform lane.
+    private StackPanel? _audioEditor;
+    private Slider? _audioGainInput;
+    private TextBlock? _audioGainValue;
+    private CheckBox? _audioMuteInput;
+    private NumericUpDown? _audioOffsetInput;
+    private int _selectedAudioIndex = -1;
+
     // The selected effect if it's a zoom (the only kind with an inspector + aim box today), else null.
     private ZoomEffect? SelectedZoomEffect()
         => _effectsLane is { SelectedIndex: var i } && i >= 0 && i < _effects.Count && _effects[i] is ZoomEffect z
@@ -391,9 +526,10 @@ public partial class TimelineEditorWindow : Window
         var vis = effect as VisibilityEffect;
         var canvas = effect as CanvasEffect;
 
-        // A segment and an effect are mutually exclusive selections in the pane.
+        // A segment, an effect, and an audio clip are mutually exclusive selections in the pane.
         if (_segmentEditor is not null) _segmentEditor.IsVisible = false;
-        if (effect is not null) _selSeg = null;
+        if (_audioEditor is not null) _audioEditor.IsVisible = false;
+        if (effect is not null) { _selSeg = null; _selectedAudioIndex = -1; }
 
         // The pane is always present; only its content swaps to the selected effect's editor. Kinds without an
         // editor (ripple) show the empty-state note. Delete is offered for any selection.
@@ -451,6 +587,318 @@ public partial class TimelineEditorWindow : Window
         _suppressInspector = false;
 
         UpdateCursorOverlay(); // aiming shows the full frame; deselect restores the zoom view
+    }
+
+    // ---- audio clip inspector ----
+
+    // The audio lane selected a clip (or -1 to clear). Audio, effects and segment selections are mutually exclusive.
+    private void OnAudioClipSelected(int index)
+    {
+        if (index < 0)
+        {
+            _selectedAudioIndex = -1;
+            if (_audioEditor is not null) _audioEditor.IsVisible = false;
+            return;
+        }
+        _effectsLane?.Select(-1);
+        _selectedAudioIndex = index;
+        ShowAudioEditor();
+    }
+
+    // ---- audio clip editing: move / crop (drag) + split / duplicate / delete (menu, buttons, shortcuts) ----
+
+    // A move/crop drag is in flight: the clip list is already mutated in place, so just mark the mix stale and
+    // keep the preview position honest. Persisting waits for the drag to end (OnAudioClipCommitted).
+    private void OnAudioClipDragging() => _mixDirty = true;
+
+    private void OnAudioClipCommitted()
+    {
+        _mixDirty = true;
+        RefreshAudioUi();
+        PersistEdit();
+    }
+
+    private void SplitAudioClip(int index)
+    {
+        if (index < 0 || index >= _audioClips.Count) return;
+        if (_audioClips[index].SplitAtOutput(_currentEditedMs) is not { } halves) return; // playhead not inside
+        _audioClips[index] = halves.Left;
+        _audioClips.Insert(index + 1, halves.Right);
+        AfterAudioClipsMutated(select: index + 1);
+    }
+
+    private void DuplicateAudioClip(int index)
+    {
+        if (index < 0 || index >= _audioClips.Count) return;
+        var c = _audioClips[index];
+        // Keep the copy at the same start position; row-stacking drops it on the row beneath the original so the
+        // two play together (e.g. layering takes) until the user drags one elsewhere.
+        _audioClips.Insert(index + 1, c with { });
+        AfterAudioClipsMutated(select: index + 1);
+    }
+
+    private void DeleteAudioClip(int index)
+    {
+        if (index < 0 || index >= _audioClips.Count) return;
+        _audioClips.RemoveAt(index); // non-destructive: the sidecar WAV stays on disk
+        AfterAudioClipsMutated(select: -1);
+    }
+
+    // Shared tail for every clip mutation: re-stack the lane, move the selection, refresh the mix/preview + save.
+    private void AfterAudioClipsMutated(int select)
+    {
+        _mixDirty = true;
+        if (_waveLane is not null)
+        {
+            _waveLane.Refresh();
+            _waveLane.Select(-1);       // force SelectionChanged even when the index number is unchanged
+            _waveLane.Select(select);
+        }
+        _selectedAudioIndex = select >= 0 && select < _audioClips.Count ? select : -1;
+        if (_selectedAudioIndex >= 0) ShowAudioEditor();
+        else if (_audioEditor is not null) _audioEditor.IsVisible = false;
+        RefreshAudioUi();
+        PersistEdit();
+    }
+
+    // Inspector buttons.
+    private void OnSplitAudio(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => SplitAudioClip(_selectedAudioIndex);
+    private void OnDuplicateAudio(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => DuplicateAudioClip(_selectedAudioIndex);
+    private void OnDeleteAudio(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => DeleteAudioClip(_selectedAudioIndex);
+
+    private void ShowAudioEditor()
+    {
+        if (_audioEditor is null || _selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+
+        if (_paneHeader is not null) _paneHeader.Text = "✦ Audio";
+        if (_paneEmpty is not null) _paneEmpty.IsVisible = false;
+        _audioEditor.IsVisible = true;
+
+        _suppressInspector = true;
+        if (_audioMuteInput is not null) _audioMuteInput.IsChecked = clip.Muted;
+        if (_audioGainInput is not null) _audioGainInput.Value = clip.GainDb;
+        if (_audioOffsetInput is not null) _audioOffsetInput.Value = clip.AvOffsetMs;
+        UpdateAudioGainLabel(clip.GainDb);
+        _suppressInspector = false;
+
+        // Punch-in is only for the (editor-recorded) voiceover; undo appears once a take has been spliced.
+        var isVoiceover = clip.Origin == AudioOrigin.EditorVoiceover;
+        if (_punchButton is not null) _punchButton.IsVisible = isVoiceover;
+        if (_punchHint is not null) _punchHint.IsVisible = isVoiceover;
+        if (_undoPunchButton is not null)
+            _undoPunchButton.IsVisible = isVoiceover && _voiceoverBackupPath is not null && File.Exists(_voiceoverBackupPath);
+    }
+
+    private void OnAudioPropsChanged()
+    {
+        if (_suppressInspector || _selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        var gainDb = _audioGainInput?.Value ?? clip.GainDb;
+        var muted = _audioMuteInput?.IsChecked ?? clip.Muted;
+        var offset = (long)(_audioOffsetInput?.Value ?? (decimal)clip.AvOffsetMs);
+        _audioClips[_selectedAudioIndex] = clip with { GainDb = gainDb, Muted = muted, AvOffsetMs = offset };
+        UpdateAudioGainLabel(gainDb);
+        _mixDirty = true; // gain/mute/offset changes the mix
+
+        // A muted primary silences the preview; recompute what plays and cut it now if nothing is audible.
+        RefreshAudioUi();
+        if (_previewAudioPath is null) StopPreviewAudio();
+    }
+
+    private void UpdateAudioGainLabel(double gainDb)
+    {
+        if (_audioGainValue is null) return;
+        _audioGainValue.Text = (gainDb >= 0 ? "+" : "") +
+            gainDb.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " dB";
+    }
+
+    // ---- in-editor voiceover (B0) ----
+
+    private void OnVoiceover(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_voiceoverActive) StopVoiceover();
+        else StartVoiceover();
+    }
+
+    /// <summary>Record the mic over the playing preview into the single <c>.vo.wav</c> clip, starting at the
+    /// current output position. Best-effort: a mic that won't open just cancels the take.</summary>
+    private void StartVoiceover()
+    {
+        if (_voiceoverActive || _timeline.KeptDurationMs <= 0 || string.IsNullOrEmpty(_source.Path)) return;
+
+        StopPlayback();
+        _voiceoverPath = Shrike.Core.AppStorage.NewVoiceoverWavFor(_source.Path); // a fresh file per take
+        var deviceId = Shrike.App.Services.SettingsService.Instance?.Current.MicDeviceId;
+
+        try
+        {
+            var source = WasapiAudioSource.Microphone(deviceId);
+            var writer = new WavWriter(_voiceoverPath, source.Format);
+            _voiceoverRecorder = new AudioCaptureRecorder(source, writer, () => _voiceoverActive ? 0L : (long?)null);
+        }
+        catch
+        {
+            _voiceoverRecorder = null;
+            return;
+        }
+
+        if (_voiceoverButton is not null) _voiceoverButton.Content = "■ Stop voiceover";
+
+        // Arm before StartPlayback so it suppresses the preview mix and keeps captured buffers.
+        _voiceoverActive = true;
+        StartPlayback(); // narrate over the playing preview (its audio is suppressed while recording)
+
+        // Anchor the clip to where playback ACTUALLY begins: StartPlayback rewinds a playhead that sat at the
+        // timeline end back to 0, so reading _currentEditedMs only now keeps the voiceover aligned with the
+        // video the mic is narrating over — otherwise a take started from the final frame lands past the end
+        // of the timeline and is never heard in preview or export.
+        if (!_playing) // preview couldn't start — abandon the take cleanly rather than record blind
+        {
+            _voiceoverActive = false;
+            try { _voiceoverRecorder.Dispose(); } catch { /* best effort */ }
+            _voiceoverRecorder = null;
+            if (_voiceoverButton is not null) _voiceoverButton.Content = "● Voiceover";
+            return;
+        }
+        _voiceoverStartMs = _currentEditedMs;
+        _voiceoverRecorder.Start();
+    }
+
+    private void StopVoiceover()
+    {
+        if (!_voiceoverActive) return;
+        _voiceoverActive = false;
+        StopPlayback();
+
+        var recorder = _voiceoverRecorder;
+        _voiceoverRecorder = null;
+        try { recorder?.Stop(); recorder?.Dispose(); } catch { /* best effort — Dispose finalises the WAV */ }
+        if (_voiceoverButton is not null) _voiceoverButton.Content = "● Voiceover";
+
+        if (_voiceoverPath is null || !File.Exists(_voiceoverPath)) return;
+
+        long durationMs;
+        AudioFormat format;
+        try { var (fmt, bytes) = WavFile.ReadInfo(_voiceoverPath); format = fmt; durationMs = fmt.BytesToMs(bytes); }
+        catch { return; }
+        if (durationMs <= 0) { try { File.Delete(_voiceoverPath); } catch { /* ignore */ } return; }
+
+        // Each take is its own clip on its own sidecar — takes accumulate rather than replacing one another.
+        _audioClips.Add(new AudioClip
+        {
+            SidecarPath = _voiceoverPath,
+            Format = format,
+            OutputStartMs = _voiceoverStartMs,
+            SidecarOffsetMs = 0,
+            DurationMs = durationMs,
+            Origin = AudioOrigin.EditorVoiceover,
+        });
+
+        _selectedAudioIndex = -1;
+        if (_audioEditor is not null) _audioEditor.IsVisible = false;
+        InvalidatePeaks(_voiceoverPath); // the .vo.wav was just (re)written — reload its waveform
+        _mixDirty = true;                // the mix now includes the voiceover
+        RefreshAudioUi();
+        PersistEdit(); // save now so the voiceover survives even without further edits
+    }
+
+    // ---- punch-in re-record (B1) ----
+
+    /// <summary>Re-record just the selected span of the voiceover: play from the span start, capture the mic
+    /// across it, then splice the take into <c>.vo.wav</c> (backing up the original for undo). The span comes
+    /// from the strip selection (source time), mapped to the voiceover's sidecar range.</summary>
+    private void OnPunchIn(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_punchActive) { StopPunch(); return; }
+        if (_selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        if (clip.Origin != AudioOrigin.EditorVoiceover || string.IsNullOrEmpty(clip.SidecarPath)) return;
+        if (_strip.Selection is not { } sel) return;
+
+        // Map the selected source span to output time, then to the clip's sidecar range; clamp to the clip.
+        if (_timeline.SourceToEditedMs(sel.A) is not { } outA || _timeline.SourceToEditedMs(sel.B) is not { } outB) return;
+        var from = Math.Max(Math.Min(outA, outB), clip.OutputStartMs);
+        var to = Math.Min(Math.Max(outA, outB), clip.OutputStartMs + clip.DurationMs);
+        if (to - from < 100) return; // nothing meaningful to punch
+
+        _punchSidecarStartMs = from - clip.OutputStartMs + clip.SidecarOffsetMs;
+        _punchSidecarEndMs = to - clip.OutputStartMs + clip.SidecarOffsetMs;
+        _punchOutEnd = to;
+        _punchTempPath = Path.Combine(Path.GetTempPath(), "shrike-punch-" + Guid.NewGuid().ToString("N") + ".wav");
+
+        StopPlayback();
+        _currentEditedMs = from;
+        var deviceId = Shrike.App.Services.SettingsService.Instance?.Current.MicDeviceId;
+        try
+        {
+            var source = WasapiAudioSource.Microphone(deviceId);
+            var writer = new WavWriter(_punchTempPath, source.Format);
+            _punchRecorder = new AudioCaptureRecorder(source, writer, () => _punchActive ? 0L : (long?)null);
+            _punchActive = true;
+            _punchRecorder.Start();
+        }
+        catch { _punchActive = false; _punchRecorder = null; return; }
+
+        if (_punchButton is not null) _punchButton.Content = "■ Stop re-record";
+        StartPlayback(); // roll from the span start; AdvancePlayback stops the punch at _punchOutEnd
+    }
+
+    private void StopPunch()
+    {
+        if (!_punchActive) return;
+        _punchActive = false;
+        StopPlayback();
+
+        var recorder = _punchRecorder;
+        _punchRecorder = null;
+        try { recorder?.Stop(); recorder?.Dispose(); } catch { /* best effort — Dispose finalises the take */ }
+        if (_punchButton is not null) _punchButton.Content = "⦿ Re-record selected span";
+
+        try { SpliceTake(); } catch { /* leave the voiceover untouched on any failure */ }
+
+        _mixDirty = true;
+        if (_selectedAudioIndex >= 0 && _selectedAudioIndex < _audioClips.Count)
+            InvalidatePeaks(_audioClips[_selectedAudioIndex].SidecarPath); // the sidecar was rewritten by the splice
+        RefreshAudioUi();
+        if (_selectedAudioIndex >= 0) ShowAudioEditor(); // refresh the undo button's visibility
+        PersistEdit();
+    }
+
+    // Splice the recorded take into the voiceover sidecar, backing up the original first (for undo).
+    private void SpliceTake()
+    {
+        if (_selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        if (_punchTempPath is null || !File.Exists(_punchTempPath) || !File.Exists(clip.SidecarPath)) return;
+
+        var (format, original) = WavFile.Read(clip.SidecarPath);
+        var (_, take) = WavFile.Read(_punchTempPath);
+        var spliced = AudioSplice.Replace(original, format, _punchSidecarStartMs, _punchSidecarEndMs, take);
+
+        _voiceoverBackupPath = Path.ChangeExtension(clip.SidecarPath, ".bak.wav");
+        try { File.Copy(clip.SidecarPath, _voiceoverBackupPath, overwrite: true); } catch { _voiceoverBackupPath = null; }
+        WavFile.Write(clip.SidecarPath, format, spliced);
+
+        try { File.Delete(_punchTempPath); } catch { /* best effort */ }
+        _punchTempPath = null;
+    }
+
+    private void OnUndoPunch(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_selectedAudioIndex < 0 || _selectedAudioIndex >= _audioClips.Count) return;
+        var clip = _audioClips[_selectedAudioIndex];
+        if (_voiceoverBackupPath is null || !File.Exists(_voiceoverBackupPath) || string.IsNullOrEmpty(clip.SidecarPath)) return;
+
+        try { File.Copy(_voiceoverBackupPath, clip.SidecarPath, overwrite: true); File.Delete(_voiceoverBackupPath); }
+        catch { return; }
+        _voiceoverBackupPath = null;
+
+        _mixDirty = true;
+        InvalidatePeaks(clip.SidecarPath); // restored the original samples — reload the waveform
+        RefreshAudioUi();
+        ShowAudioEditor();
+        PersistEdit();
     }
 
     // ---- inline canvas editing ----
@@ -833,8 +1281,9 @@ public partial class TimelineEditorWindow : Window
     /// re-export. Only for a clip that carries a track; an empty edit removes any stale sidecar.</summary>
     private void PersistEdit()
     {
-        if (_smoothTrack is null || string.IsNullOrEmpty(_source.Path)) return;
-        try { new ClipEdit(CurrentEffects).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
+        // Save when the clip carries anything worth persisting — a pointer track (effects) or audio.
+        if (string.IsNullOrEmpty(_source.Path) || (_smoothTrack is null && _audioClips.Count == 0)) return;
+        try { new ClipEdit(CurrentEffects, CurrentAudio).Save(Shrike.Core.AppStorage.EditDocFor(_source.Path)); }
         catch { /* best effort — never block closing on a failed save */ }
     }
 
@@ -945,6 +1394,7 @@ public partial class TimelineEditorWindow : Window
         // strip updates its own during its drag, but the ruler drag needs the strip synced, and vice-versa).
         _strip.SetPlayhead(sourceMs);
         _effectsLane?.SetPlayhead(sourceMs);
+        _waveLane?.SetPlayhead(_currentEditedMs); // the audio lane is on the output axis
         _ruler?.SetPlayhead(sourceMs);
         RequestPreview(sourceMs);
         UpdateLabels();
@@ -967,6 +1417,27 @@ public partial class TimelineEditorWindow : Window
         _ruler?.SetView(_viewStartMs, _viewEndMs);
         _strip.SetView(_viewStartMs, _viewEndMs);
         _effectsLane?.SetView(_viewStartMs, _viewEndMs);
+        // The audio lane lives on the output axis, so map the shared source-time view into output time.
+        _waveLane?.SetView(SourceToOutputClamped(_viewStartMs), SourceToOutputClamped(_viewEndMs));
+    }
+
+    // Map a source ms to its output-timeline position, clamping (never null): a source time inside a cut span
+    // collapses to that cut's near boundary, and times past the end sit at the kept duration. Monotonic, so it's
+    // safe for mapping the shared view's endpoints onto the audio lane.
+    private long SourceToOutputClamped(long sourceMs)
+    {
+        long acc = 0;
+        foreach (var s in _timeline.Segments)
+        {
+            if (s.Kept)
+            {
+                if (sourceMs <= s.StartMs) return acc;
+                if (sourceMs <= s.EndMs) return acc + (sourceMs - s.StartMs);
+                acc += s.DurationMs;
+            }
+            else if (sourceMs <= s.EndMs) return acc;
+        }
+        return acc;
     }
 
     // Ctrl+wheel: zoom the timeline around the pointer (wheel up = zoom in), keeping the pivot ms under the cursor.
@@ -1072,6 +1543,17 @@ public partial class TimelineEditorWindow : Window
             return;
         }
 
+        // Audio-clip shortcuts, active while a clip is selected on the audio lane: S splits at the playhead,
+        // Ctrl+D duplicates, Delete removes it (unless a strip selection is armed — that Delete cuts the video).
+        if (_selectedAudioIndex >= 0 && _selectedAudioIndex < _audioClips.Count)
+        {
+            var ctrl = (e.KeyModifiers & Avalonia.Input.KeyModifiers.Control) != 0;
+            if (e.Key == Avalonia.Input.Key.S && !ctrl) { SplitAudioClip(_selectedAudioIndex); e.Handled = true; return; }
+            if (e.Key == Avalonia.Input.Key.D && ctrl) { DuplicateAudioClip(_selectedAudioIndex); e.Handled = true; return; }
+            if (e.Key is Avalonia.Input.Key.Delete or Avalonia.Input.Key.Back && _strip.Selection is null)
+            { DeleteAudioClip(_selectedAudioIndex); e.Handled = true; return; }
+        }
+
         // A drag-selection on the strip: Esc clears it, Delete cuts it (when no effect is selected).
         if (_strip.Selection is not null && (_effectsLane?.SelectedIndex ?? -1) < 0)
         {
@@ -1126,9 +1608,12 @@ public partial class TimelineEditorWindow : Window
 
         EnsurePlayBitmap(player.Width, player.Height);
         _playTimer.Interval = TimeSpan.FromMilliseconds(1000.0 / player.Fps);
+        _playStartEditedMs = _currentEditedMs; // anchor the frame-count clock to where we resume from
+        _framesPlayed = 0;
         _playing = true;
         _playButton.Content = "❚❚ Pause";
         _playTimer.Start();
+        StartPreviewAudio();
     }
 
     private void StopPlayback(bool showStill = false)
@@ -1139,7 +1624,135 @@ public partial class TimelineEditorWindow : Window
         _playTimer.Stop();
         _player?.Dispose();
         _player = null;
+        StopPreviewAudio();
         if (showStill) RequestPreview(_playheadSourceMs);   // swap the soft play frame for a crisp still
+    }
+
+    // ---- preview audio (WYSIWYG) ----
+
+    // The preview mix follows the first audible clip's sidecar; the lane re-stacks its clip blocks and loads a
+    // decimated waveform once per distinct sidecar (a gain drag or a move doesn't re-read a file already loaded).
+    private void RefreshAudioUi()
+    {
+        _previewAudioPath = _audioClips.FirstOrDefault(c => !c.Muted)?.SidecarPath;
+        if (_waveLane is null) return;
+
+        _waveLane.IsVisible = _audioClips.Count > 0;
+        _waveLane.Refresh(); // re-stack rows for the current clips
+        foreach (var path in _audioClips.Select(c => c.SidecarPath).Distinct())
+            if (_loadedPeaks.Add(path)) LoadWaveformAsync(path);
+    }
+
+    private async void StartPreviewAudio()
+    {
+        DisposeAudioPlayer();
+        // Don't play the mix while recording a voiceover, and skip when nothing is audible.
+        if (_voiceoverActive || !_audioClips.Any(c => !c.Muted && c.DurationMs > 0)) return;
+
+        string? mixPath;
+        try { mixPath = await EnsureMixAsync(); }
+        catch { return; }
+        if (mixPath is null || !_playing || _voiceoverActive) return; // stopped / failed while rendering
+
+        try
+        {
+            var player = new NAudioPlayer();
+            player.Load(mixPath);
+            player.Position = TimeSpan.FromMilliseconds(_currentEditedMs); // the mix is on the output timeline
+            player.Play();
+            _audioPlayer = player;
+        }
+        catch { DisposeAudioPlayer(); } // audio is best-effort — never let it break video playback
+    }
+
+    // Pre-render the whole audio track (mic + voiceover, gains, cut-ridden) to a temp WAV via ffmpeg — the same
+    // mix the export produces, so preview == output. Cached until the track or the cuts change (_mixDirty).
+    private async Task<string?> EnsureMixAsync()
+    {
+        var mapped = CaptureAudio.ForOutput(CurrentAudio, _timeline.KeptRanges);
+        if (!mapped.HasAudibleContent) return null;
+
+        _mixPath ??= Path.Combine(Path.GetTempPath(), "shrike-mix-" + Guid.NewGuid().ToString("N") + ".wav");
+        if (!_mixDirty && File.Exists(_mixPath)) return _mixPath;
+
+        var args = ExportCommand.BuildAudioMix(mapped, _mixPath);
+        await Task.Run(() => RunFfmpeg(args), _cts.Token);
+        _mixDirty = false;
+        return File.Exists(_mixPath) ? _mixPath : null;
+    }
+
+    private void RunFfmpeg(IReadOnlyList<string> args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(_ffmpegPath)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = System.Diagnostics.Process.Start(psi);
+        if (p is null) return;
+        _ = p.StandardError.ReadToEnd(); // drain so ffmpeg doesn't block on a full pipe
+        p.WaitForExit();
+    }
+
+    private void StopPreviewAudio() => DisposeAudioPlayer();
+
+    // Decimate one sidecar to a peak array (over the WHOLE file) for the lane to window per clip, off the UI
+    // thread (the WAV can be large). One bucket per ~10ms, clamped, so the lane stays sharp when zoomed.
+    private async void LoadWaveformAsync(string? path)
+    {
+        if (_waveLane is null || string.IsNullOrEmpty(path) || !File.Exists(path)) { _loadedPeaks.Remove(path ?? ""); return; }
+        try
+        {
+            var (peaks, durationMs) = await Task.Run(() =>
+            {
+                var (format, pcm) = WavFile.Read(path);
+                var ms = format.BytesToMs(pcm.Length);
+                var buckets = (int)Math.Clamp(ms / 10, 200, 4000);
+                return (Waveform.ComputePeaks(pcm, buckets), ms);
+            });
+            if (_cts.IsCancellationRequested) return;
+            _waveLane.SetClipPeaks(path, peaks, durationMs);
+        }
+        catch { _loadedPeaks.Remove(path); /* let a later refresh retry */ }
+    }
+
+    // Forget a sidecar's cached peaks so the next RefreshAudioUi re-reads it — used when a .vo.wav is rewritten
+    // in place (a re-recorded voiceover or a punch-in splice) so the lane doesn't keep drawing stale samples.
+    private void InvalidatePeaks(string? path)
+    {
+        if (!string.IsNullOrEmpty(path)) _loadedPeaks.Remove(path);
+    }
+
+    // Keep the mix aligned to the video's edited (output) playhead: it drifts (frame-paced video vs wall-clock
+    // audio), so re-seek only once it diverges past the threshold to avoid per-tick stutter.
+    private void SyncPreviewAudio()
+    {
+        var player = _audioPlayer;
+        if (player is null || !player.IsPlaying) return;
+        var actual = (long)player.Position.TotalMilliseconds;
+        if (Math.Abs(actual - _currentEditedMs) > AudioResyncMs)
+            player.Position = TimeSpan.FromMilliseconds(_currentEditedMs);
+    }
+
+    private void DisposeAudioPlayer()
+    {
+        _audioPlayer?.Dispose();
+        _audioPlayer = null;
+    }
+
+    private void DeleteMix()
+    {
+        try { if (_mixPath is not null && File.Exists(_mixPath)) File.Delete(_mixPath); }
+        catch { /* best effort */ }
+    }
+
+    // Undo is session-only: the splice is committed on close, so drop the backup + any stray take.
+    private void DeletePunchArtifacts()
+    {
+        foreach (var p in new[] { _voiceoverBackupPath, _punchTempPath })
+            try { if (p is not null && File.Exists(p)) File.Delete(p); } catch { /* best effort */ }
     }
 
     // One timer tick = consume one streamed frame, advancing the edited clock by exactly one frame.
@@ -1156,11 +1769,21 @@ public partial class TimelineEditorWindow : Window
         }
 
         BlitFrame(frame);
-        _currentEditedMs = Math.Min(_currentEditedMs + (long)(1000.0 / player.Fps), _timeline.KeptDurationMs);
+        // Advance from the frame count, not by a truncated per-frame integer: (long)(1000/30)=33 loses 0.33ms a
+        // frame (~10ms/s), which used to build up and force a periodic audio re-seek that sounded like a stutter.
+        _framesPlayed++;
+        _currentEditedMs = Math.Min(
+            _playStartEditedMs + (long)Math.Round(_framesPlayed * 1000.0 / player.Fps), _timeline.KeptDurationMs);
+
+        // Punch-in: once we've played across the selected span, stop and splice the take.
+        if (_punchActive && _currentEditedMs >= _punchOutEnd) { StopPunch(); return; }
+
         _playheadSourceMs = _timeline.EditedToSourceMs(_currentEditedMs);
         _strip.SetPlayhead(_playheadSourceMs);
         _effectsLane?.SetPlayhead(_playheadSourceMs);
         _ruler?.SetPlayhead(_playheadSourceMs);
+        _waveLane?.SetPlayhead(_currentEditedMs); // output axis
+        SyncPreviewAudio();
         UpdateLabels();
         UpdateCursorOverlay();
     }
@@ -1355,8 +1978,10 @@ public partial class TimelineEditorWindow : Window
         if (!_timeline.HasKeptContent) return;
         PersistEdit(); // make sure the authored zoom is on disk before we (and the export) read it
         var dlg = new ExportDialog(_source, _timeline, _ffmpegPath);
-        // Carry the tuned smoothing/size + the authored effect track into the export so the file matches the preview.
+        // Carry the tuned smoothing/size + the authored effect track + audio into the export so the file
+        // matches the preview. The dialog maps live audio through the cuts (CaptureAudio) at build time.
         dlg.ConfigureEffects(_smoothing, _cursorSize, CurrentEffects);
+        dlg.ConfigureAudio(CurrentAudio);
         await dlg.ShowDialog(this);
     }
 

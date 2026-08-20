@@ -57,6 +57,9 @@
                         HorizontalContentAlignment="Center" Content="▶ Play" Click="OnPlayPause" />
                 <TextBlock Grid.Column="1" Name="TimeLabel" Classes="hint" VerticalAlignment="Center"
                            Margin="12,0,0,0" FontFamily="Consolas,monospace" Text="00:00 / 00:00" />
+                <Button Grid.Column="2" Name="VoiceoverButton" Classes="tool" HorizontalAlignment="Left"
+                        Margin="16,0,0,0" Content="● Voiceover" Click="OnVoiceover" IsVisible="False"
+                        ToolTip.Tip="Record narration over the playing preview" />
                 <TextBlock Grid.Column="3" Name="KeptLabel" Classes="hint" VerticalAlignment="Center" />
             </Grid>
         </Grid>
@@ -68,15 +71,18 @@
         <!-- Timeline: ruler, scrubber, the effects lane (scrolls when tall), toolbar. A Canvas overlay carries
              the floating Cut/Keep bar so it can sit above the strip without affecting the timeline's layout. -->
         <Grid Grid.Row="2" MinHeight="150">
-          <Grid RowDefinitions="Auto,Auto,*,Auto">
+          <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
             <!-- Time axis (source time), aligned with the scrubber + effects lane below it. -->
             <controls:TimeRuler Grid.Row="0" Name="TimeRuler" Margin="0,4,0,2" />
 
             <!-- Scrubber / trim lane. -->
             <controls:TimelineStrip Grid.Row="1" Name="Strip" Margin="0,0,0,10" />
 
+            <!-- Audio waveform lane (shown from code-behind when the clip carries captured audio). -->
+            <controls:WaveformLane Grid.Row="2" Name="WaveLane" IsVisible="False" Margin="0,0,0,10" />
+
             <!-- Effects lane (shown + wired from code-behind when a track is present); scrolls when it grows tall. -->
-            <Grid Grid.Row="2" Name="EffectsPanel" IsVisible="False" RowDefinitions="Auto,*">
+            <Grid Grid.Row="3" Name="EffectsPanel" IsVisible="False" RowDefinitions="Auto,*">
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="0,0,0,6">
                     <TextBlock Text="✦ Effects" Foreground="#F5A524" FontFamily="Consolas,monospace" FontSize="12" VerticalAlignment="Center" />
                     <Button Name="AddEffectButton" Classes="tool" Content="+ Add effect" />
@@ -89,7 +95,7 @@
             </Grid>
 
             <!-- Toolbar -->
-            <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
+            <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
                 <Button Grid.Column="0" Classes="tool" Content="Reset trim" Click="OnResetAll" Margin="0,0,6,0" />
                 <!-- Debug-only: shown + wired in code-behind (#if DEBUG). Reveals this recording + its .track.json. -->
                 <Button Grid.Column="1" Name="RevealButton" Classes="tool" Content="Reveal files (debug)"
@@ -252,6 +258,45 @@
                     <Button Name="RemoveSplitButton" Classes="tool" Content="Remove split" HorizontalAlignment="Stretch" />
                     <TextBlock Classes="hint" TextWrapping="Wrap"
                                Text="Uncheck to cut this span. Drag the boundary handles on the strip, or set the times here." />
+                </StackPanel>
+
+                <!-- Audio clip editor (shown when the waveform lane is clicked). -->
+                <StackPanel Name="AudioEditor" Spacing="14" IsVisible="False">
+                    <CheckBox Name="AudioMuteInput" Content="Mute this audio" Foreground="#B8AE9C" />
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Gain" Classes="hint" />
+                        <Slider Name="AudioGainInput" Minimum="-24" Maximum="12" />
+                        <TextBlock Name="AudioGainValue" Classes="hint" FontFamily="Consolas,monospace" />
+                    </StackPanel>
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="A/V sync offset (ms)" Classes="hint" />
+                        <NumericUpDown Name="AudioOffsetInput" Minimum="-2000" Maximum="2000" Increment="10" FormatString="0" />
+                    </StackPanel>
+                    <TextBlock Classes="hint" TextWrapping="Wrap"
+                               Text="Captured audio rides the cuts automatically. Nudge the offset if voice and picture drift (+ = audio later)." />
+
+                    <!-- Clip operations. Drag the block on the lane to move, drag its edges to crop. -->
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Clip" Classes="hint" />
+                        <WrapPanel>
+                            <Button Name="SplitAudioButton" Classes="tool" Content="Split (S)"
+                                    Margin="0,0,6,6" Click="OnSplitAudio" />
+                            <Button Name="DuplicateAudioButton" Classes="tool" Content="Duplicate (Ctrl+D)"
+                                    Margin="0,0,6,6" Click="OnDuplicateAudio" />
+                            <Button Name="DeleteAudioButton" Classes="tool" Content="Delete (Del)"
+                                    Margin="0,0,0,6" Click="OnDeleteAudio" />
+                        </WrapPanel>
+                        <TextBlock Classes="hint" TextWrapping="Wrap"
+                                   Text="Drag the clip to move it; drag its left or right edge to crop it in place. Split cuts at the playhead." />
+                    </StackPanel>
+
+                    <!-- Punch-in re-record (voiceover clips): select a span on the strip, then re-record just it. -->
+                    <Button Name="PunchButton" Classes="tool" Content="⦿ Re-record selected span"
+                            HorizontalAlignment="Stretch" Click="OnPunchIn" IsVisible="False" />
+                    <Button Name="UndoPunchButton" Classes="tool" Content="↶ Undo re-record"
+                            HorizontalAlignment="Stretch" Click="OnUndoPunch" IsVisible="False" />
+                    <TextBlock Name="PunchHint" Classes="hint" TextWrapping="Wrap" IsVisible="False"
+                               Text="Drag a span on the scrubber, then Re-record to replace just that slice of the voiceover." />
                 </StackPanel>
 
                 <Button Name="DeleteZoomButton" Classes="tool" Content="Delete effect"
