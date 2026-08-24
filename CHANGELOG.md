@@ -8,6 +8,12 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.5] - 2026-08-24
+
+- Delayed region shots now let you frame the region *after* the countdown
+
+---
+
 ## [v0.3.4] - 2026-08-20
 
 - Slimmed the tray menu to Settings, Check for updates and Quit

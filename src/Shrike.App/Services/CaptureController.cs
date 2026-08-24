@@ -136,9 +136,11 @@ internal sealed class CaptureController
         switch (choice)
         {
             case CaptureMenuChoice.Region:
-                // With a self-timer, pick the region first, then count down and grab it live.
+                // With a self-timer, count down FIRST on a clean screen, then let the user frame the
+                // region once things are where they want them — you shouldn't have to guess up front
+                // where a transient menu/tooltip will appear.
                 if (delaySeconds > 0)
-                    StartRegionSelection(frozen, region => StartDelayedGrab(region, delaySeconds));
+                    StartDelayedRegionSelection(delaySeconds);
                 else
                     BeginRegionCapture(frozen);
                 break;
@@ -196,6 +198,27 @@ internal sealed class CaptureController
             // Let the pill leave the screen before grabbing (belt-and-suspenders for pre-2004 Windows,
             // where capture-exclusion degrades to a black box rather than true exclusion).
             RunAfter(TimeSpan.FromMilliseconds(80), () => CaptureAndEdit(bounds));
+        };
+        pill.Start();
+    }
+
+    /// <summary>Region self-timer: count down on a clean screen with nothing selected yet, then — once the
+    /// user has arranged the screen (opened a menu, hovered a tooltip) — open region selection on a FRESH
+    /// snapshot and crop the pick. Framing afterwards means you never have to guess where transient UI will
+    /// land. The pill sits on the monitor under the cursor since no region exists to anchor it.</summary>
+    private void StartDelayedRegionSelection(int seconds)
+    {
+        _delayPill?.Close();
+        var pill = new DelayCountdownWindow(seconds, MonitorContaining(MonitorUnderCursorBounds()));
+        _delayPill = pill;
+        pill.Elapsed += () =>
+        {
+            pill.Close();
+            if (ReferenceEquals(_delayPill, pill)) _delayPill = null;
+            // Let the pill leave the screen, then freeze fresh and let the user pick: passing null makes
+            // StartRegionSelection grab a NEW snapshot at this moment, so the loupe + crop match the
+            // now-arranged screen rather than the stale plate from when the chooser opened.
+            RunAfter(TimeSpan.FromMilliseconds(80), () => BeginRegionCapture(null));
         };
         pill.Start();
     }

@@ -67,8 +67,13 @@ does a fresh live grab after the countdown**:
 3. At zero the pill closes and Shrike does a live `ScreenCapture.Capture(bounds)` of the
    originally chosen bounds, straight into the editor.
 
-For **Region + delay**, you pick the region first (frozen only feeds the loupe), *then*
-the countdown runs, *then* the chosen rectangle is grabbed live.
+For **Region + delay** the order is reversed from the fixed modes: the countdown runs
+**first** on a clean screen (nothing selected yet), and only when it hits zero does region
+selection open — against a **fresh** snapshot grabbed at that moment. You frame the shot
+*after* the screen is arranged, so you never have to predict where a transient menu or
+tooltip will appear. The pill sits on the monitor under the cursor (there's no region to
+anchor it to yet), and the freshly grabbed snapshot both feeds the loupe and is cropped to
+the final pick — WYSIWYG with what you now see.
 
 ### The countdown pill is visible but never in the shot (WYSIWYG)
 
@@ -91,4 +96,5 @@ the pill is closed and given an ~80 ms settle before the grab.
   `+Ns` badges, `D` cycles, `DelaySeconds` + `DelayChanged`.
 - `src/Shrike.App/Views/DelayCountdownWindow.cs` — new capture-excluded countdown pill.
 - `src/Shrike.App/Services/CaptureController.cs` — read/persist the delay, delayed
-  screenshot flow (`StartDelayedGrab`).
+  fixed-bounds flow (`StartDelayedGrab`), and the count-down-then-select region flow
+  (`StartDelayedRegionSelection`).
