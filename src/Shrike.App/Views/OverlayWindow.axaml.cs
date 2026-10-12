@@ -35,6 +35,7 @@ public partial class OverlayWindow : Window
     private bool _picked;                     // pipette: guard against a second click before teardown
 
     private Canvas? _root;
+    private Image? _backdrop;
     private Path? _scrim;
     private Rectangle? _vLine;
     private Rectangle? _hLine;
@@ -60,7 +61,7 @@ public partial class OverlayWindow : Window
 
     internal OverlayWindow(
         RegionSelectionSession session, MonitorInfo monitor, CapturedImage? frozen,
-        IReadOnlyList<PixelBounds> windows, bool pipette = false)
+        IReadOnlyList<PixelBounds> windows, bool pipette = false, bool showFrozen = false)
     {
         _session = session;
         _monitor = monitor;
@@ -72,6 +73,7 @@ public partial class OverlayWindow : Window
         InitializeComponent();
 
         _root = this.FindControl<Canvas>("Root");
+        _backdrop = this.FindControl<Image>("Backdrop");
         _scrim = this.FindControl<Path>("Scrim");
         _vLine = this.FindControl<Rectangle>("VLine");
         _hLine = this.FindControl<Rectangle>("HLine");
@@ -95,6 +97,28 @@ public partial class OverlayWindow : Window
         // Size + position the window to cover its monitor BEFORE it is shown, so it never paints a
         // default-geometry frame first (which flashes the scrim + hint pill in the wrong place).
         ApplyMonitorLayout();
+
+        if (showFrozen)
+            ShowFrozenBackdrop();
+    }
+
+    /// <summary>Paint this monitor's slice of the frozen snapshot behind the scrim, so you pick from the
+    /// desktop as it was at capture time — the same pixels the crop and loupe use — not the live one.</summary>
+    private void ShowFrozenBackdrop()
+    {
+        if (_frozen is null || _backdrop is null) return;
+
+        CapturedImage slice;
+        try { slice = _frozen.Crop(_monitor.Bounds); }
+        catch { return; } // snapshot doesn't cover this monitor — fall back to the live desktop
+
+        var r = ToLocalRect(slice.Source);
+        _backdrop.Source = BitmapConverter.ToBitmap(slice);
+        Canvas.SetLeft(_backdrop, r.X);
+        Canvas.SetTop(_backdrop, r.Y);
+        _backdrop.Width = r.Width;
+        _backdrop.Height = r.Height;
+        _backdrop.IsVisible = true;
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);

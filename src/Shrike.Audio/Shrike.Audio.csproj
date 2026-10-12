@@ -2,12 +2,13 @@
 
   <PropertyGroup>
     <!-- WASAPI capture/loopback + device enumeration via NAudio. Kept in its own assembly so Shrike.Core
-         stays dependency-free (ImageSharp only) and the Avalonia app doesn't carry NAudio's concerns —
+         stays dependency-free (SkiaSharp only) and the Avalonia app doesn't carry NAudio's concerns —
          this is the concrete implementation of Core's IAudioSource / IAudioDeviceCatalog / IAudioPlayer. -->
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Shrike.Audio</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

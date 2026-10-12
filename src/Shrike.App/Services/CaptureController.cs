@@ -252,17 +252,18 @@ internal sealed class CaptureController
 
     /// <summary>Show a region-selection overlay on each monitor, then take a screenshot of the pick.</summary>
     public void BeginRegionCapture(CapturedImage? frozen = null)
-        => StartRegionSelection(frozen, OnRegionSelected);
+        => StartRegionSelection(frozen, OnRegionSelected, showFrozen: true);
 
-    /// <summary>Show a region-selection overlay on each monitor, then open the recording setup step.</summary>
+    /// <summary>Show a region-selection overlay on each monitor, then open the recording setup step. The
+    /// live desktop stays visible here, since a recording captures live rather than from the snapshot.</summary>
     public void BeginRegionRecording(CapturedImage? frozen = null)
-        => StartRegionSelection(frozen, ShowRecordingSetup);
+        => StartRegionSelection(frozen, ShowRecordingSetup, showFrozen: false);
 
     /// <summary>
     /// Put a region-selection overlay on every monitor (or focus the existing set) and route the chosen
     /// rectangle to <paramref name="onCompleted"/> — shared by screenshot and recording region picks.
     /// </summary>
-    private void StartRegionSelection(CapturedImage? frozen, Action<PixelBounds> onCompleted)
+    private void StartRegionSelection(CapturedImage? frozen, Action<PixelBounds> onCompleted, bool showFrozen)
     {
         if (_overlays.Count > 0)
         {
@@ -290,7 +291,7 @@ internal sealed class CaptureController
 
         foreach (var monitor in monitors)
         {
-            var overlay = new OverlayWindow(session, monitor, _frozen, windows);
+            var overlay = new OverlayWindow(session, monitor, _frozen, windows, showFrozen: showFrozen);
             _overlays.Add(overlay);
             overlay.Show();
         }
@@ -321,7 +322,7 @@ internal sealed class CaptureController
 
         foreach (var monitor in monitors)
         {
-            var overlay = new OverlayWindow(session, monitor, _frozen, [], pipette: true);
+            var overlay = new OverlayWindow(session, monitor, _frozen, [], pipette: true, showFrozen: true);
             overlay.ColorPicked += OnColorPicked;
             _overlays.Add(overlay);
             overlay.Show();
