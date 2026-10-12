@@ -11,6 +11,9 @@
         WindowStartupLocation="Manual">
 
     <Canvas Name="Root" Background="#01000000" Cursor="Cross">
+        <!-- The frozen snapshot this pick crops from, painted over the live desktop (set in code). -->
+        <Image Name="Backdrop" Stretch="Fill" IsVisible="False" IsHitTestVisible="False" />
+
         <!-- Dimming scrim with a hole punched out for the current selection (geometry set in code). -->
         <Path Name="Scrim" Fill="{DynamicResource OverlayScrimBrush}" IsHitTestVisible="False" />
 
