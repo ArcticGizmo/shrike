@@ -45,6 +45,24 @@ public class ImageCodecTests
     }
 
     [Fact]
+    public void Png_round_trips_pixels_exactly()
+    {
+        var img = MakeImage(3, 2);
+        img.Bgra[0] = 0xAA; // make one pixel distinct so channel order is checked
+        var decoded = ImageCodec.DecodeToCaptured(ImageCodec.Encode(img, ImageFormatKind.Png));
+
+        Assert.Equal(img.Width, decoded.Width);
+        Assert.Equal(img.Height, decoded.Height);
+        Assert.Equal(img.Bgra, decoded.Bgra);
+    }
+
+    [Fact]
+    public void Decode_rejects_garbage()
+    {
+        Assert.Throws<InvalidDataException>(() => ImageCodec.DecodeToCaptured([1, 2, 3, 4, 5]));
+    }
+
+    [Fact]
     public void DibV5_header_is_124_bytes_and_sized_for_pixels()
     {
         var img = MakeImage(4, 3);
