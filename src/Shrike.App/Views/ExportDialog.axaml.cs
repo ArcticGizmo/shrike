@@ -58,8 +58,7 @@ public partial class ExportDialog : Window
         _copyButton = this.FindControl<Button>("CopyButton")!;
         _cancelButton = this.FindControl<Button>("CancelButton")!;
 
-        _presetBox.ItemsSource = ExportProfile.Presets.Select(p => p.Name).ToList();
-        _presetBox.SelectedIndex = 0;
+        RefreshPresetLabels(selectIndex: 0);
         _lengthText.Text = Fmt(_timeline.KeptDurationMs);
     }
 
@@ -67,20 +66,36 @@ public partial class ExportDialog : Window
 
     private ExportProfile Selected => ExportProfile.Presets[Math.Max(0, _presetBox.SelectedIndex)];
 
+    /// <summary>List the presets with their estimated size in brackets ("Balanced (~4.2 MB)") so they can be
+    /// compared without clicking through each. Re-run when an input to the estimate changes (e.g. audio).</summary>
+    private void RefreshPresetLabels(int selectIndex)
+    {
+        _presetBox.ItemsSource = ExportProfile.Presets
+            .Select(p => Estimate(p) is { } b ? $"{p.Name} (~{HumanBytes(b)})" : p.Name)
+            .ToList();
+        _presetBox.SelectedIndex = selectIndex;
+    }
+
     private void OnPresetChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_timeline.KeptRanges.Count == 0) return;
+        if (_timeline.KeptRanges.Count == 0 || _presetBox.SelectedIndex < 0) return;
         var profile = Selected;
         _noteText.Text = profile.Note;
 
-        // Build once (dummy path) to learn the real target dims/fps, then estimate.
-        var cmd = ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware: null, "preview" + profile.Extension);
-        _specText.Text = Spec(profile, cmd);
+        _specText.Text = Spec(profile, ProbeCommand(profile));
+        _sizeText.Text = Estimate(profile) is { } b ? "~" + HumanBytes(b) : "—";
+    }
 
-        long? sourceBytes = TryFileLength(_source.Path);
-        var est = ExportSize.EstimateBytes(profile, cmd.TargetWidth, cmd.TargetHeight, cmd.TargetFps,
-            _timeline.KeptDurationMs, sourceBytes, _source.DurationMs, ExportAudio());
-        _sizeText.Text = est is { } b ? "~" + HumanBytes(b) : "—";
+    // Build once (dummy path) to learn the real target dims/fps for a preset.
+    private ExportCommand ProbeCommand(ExportProfile profile) =>
+        ExportCommand.Build(_source, _timeline.KeptRanges, profile, hardware: null, "preview" + profile.Extension);
+
+    private long? Estimate(ExportProfile profile)
+    {
+        if (_timeline.KeptRanges.Count == 0) return null;
+        var cmd = ProbeCommand(profile);
+        return ExportSize.EstimateBytes(profile, cmd.TargetWidth, cmd.TargetHeight, cmd.TargetFps,
+            _timeline.KeptDurationMs, TryFileLength(_source.Path), _source.DurationMs, ExportAudio());
     }
 
     private static string Spec(ExportProfile p, ExportCommand cmd)
@@ -199,7 +214,12 @@ public partial class ExportDialog : Window
 
     /// <summary>Carry the clip's audio into the export. An empty track leaves the encode untouched
     /// ("off means off").</summary>
-    internal void ConfigureAudio(AudioTrack audio) => _authoredAudio = audio;
+    internal void ConfigureAudio(AudioTrack audio)
+    {
+        _authoredAudio = audio;
+        // The audio stream adds to the estimate, so relabel now it's known.
+        RefreshPresetLabels(Math.Max(0, _presetBox.SelectedIndex));
+    }
 
     /// <summary>The audio to mux, mapped through the timeline's cuts so live-captured clips ride them and stay
     /// in lip-sync. Placed on the concatenated output timeline — the same one the video trim+concat produces,

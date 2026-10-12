@@ -1,10 +1,6 @@
 using System.Buffers.Binary;
 using Shrike.Core.Capture;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Formats.Webp;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 
 namespace Shrike.Core.Imaging;
 
@@ -17,9 +13,10 @@ public enum ImageFormatKind
 }
 
 /// <summary>
-/// Encodes a <see cref="CapturedImage"/> to bytes. PNG/JPEG/WebP go through ImageSharp (managed, no
-/// native codec dependency); the Windows clipboard also wants a raw <c>CF_DIBV5</c> blob, which we
-/// assemble by hand so classic apps (Office, older editors) get a pasteable bitmap alongside PNG.
+/// Encodes a <see cref="CapturedImage"/> to bytes. PNG/JPEG/WebP go through SkiaSharp (the same Skia
+/// build Avalonia already ships, so no extra native payload); the Windows clipboard also wants a raw
+/// <c>CF_DIBV5</c> blob, which we assemble by hand so classic apps (Office, older editors) get a pasteable
+/// bitmap alongside PNG.
 /// </summary>
 public static class ImageCodec
 {
@@ -44,36 +41,34 @@ public static class ImageCodec
     /// The result is straight, top-down BGRA at the image's native size.</summary>
     public static CapturedImage DecodeToCaptured(byte[] bytes, DateTimeOffset? capturedAt = null)
     {
-        using var img = Image.Load<Bgra32>(bytes);
-        var buffer = new byte[img.Width * img.Height * 4];
-        img.CopyPixelDataTo(buffer);
-        return new CapturedImage(img.Width, img.Height, buffer,
-            new PixelBounds(0, 0, img.Width, img.Height), capturedAt ?? DateTimeOffset.Now);
+        using var codec = SKCodec.Create(new SKMemoryStream(bytes))
+            ?? throw new InvalidDataException("Unrecognised image data.");
+        var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        var result = codec.GetPixels(info, out var buffer);
+        if (result is not (SKCodecResult.Success or SKCodecResult.IncompleteInput))
+            throw new InvalidDataException($"Image decode failed: {result}.");
+        return new CapturedImage(info.Width, info.Height, buffer,
+            new PixelBounds(0, 0, info.Width, info.Height), capturedAt ?? DateTimeOffset.Now);
     }
 
     /// <summary>Encode to the given format. <paramref name="quality"/> (1–100) applies to JPEG/WebP.</summary>
     public static byte[] Encode(CapturedImage image, ImageFormatKind format, int quality = 90)
     {
         var q = Math.Clamp(quality, 1, 100);
-        using var img = Image.LoadPixelData<Bgra32>(image.Bgra, image.Width, image.Height);
-        using var ms = new MemoryStream();
-
-        switch (format)
+        var skFormat = format switch
         {
-            case ImageFormatKind.Png:
-                img.SaveAsPng(ms, new PngEncoder());
-                break;
-            case ImageFormatKind.Jpeg:
-                img.SaveAsJpeg(ms, new JpegEncoder { Quality = q });
-                break;
-            case ImageFormatKind.WebP:
-                img.SaveAsWebp(ms, new WebpEncoder { Quality = q });
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(format));
-        }
+            ImageFormatKind.Png => SKEncodedImageFormat.Png,
+            ImageFormatKind.Jpeg => SKEncodedImageFormat.Jpeg,
+            ImageFormatKind.WebP => SKEncodedImageFormat.Webp,
+            _ => throw new ArgumentOutOfRangeException(nameof(format)),
+        };
 
-        return ms.ToArray();
+        var info = new SKImageInfo(image.Width, image.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        using var img = SKImage.FromPixelCopy(info, image.Bgra)
+            ?? throw new InvalidOperationException("Could not wrap the pixel buffer for encoding.");
+        using var data = img.Encode(skFormat, q)
+            ?? throw new InvalidOperationException($"Skia could not encode {format}.");
+        return data.ToArray();
     }
 
     /// <summary>

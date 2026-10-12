@@ -102,7 +102,8 @@ public partial class EditorWindow : Window
         _document = new AnnotationDocument();
 
         _surface?.SetContent(image, _document);
-        if (_surface is not null) _surface.Tool = AnnotationTool.None;
+        // Open ready to draw: the pen is the most common first move on a fresh screenshot.
+        if (_surface is not null) _surface.Tool = AnnotationTool.Freehand;
 
         RefreshDimensions();
         if (_openFolderButton is not null) _openFolderButton.IsEnabled = false;

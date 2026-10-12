@@ -6,6 +6,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,8 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Managed PNG/JPEG/WebP encoder — keeps Shrike.Core free of native imaging dependencies. -->
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <!-- PNG/JPEG/WebP encode + decode. Pinned to the SkiaSharp version Avalonia already ships, so the app
+         carries one Skia, not two. (Replaced ImageSharp: 3.x has open advisories, 4.x needs a paid licence.) -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
 </Project>
