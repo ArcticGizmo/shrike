@@ -8,6 +8,15 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.6] - 2026-10-12
+
+- Export presets show their estimated file size
+- Region screenshots frame the desktop as captured, not live
+- Screenshot editor opens with the pen selected
+- Swapped image library to close known security vulnerabilities
+
+---
+
 ## [v0.3.5] - 2026-08-24
 
 - Delayed region shots now let you frame the region *after* the countdown
