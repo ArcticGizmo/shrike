@@ -199,6 +199,7 @@ internal sealed class CaptureController
             // where capture-exclusion degrades to a black box rather than true exclusion).
             RunAfter(TimeSpan.FromMilliseconds(80), () => CaptureAndEdit(bounds));
         };
+        pill.Cancelled += () => { if (ReferenceEquals(_delayPill, pill)) _delayPill = null; };
         pill.Start();
     }
 
@@ -220,6 +221,7 @@ internal sealed class CaptureController
             // now-arranged screen rather than the stale plate from when the chooser opened.
             RunAfter(TimeSpan.FromMilliseconds(80), () => BeginRegionCapture(null));
         };
+        pill.Cancelled += () => { if (ReferenceEquals(_delayPill, pill)) _delayPill = null; };
         pill.Start();
     }
 
