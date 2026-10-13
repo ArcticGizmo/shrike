@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Shrike.App.Imaging;
@@ -22,6 +24,9 @@ namespace Shrike.App;
 
 public partial class App : Application
 {
+    // Matches DevWindowBorder's frame colour.
+    private const string DevAccent = "#FF4FA3";
+
     private readonly VirtualDesktopService _desktops = VirtualDesktopService.Create();
     private RecentRing _recentRing = new();
     private SettingsService? _settings;
@@ -60,6 +65,14 @@ public partial class App : Application
             _capture = new CaptureController(_desktops, _recentRing, _settings, MarkOverlayShownOnce);
 
             SetupTray(desktop);
+
+            // Dev instance: pink frame border on every decorated window, so it's obvious which Shrike is open.
+            if (AppProfile.IsDev && OperatingSystem.IsWindows())
+                Window.WindowOpenedEvent.AddClassHandler<Window>((w, _) =>
+                {
+                    if (w.WindowDecorations != WindowDecorations.None)
+                        DevWindowBorder.Apply(w.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
+                });
 
             if (OperatingSystem.IsWindows())
             {
@@ -111,7 +124,11 @@ public partial class App : Application
 
     private void SetupTray(IClassicDesktopStyleApplicationLifetime desktop)
     {
-        var icon = new WindowIcon(AssetLoader.Open(new Uri("avares://shrike/Assets/tray.png")));
+        var trayBitmap = new Bitmap(AssetLoader.Open(new Uri("avares://shrike/Assets/tray.png")));
+        // A dev instance gets a pink-tinted icon so it can't be mistaken for the installed Shrike.
+        if (AppProfile.IsDev)
+            trayBitmap = IconTint.Tint(trayBitmap, Color.Parse(DevAccent));
+        var icon = new WindowIcon(trayBitmap);
 
         // Read-only version header (mirrors perch). The (Dev) suffix marks an isolated dev instance.
         var versionItem = new NativeMenuItem($"Shrike{AppProfile.DisplaySuffix} - {AppVersion.Current}")
