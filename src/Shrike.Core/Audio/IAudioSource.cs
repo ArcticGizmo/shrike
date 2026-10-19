@@ -14,9 +14,12 @@ public interface IAudioSource : IDisposable
     /// <see cref="AudioFormat.Default"/>).</summary>
     AudioFormat Format { get; }
 
-    /// <summary>Raised on the capture thread with a fresh PCM buffer in <see cref="Format"/>. The buffer is
-    /// exactly the captured length and belongs to the handler.</summary>
-    event Action<byte[]>? DataAvailable;
+    /// <summary>Raised on the capture thread with a fresh PCM buffer in <see cref="Format"/> and the
+    /// <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/> reading at which its first sample was captured.
+    /// The buffer is exactly the captured length and belongs to the handler. The timestamp lets a consumer place
+    /// the buffer in time even when the device delivers nothing for a while — loopback goes quiet whenever
+    /// nothing is playing — or delivers late.</summary>
+    event Action<byte[], long>? DataAvailable;
 
     /// <summary>Begin delivering buffers. Idempotent while running.</summary>
     void Start();

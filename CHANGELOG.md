@@ -8,6 +8,13 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.8] - 2026-10-19
+
+- System sound stays in sync through quiet stretches
+- Smoother pointer and audio capture while recording
+
+---
+
 ## [v0.3.7] - 2026-10-13
 
 - Esc cancels a screenshot self-timer mid-countdown

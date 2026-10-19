@@ -7,7 +7,8 @@ namespace Shrike.Core.Recording;
 /// at the target rate and feeds them, with a monotonic clock reading, to a <see cref="RecordingSession"/>
 /// (which paces to real time and writes through the encoder). The HUD calls <see cref="Pause"/> /
 /// <see cref="Resume"/> / <see cref="Stop"/> / <see cref="Discard"/> from the UI thread; the session is
-/// not thread-safe, so every touch is serialised behind one lock.
+/// not thread-safe, so every touch is serialised behind one lock. Clock reads (<see cref="CaptureTimeMs"/>)
+/// take a second, lighter lock so they never wait behind a frame write.
 /// </summary>
 public sealed class Recorder : IDisposable
 {
@@ -16,6 +17,12 @@ public sealed class Recorder : IDisposable
     private readonly int _fps;
     private readonly Stopwatch _clock = new();
     private readonly object _gate = new();
+    // Guards the timeline state CaptureTimeMs reads (session state + pause bookkeeping). Every change to that
+    // state happens under _gate *and* this; Tick only holds _gate and doesn't change it. So the audio capture
+    // thread and the low-level mouse hook can read the clock while a frame is blocked in ffmpeg's pipe —
+    // stalling them there drops audio and lags the system pointer.
+    private readonly object _clockGate = new();
+    private bool _ended;
 
     private Thread? _thread;
     private volatile bool _running;
@@ -50,9 +57,9 @@ public sealed class Recorder : IDisposable
     /// </summary>
     public long? CaptureTimeMs()
     {
-        lock (_gate)
+        lock (_clockGate)
         {
-            return _session.State == RecordingState.Recording
+            return !_ended && _session.State == RecordingState.Recording
                 ? _session.ElapsedMs(_clock.ElapsedMilliseconds)
                 : null;
         }
@@ -60,8 +67,12 @@ public sealed class Recorder : IDisposable
 
     public void Start()
     {
-        lock (_gate) _session.Start(0);
-        _clock.Restart();
+        lock (_gate)
+        lock (_clockGate)
+        {
+            _clock.Restart();
+            _session.Start(0);
+        }
         _running = true;
         _thread = new Thread(Loop) { IsBackground = true, Name = "shrike-recorder" };
         _thread.Start();
@@ -69,12 +80,14 @@ public sealed class Recorder : IDisposable
 
     public void Pause()
     {
-        lock (_gate) _session.Pause(_clock.ElapsedMilliseconds);
+        lock (_gate)
+        lock (_clockGate) _session.Pause(_clock.ElapsedMilliseconds);
     }
 
     public void Resume()
     {
-        lock (_gate) _session.Resume(_clock.ElapsedMilliseconds);
+        lock (_gate)
+        lock (_clockGate) _session.Resume(_clock.ElapsedMilliseconds);
     }
 
     /// <summary>Stop the loop, finalise the file, and return its path.</summary>
@@ -83,9 +96,13 @@ public sealed class Recorder : IDisposable
         StopLoop();
         lock (_gate)
         {
-            // Freeze the length before stopping the clock, so the editor gets the real recorded duration.
-            Duration = TimeSpan.FromMilliseconds(_session.ElapsedMs(_clock.ElapsedMilliseconds));
-            _session.Stop();
+            lock (_clockGate)
+            {
+                // Freeze the length before stopping the clock, so the editor gets the real recorded duration.
+                Duration = TimeSpan.FromMilliseconds(_session.ElapsedMs(_clock.ElapsedMilliseconds));
+                _ended = true;
+            }
+            _session.Stop(); // finalising can take seconds — outside _clockGate, which _ended already closed
         }
         _clock.Stop();
         return OutputPath;
@@ -95,7 +112,11 @@ public sealed class Recorder : IDisposable
     public void Discard()
     {
         StopLoop();
-        lock (_gate) _session.Discard();
+        lock (_gate)
+        {
+            lock (_clockGate) _ended = true;
+            _session.Discard();
+        }
         try { if (File.Exists(OutputPath)) File.Delete(OutputPath); } catch { /* best effort */ }
     }
 

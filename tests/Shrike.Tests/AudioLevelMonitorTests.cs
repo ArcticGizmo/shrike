@@ -11,10 +11,10 @@ public class AudioLevelMonitorTests
         public AudioFormat Format { get; init; } = AudioFormat.Default;
         public bool Started;
         public bool Disposed;
-        public event Action<byte[]>? DataAvailable;
+        public event Action<byte[], long>? DataAvailable;
         public void Start() => Started = true;
         public void Stop() => Started = false;
-        public void Emit(byte[] pcm) => DataAvailable?.Invoke(pcm);
+        public void Emit(byte[] pcm) => DataAvailable?.Invoke(pcm, System.Diagnostics.Stopwatch.GetTimestamp());
         public void Dispose() => Disposed = true;
     }
 

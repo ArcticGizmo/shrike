@@ -29,7 +29,7 @@ public sealed class AudioLevelMonitor : IDisposable
         _source.Start();
     }
 
-    private void OnData(byte[] pcm)
+    private void OnData(byte[] pcm, long captureTimestamp)
     {
         var level = LevelMeter.Measure(pcm);
         lock (_lock)

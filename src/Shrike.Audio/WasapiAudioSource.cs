@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using Shrike.Core.Audio;
@@ -22,7 +23,7 @@ public sealed class WasapiAudioSource : IAudioSource
 
     public AudioFormat Format { get; }
 
-    public event Action<byte[]>? DataAvailable;
+    public event Action<byte[], long>? DataAvailable;
 
     private WasapiAudioSource(WasapiRecorder recorder)
     {
@@ -60,8 +61,22 @@ public sealed class WasapiAudioSource : IAudioSource
     private void OnData(ReadOnlySpan<byte> buffer, AudioClientBufferFlags flags, long devicePosition, long qpcPosition)
     {
         if (buffer.IsEmpty) return;
-        var pcm = Pcm16Converter.To16Bit(buffer, _bits, _isFloat);
-        DataAvailable?.Invoke(pcm);
+        // A Silent packet's bytes are undefined — WASAPI says to treat them as zeros, not read them.
+        var pcm = (flags & AudioClientBufferFlags.Silent) != 0
+            ? new byte[buffer.Length / (_bits / 8) * 2]
+            : Pcm16Converter.To16Bit(buffer, _bits, _isFloat);
+        DataAvailable?.Invoke(pcm, CaptureTimestamp(pcm.Length, flags, qpcPosition));
+    }
+
+    /// <summary>The <see cref="Stopwatch"/> timestamp of a packet's first sample. WASAPI reports it as a QPC
+    /// reading in 100 ns units — the same counter <see cref="Stopwatch"/> uses, just scaled. Without a usable
+    /// one, assume the packet ended just now.</summary>
+    private long CaptureTimestamp(int pcmBytes, AudioClientBufferFlags flags, long qpcPosition)
+    {
+        if (qpcPosition > 0 && (flags & AudioClientBufferFlags.TimestampError) == 0)
+            return (long)((Int128)qpcPosition * Stopwatch.Frequency / 10_000_000);
+        var durationTicks = (long)((double)pcmBytes / (Format.BlockAlign * Format.SampleRate) * Stopwatch.Frequency);
+        return Stopwatch.GetTimestamp() - durationTicks;
     }
 
     public void Start()
