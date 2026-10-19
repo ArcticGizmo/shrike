@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Shrike.App.Native;
 using Shrike.App.Views;
+using Shrike.Capture;
 using Shrike.Core;
 using Shrike.Core.Capture;
 using Shrike.Core.Interop;
@@ -697,11 +698,13 @@ internal sealed class CaptureController
     // Locate ffmpeg and wire the capture→encode pipeline. Runs on a background thread so the ffmpeg
     // process spawn never blocks the UI. Returns null when ffmpeg is unavailable; throws for other setup
     // failures (surfaced as a toast). The cursor spotlight is a separate on-screen overlay captured
-    // naturally, so nothing about it lives in this pipeline.
+    // naturally, so nothing about it lives in this pipeline. Frames come from the GPU (Windows.Graphics.Capture)
+    // when it can serve the region, else GDI — slower, but it works everywhere.
     private static Recorder? BuildRecorder(PixelBounds region, string path, int fps, bool captureCursor)
     {
         if (Ffmpeg.Locate() is not { } ffmpeg) return null;
-        var source = new GdiFrameSource(region, captureCursor);
+        var gpu = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) ? WgcFrameSource.TryCreate(region, captureCursor) : null;
+        IFrameSource source = (IFrameSource?)gpu ?? new GdiFrameSource(region, captureCursor);
         try
         {
             var bitrate = BitrateFor(source.Width, source.Height, fps);

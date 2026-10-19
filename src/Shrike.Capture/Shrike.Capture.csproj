@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- GPU screen capture via Windows.Graphics.Capture + D3D11. Kept in its own assembly (like Shrike.Audio)
+         so Shrike.Core stays dependency-free: the WinRT projections need a versioned Windows TFM, and the
+         D3D11 interop needs unsafe code. This is the concrete GPU implementation of Core's IFrameSource.
+         The TFM is 22621 for GraphicsCaptureSession.IsBorderRequired; anything newer than 19041 is
+         runtime-guarded, so the floor stays at Windows 10 2004 (cursor capture). -->
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Shrike.Capture</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Shrike.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shrike.Core\Shrike.Core.csproj" />
+  </ItemGroup>
+
+</Project>

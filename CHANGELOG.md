@@ -8,6 +8,12 @@ All notable changes to Shrike are recorded here, newest first. Dates are ISO-860
 
 ---
 
+## [v0.3.9] - 2026-10-19
+
+- GPU screen capture for smooth, full-frame-rate recordings
+
+---
+
 ## [v0.3.8] - 2026-10-19
 
 - System sound stays in sync through quiet stretches
