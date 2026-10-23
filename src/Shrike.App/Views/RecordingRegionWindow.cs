@@ -17,8 +17,9 @@ namespace Shrike.App.Views;
 /// that rectangle with eight resize handles (or drag its interior). Nothing is captured yet. The HUD's
 /// Record button drives <see cref="StartCountdown"/>: a 3-2-1 count over the region, after which
 /// <see cref="CountdownFinished"/> fires. The controller then calls <see cref="EnterRecordingMode"/>,
-/// which strips the setup chrome and turns this into a plain amber frame — click-through and excluded
-/// from capture, exactly like the old standalone border — so it shows on screen but never in the file.
+/// which strips the setup chrome and turns this into a plain click-through amber frame. The window is
+/// excluded from capture for its whole life, so the frame, handles and countdown show on screen but never
+/// in the file.
 /// Staying one window (rather than closing and opening a border) keeps the frame from flickering when
 /// recording begins.
 /// </summary>
@@ -148,10 +149,17 @@ public sealed class RecordingRegionWindow : Window
         Height = _monitor.Bounds.Height / _scale;
         Redraw();
 
-        // Take the mouse (for handle drags) but never activation — so clicking the frame never raises it
-        // above the HUD that floats over its scrim. The HUD owns keyboard shortcuts instead.
         if (OperatingSystem.IsWindows())
-            WindowExclusion.MakeNonActivating(TryGetPlatformHandle()?.Handle ?? IntPtr.Zero);
+        {
+            var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            // Take the mouse (for handle drags) but never activation — so clicking the frame never raises it
+            // above the HUD that floats over its scrim. The HUD owns keyboard shortcuts instead.
+            WindowExclusion.MakeNonActivating(hwnd);
+            // Hidden from capture from the start, not just once recording begins: the frame source starts
+            // grabbing during the countdown and serves its latest frame until the screen next changes, so a
+            // capturable frame here leaks the border and the 3-2-1 into the opening frames of the file.
+            WindowExclusion.Hide(hwnd);
+        }
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -297,8 +305,8 @@ public sealed class RecordingRegionWindow : Window
         _timer.Start();
     }
 
-    /// <summary>Turn this into the passive recording frame: amber border only, click-through, and hidden
-    /// from capture so it shows on screen but never in the recording.</summary>
+    /// <summary>Turn this into the passive recording frame: amber border only and click-through. (It has been
+    /// hidden from capture since it opened, so it shows on screen but never in the recording.)</summary>
     public void EnterRecordingMode()
     {
         _recording = true;
@@ -310,11 +318,7 @@ public sealed class RecordingRegionWindow : Window
         foreach (var h in _handles) h.IsVisible = false;
 
         if (OperatingSystem.IsWindows())
-        {
-            var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-            WindowExclusion.Hide(hwnd);            // keep the frame out of the recording
-            WindowExclusion.MakeClickThrough(hwnd); // let clicks fall through to the app underneath
-        }
+            WindowExclusion.MakeClickThrough(TryGetPlatformHandle()?.Handle ?? IntPtr.Zero); // let clicks fall through to the app underneath
     }
 
     private void ShowCount(int n)
